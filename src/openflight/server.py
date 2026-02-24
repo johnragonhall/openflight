@@ -964,8 +964,8 @@ def main():
     )
     parser.add_argument(
         "--sound-pre-trigger",
-        type=int, default=20,
-        help="Pre-trigger segments for sound trigger (default: 20, each ~4.27ms at 30ksps)"
+        type=int, default=28,
+        help="Pre-trigger segments for sound trigger (default: 28, each ~4.27ms at 30ksps)"
     )
     parser.add_argument(
         "--gpio-pin",
