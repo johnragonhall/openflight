@@ -74,6 +74,8 @@ function AppContent() {
     latestShot,
     shots,
     cameraStatus,
+    triggerDiagnostics,
+    triggerStatus,
     clearSession,
     setClub,
     simulateShot,
@@ -119,6 +121,7 @@ function AppContent() {
             minHeight: '44px',
             display: 'flex',
             alignItems: 'center',
+            userSelect: 'none',
           }}
         >
           {isLaunchDaddyMode ? <LaunchDaddyBrand /> : <span style={{ opacity: 0.3, fontSize: '1.2rem' }}>⛳</span>}
@@ -196,7 +199,7 @@ function AppContent() {
         {currentView === "live" && (
           <div className="live-view">
             {latestShot && (
-              <div key={latestShot.timestamp} className="shot-flash" />
+              <div key={`shot-flash-${latestShot.timestamp}`} className="shot-flash" />
             )}
             <ShotDisplay
               key={latestShot?.timestamp}
@@ -231,6 +234,8 @@ function AppContent() {
             mockMode={mockMode}
             onToggle={toggleDebug}
             onUpdateConfig={updateRadarConfig}
+            triggerDiagnostics={triggerDiagnostics}
+            triggerStatus={triggerStatus}
           />
         )}
       </main>

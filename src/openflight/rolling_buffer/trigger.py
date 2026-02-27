@@ -7,13 +7,17 @@ Defines different methods for determining when to capture the rolling buffer.
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, List, Optional
 
 from .processor import RollingBufferProcessor
 from .types import IQCapture
 
 if TYPE_CHECKING:
     from ..ops243 import OPS243Radar
+
+# Incremented per capture for log sequencing (not shot number)
+_capture_sequence = 0
 
 logger = logging.getLogger("openflight.rolling_buffer.trigger")
 
@@ -25,6 +29,77 @@ class TriggerStrategy(ABC):
     A trigger strategy determines when to capture the rolling buffer.
     Different strategies trade off between simplicity, reliability, and efficiency.
     """
+
+    def __init__(self):
+        self._diagnostics: List[dict] = []
+
+    def drain_diagnostics(self) -> List[dict]:
+        """Return and clear accumulated diagnostic entries.
+
+        Diagnostics are accumulated during wait_for_trigger() calls.
+        The monitor drains these after each call to log and emit them.
+        """
+        diagnostics = self._diagnostics
+        self._diagnostics = []
+        return diagnostics
+
+    def _append_diagnostic(
+        self,
+        accepted: bool,
+        reason: str,
+        response_bytes: int = 0,
+        total_readings: int = 0,
+        outbound_readings: int = 0,
+        inbound_readings: int = 0,
+        peak_outbound_mph: float = 0.0,
+        peak_inbound_mph: float = 0.0,
+        all_outbound_speeds: Optional[List[float]] = None,
+        all_inbound_speeds: Optional[List[float]] = None,
+        peak_outbound_magnitude: float = 0.0,
+        peak_inbound_magnitude: float = 0.0,
+        trigger_latency_ms: Optional[float] = None,
+    ):
+        """Append a diagnostic entry for the current trigger event."""
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "accepted": accepted,
+            "reason": reason,
+            "response_bytes": response_bytes,
+            "total_readings": total_readings,
+            "outbound_readings": outbound_readings,
+            "inbound_readings": inbound_readings,
+            "peak_outbound_mph": peak_outbound_mph,
+            "peak_inbound_mph": peak_inbound_mph,
+            "all_outbound_speeds": all_outbound_speeds or [],
+            "all_inbound_speeds": all_inbound_speeds or [],
+            "peak_outbound_magnitude": peak_outbound_magnitude,
+            "peak_inbound_magnitude": peak_inbound_magnitude,
+        }
+        if trigger_latency_ms is not None:
+            entry["trigger_latency_ms"] = trigger_latency_ms
+        self._diagnostics.append(entry)
+
+    def _log_capture(self, capture: IQCapture, accepted: bool):
+        """Log raw I/Q data for offline analysis (all triggers, not just accepted)."""
+        # Import here to avoid circular dependency
+        from ..session_logger import get_session_logger  # pylint: disable=import-outside-toplevel
+
+        session_logger = get_session_logger()
+        if not session_logger:
+            return
+
+        global _capture_sequence  # pylint: disable=global-statement
+        _capture_sequence += 1
+
+        session_logger.log_rolling_buffer_capture(
+            shot_number=_capture_sequence,
+            sample_time=capture.sample_time,
+            trigger_time=capture.trigger_time,
+            i_samples=capture.i_samples,
+            q_samples=capture.q_samples,
+            ball_speed_mph=None,
+            club_speed_mph=None,
+        )
 
     @abstractmethod
     def wait_for_trigger(
@@ -76,6 +151,7 @@ class PollingTrigger(TriggerStrategy):
             min_readings: Minimum outbound readings above min_speed (default 1)
             min_speed_mph: Minimum speed to consider activity (default 15 mph)
         """
+        super().__init__()
         self.poll_interval = poll_interval
         self.min_readings = min_readings
         self.min_speed_mph = min_speed_mph
@@ -154,6 +230,7 @@ class ThresholdTrigger(TriggerStrategy):
             check_interval: Seconds between threshold checks
             settling_time: Time to wait after threshold before capture
         """
+        super().__init__()
         self.speed_threshold_mph = speed_threshold_mph
         self.check_interval = check_interval
         self.settling_time = settling_time
@@ -230,6 +307,7 @@ class ManualTrigger(TriggerStrategy):
     """
 
     def __init__(self):
+        super().__init__()
         self._trigger_requested = False
 
     def request_trigger(self):
@@ -300,6 +378,7 @@ class SpeedTriggeredCapture(TriggerStrategy):
             trigger_to_capture_delay_ms: Delay after trigger before capture (default 15ms)
                 This allows ball impact to happen before we dump the buffer.
         """
+        super().__init__()
         self.min_trigger_speed_mph = min_trigger_speed_mph
         self.min_ball_speed_mph = min_ball_speed_mph
         self.trigger_to_capture_delay_ms = trigger_to_capture_delay_ms
@@ -434,7 +513,7 @@ class GPIOSoundTrigger(TriggerStrategy):
     def __init__(
         self,
         gpio_pin: int = 17,
-        pre_trigger_segments: int = 12,
+        pre_trigger_segments: int = 32,
         debounce_ms: int = 200,
     ):
         """
@@ -444,11 +523,12 @@ class GPIOSoundTrigger(TriggerStrategy):
             gpio_pin: GPIO pin (BCM numbering) for GATE input (default: 17)
             pre_trigger_segments: Number of pre-trigger segments for S# command.
                 Each segment = 128 samples = ~4.27ms at 30ksps.
-                Default 12 gives ~51ms pre-trigger, ~85ms post-trigger.
+                Default 20 gives ~85ms pre-trigger, ~51ms post-trigger.
                 NOTE: This is passed to enter_rolling_buffer_mode() by the caller.
                 The trigger does NOT configure rolling buffer mode itself.
             debounce_ms: Debounce time in ms to ignore rapid triggers (default: 200)
         """
+        super().__init__()
         self.gpio_pin = gpio_pin
         self.pre_trigger_segments = pre_trigger_segments
         self.debounce_ms = debounce_ms
@@ -478,7 +558,6 @@ class GPIOSoundTrigger(TriggerStrategy):
         self._button.when_pressed = on_trigger
         self._gpio_initialized = True
 
-        print(f"[GPIO] Pin {self.gpio_pin} configured for sound trigger (debounce={self.debounce_ms}ms)")
         logger.info(
             "GPIO%d configured for sound trigger (debounce=%dms)",
             self.gpio_pin, self.debounce_ms
@@ -504,7 +583,6 @@ class GPIOSoundTrigger(TriggerStrategy):
             logger.error("GPIO initialization failed")
             return None
 
-        print(f"[GPIO] Waiting for sound trigger on GPIO{self.gpio_pin}...")
         logger.info(
             "Waiting for GPIO sound trigger on GPIO%d (timeout=%ss, S#%s)...",
             self.gpio_pin, timeout, self.pre_trigger_segments
@@ -516,66 +594,115 @@ class GPIOSoundTrigger(TriggerStrategy):
         while (time.time() - start_time) < timeout:
             if self._trigger_event["triggered"]:
                 self._trigger_event["triggered"] = False
-                print("[GPIO] Edge detected! Sending S! trigger...")
-                logger.info("GPIO edge detected! Triggering radar capture...")
+                edge_time = time.time()
+                logger.info("GPIO edge detected on GPIO%d, sending S! trigger...",
+                           self.gpio_pin)
 
-                # Send S! to trigger the radar capture
+                # Measure edge-to-S! latency (trigger_capture sends S! immediately)
+                trigger_latency = (time.time() - edge_time) * 1000
                 response = radar.trigger_capture(timeout=5.0)
 
                 if not response:
-                    print("[GPIO] No response from radar!")
-                    logger.warning("No response from radar after S! trigger")
+                    logger.warning("No response from radar after S! (%.1fms after edge)",
+                                  trigger_latency)
+                    self._append_diagnostic(
+                        accepted=False,
+                        reason="no_response",
+                        response_bytes=0,
+                        trigger_latency_ms=trigger_latency,
+                    )
                     radar.rearm_rolling_buffer()
-                    time.sleep(0.3)  # Extra time for buffer to fill
+                    time.sleep(0.3)
                     continue
 
-                print(f"[GPIO] Capture received: {len(response)} bytes")
-                logger.info("Capture received, %d bytes", len(response))
-                # Debug: log first 500 chars of response to see what we got
-                if len(response) < 5000:
-                    logger.info("Response content: %s", repr(response))
+                response_len = len(response)
+                logger.info("Capture received, %d bytes (S! sent %.1fms after edge)",
+                           response_len, trigger_latency)
+                if response_len < 5000:
+                    logger.debug("Response content: %s", repr(response))
                 else:
-                    logger.info("Response preview: %s...", repr(response[:500]))
+                    logger.debug("Response preview: %s...", repr(response[:500]))
 
                 # Re-arm for next capture
                 radar.rearm_rolling_buffer()
-                time.sleep(0.3)  # Extra time for buffer to fill before next trigger
+                time.sleep(0.3)
 
                 capture = processor.parse_capture(response)
 
                 if not capture:
-                    # Failed to parse - log and continue waiting for next trigger
-                    logger.warning("Failed to parse capture, continuing to wait for next trigger...")
+                    logger.warning("Failed to parse capture (%d bytes)", response_len)
+                    self._append_diagnostic(
+                        accepted=False,
+                        reason="parse_failed",
+                        response_bytes=response_len,
+                        trigger_latency_ms=trigger_latency,
+                    )
                     continue
+
+                # Log raw I/Q for ALL triggers (accepted or rejected) for offline analysis
+                self._log_capture(capture, accepted=False)  # updated to True below if accepted
 
                 # Quick validation: does the capture contain any real swing data?
                 timeline = processor.process_standard(capture)
                 all_readings = timeline.readings
-                outbound = [
-                    r for r in all_readings
-                    if r.is_outbound and r.speed_mph >= 15.0
+                all_outbound = [r for r in all_readings if r.is_outbound]
+                all_inbound = [r for r in all_readings if not r.is_outbound]
+                outbound_speeds = [r.speed_mph for r in all_outbound]
+                inbound_speeds = [r.speed_mph for r in all_inbound]
+                peak_outbound = max(outbound_speeds, default=0)
+                peak_inbound = max(inbound_speeds, default=0)
+                peak_out_mag = max((r.magnitude for r in all_outbound), default=0)
+                peak_in_mag = max((r.magnitude for r in all_inbound), default=0)
+
+                outbound_valid = [
+                    r for r in all_outbound if r.speed_mph >= 15.0
                 ]
 
-                if not outbound:
-                    # Log details about what WAS detected for debugging
-                    all_outbound = [r for r in all_readings if r.is_outbound]
-                    all_inbound = [r for r in all_readings if not r.is_outbound]
-                    peak_outbound = max((r.speed_mph for r in all_outbound), default=0)
-                    peak_inbound = max((r.speed_mph for r in all_inbound), default=0)
+                if not outbound_valid:
                     logger.info(
                         "GPIO trigger REJECTED: no swing >= 15 mph. "
-                        "Total readings: %d, outbound: %d (peak %.1f mph), inbound: %d (peak %.1f mph). "
-                        "Likely false trigger from nearby sound. Re-arming...",
+                        "Total readings: %d, outbound: %d (peak %.1f mph), "
+                        "inbound: %d (peak %.1f mph). Re-arming...",
                         len(all_readings), len(all_outbound), peak_outbound,
                         len(all_inbound), peak_inbound
                     )
-                    # Continue waiting for next trigger instead of exiting
+                    self._append_diagnostic(
+                        accepted=False,
+                        reason="no_outbound_speed",
+                        response_bytes=response_len,
+                        total_readings=len(all_readings),
+                        outbound_readings=len(all_outbound),
+                        inbound_readings=len(all_inbound),
+                        peak_outbound_mph=peak_outbound,
+                        peak_inbound_mph=peak_inbound,
+                        all_outbound_speeds=outbound_speeds,
+                        all_inbound_speeds=inbound_speeds,
+                        peak_outbound_magnitude=peak_out_mag,
+                        peak_inbound_magnitude=peak_in_mag,
+                        trigger_latency_ms=trigger_latency,
+                    )
                     continue
 
-                peak = max(r.speed_mph for r in outbound)
+                peak = max(r.speed_mph for r in outbound_valid)
                 logger.info(
-                    "GPIO trigger ACCEPTED: %d outbound readings >= 15 mph, peak %.1f mph",
-                    len(outbound), peak
+                    "GPIO trigger ACCEPTED: %d outbound readings >= 15 mph, "
+                    "peak %.1f mph (S! sent %.1fms after edge)",
+                    len(outbound_valid), peak, trigger_latency
+                )
+                self._append_diagnostic(
+                    accepted=True,
+                    reason="accepted",
+                    response_bytes=response_len,
+                    total_readings=len(all_readings),
+                    outbound_readings=len(all_outbound),
+                    inbound_readings=len(all_inbound),
+                    peak_outbound_mph=peak_outbound,
+                    peak_inbound_mph=peak_inbound,
+                    all_outbound_speeds=outbound_speeds,
+                    all_inbound_speeds=inbound_speeds,
+                    peak_outbound_magnitude=peak_out_mag,
+                    peak_inbound_magnitude=peak_in_mag,
+                    trigger_latency_ms=trigger_latency,
                 )
 
                 return capture
@@ -647,6 +774,7 @@ class GPIOPassthroughTrigger(TriggerStrategy):
                 The trigger does NOT configure rolling buffer mode itself.
             pulse_width_us: Pulse width in microseconds (default: 100)
         """
+        super().__init__()
         self.input_pin = input_pin
         self.output_pin = output_pin
         self.pre_trigger_segments = pre_trigger_segments
@@ -740,7 +868,8 @@ class GPIOPassthroughTrigger(TriggerStrategy):
             logger.info("GPIO passthrough trigger timeout - no hardware trigger received")
             return None
 
-        logger.info("Hardware trigger fired (via GPIO passthrough), received %d bytes", len(response))
+        response_len = len(response)
+        logger.info("Hardware trigger fired (via GPIO passthrough), received %d bytes", response_len)
 
         # Re-arm for next capture
         radar.rearm_rolling_buffer()
@@ -748,22 +877,65 @@ class GPIOPassthroughTrigger(TriggerStrategy):
         capture = processor.parse_capture(response)
 
         if not capture:
+            self._append_diagnostic(
+                accepted=False,
+                reason="parse_failed",
+                response_bytes=response_len,
+            )
             return None
+
+        # Log raw I/Q for ALL triggers for offline analysis
+        self._log_capture(capture, accepted=False)
 
         # Quick validation: does the capture contain any real swing data?
         timeline = processor.process_standard(capture)
-        outbound = [
-            r for r in timeline.readings
-            if r.is_outbound and r.speed_mph >= 15.0
-        ]
+        all_readings = timeline.readings
+        all_outbound = [r for r in all_readings if r.is_outbound]
+        all_inbound = [r for r in all_readings if not r.is_outbound]
+        outbound_speeds = [r.speed_mph for r in all_outbound]
+        inbound_speeds = [r.speed_mph for r in all_inbound]
+        peak_outbound = max(outbound_speeds, default=0)
+        peak_inbound = max(inbound_speeds, default=0)
+        peak_out_mag = max((r.magnitude for r in all_outbound), default=0)
+        peak_in_mag = max((r.magnitude for r in all_inbound), default=0)
 
-        if not outbound:
+        outbound_valid = [r for r in all_outbound if r.speed_mph >= 15.0]
+
+        if not outbound_valid:
             logger.info("GPIO passthrough trigger: no swing detected in capture, re-arming")
+            self._append_diagnostic(
+                accepted=False,
+                reason="no_outbound_speed",
+                response_bytes=response_len,
+                total_readings=len(all_readings),
+                outbound_readings=len(all_outbound),
+                inbound_readings=len(all_inbound),
+                peak_outbound_mph=peak_outbound,
+                peak_inbound_mph=peak_inbound,
+                all_outbound_speeds=outbound_speeds,
+                all_inbound_speeds=inbound_speeds,
+                peak_outbound_magnitude=peak_out_mag,
+                peak_inbound_magnitude=peak_in_mag,
+            )
             return None
 
-        peak = max(r.speed_mph for r in outbound)
+        peak = max(r.speed_mph for r in outbound_valid)
         logger.info("GPIO passthrough capture: %d readings, peak %.1f mph",
-                   len(outbound), peak)
+                   len(outbound_valid), peak)
+        self._append_diagnostic(
+            accepted=True,
+            reason="accepted",
+            response_bytes=response_len,
+            total_readings=len(all_readings),
+            outbound_readings=len(all_outbound),
+            inbound_readings=len(all_inbound),
+            peak_outbound_mph=peak_outbound,
+            peak_inbound_mph=peak_inbound,
+            all_outbound_speeds=outbound_speeds,
+            all_inbound_speeds=inbound_speeds,
+            peak_outbound_magnitude=peak_out_mag,
+            peak_inbound_magnitude=peak_in_mag,
+        )
 
         return capture
 
@@ -818,6 +990,7 @@ class SoundTrigger(TriggerStrategy):
                 NOTE: This is passed to enter_rolling_buffer_mode() by the caller.
                 The trigger does NOT configure rolling buffer mode itself.
         """
+        super().__init__()
         self.pre_trigger_segments = pre_trigger_segments
 
     def wait_for_trigger(
@@ -837,7 +1010,6 @@ class SoundTrigger(TriggerStrategy):
         output, causing the radar to dump its rolling buffer automatically.
         We just block on serial read waiting for the I/Q data to arrive.
         """
-        print(f"[SOUND] Waiting for hardware trigger (timeout={timeout}s)...")
         logger.info(
             "Waiting for hardware sound trigger (timeout=%ss)...",
             timeout
@@ -846,12 +1018,11 @@ class SoundTrigger(TriggerStrategy):
         response = radar.wait_for_hardware_trigger(timeout=timeout)
 
         if not response:
-            print("[SOUND] Timeout - no hardware trigger received")
             logger.info("Sound trigger timeout - no hardware trigger received")
             return None
 
-        print(f"[SOUND] Hardware trigger fired! Received {len(response)} bytes")
-        logger.info("Hardware trigger fired, received %d bytes", len(response))
+        response_len = len(response)
+        logger.info("Hardware trigger fired, received %d bytes", response_len)
 
         # Re-arm for next capture
         radar.rearm_rolling_buffer()
@@ -859,25 +1030,68 @@ class SoundTrigger(TriggerStrategy):
         capture = processor.parse_capture(response)
 
         if not capture:
+            self._append_diagnostic(
+                accepted=False,
+                reason="parse_failed",
+                response_bytes=response_len,
+            )
             return None
+
+        # Log raw I/Q for ALL triggers for offline analysis
+        self._log_capture(capture, accepted=False)
 
         # Quick validation: does the capture contain any real swing data?
         # At a driving range, a nearby player's impact sound can trip the
         # trigger even though nothing was moving in front of our radar.
         # Discard these false triggers immediately so we re-arm fast.
         timeline = processor.process_standard(capture)
-        outbound = [
-            r for r in timeline.readings
-            if r.is_outbound and r.speed_mph >= 15.0
-        ]
+        all_readings = timeline.readings
+        all_outbound = [r for r in all_readings if r.is_outbound]
+        all_inbound = [r for r in all_readings if not r.is_outbound]
+        outbound_speeds = [r.speed_mph for r in all_outbound]
+        inbound_speeds = [r.speed_mph for r in all_inbound]
+        peak_outbound = max(outbound_speeds, default=0)
+        peak_inbound = max(inbound_speeds, default=0)
+        peak_out_mag = max((r.magnitude for r in all_outbound), default=0)
+        peak_in_mag = max((r.magnitude for r in all_inbound), default=0)
 
-        if not outbound:
+        outbound_valid = [r for r in all_outbound if r.speed_mph >= 15.0]
+
+        if not outbound_valid:
             logger.info("Sound trigger: no swing detected in capture, re-arming")
+            self._append_diagnostic(
+                accepted=False,
+                reason="no_outbound_speed",
+                response_bytes=response_len,
+                total_readings=len(all_readings),
+                outbound_readings=len(all_outbound),
+                inbound_readings=len(all_inbound),
+                peak_outbound_mph=peak_outbound,
+                peak_inbound_mph=peak_inbound,
+                all_outbound_speeds=outbound_speeds,
+                all_inbound_speeds=inbound_speeds,
+                peak_outbound_magnitude=peak_out_mag,
+                peak_inbound_magnitude=peak_in_mag,
+            )
             return None
 
-        peak = max(r.speed_mph for r in outbound)
+        peak = max(r.speed_mph for r in outbound_valid)
         logger.info("Sound trigger capture: %d readings, peak %.1f mph",
-                   len(outbound), peak)
+                   len(outbound_valid), peak)
+        self._append_diagnostic(
+            accepted=True,
+            reason="accepted",
+            response_bytes=response_len,
+            total_readings=len(all_readings),
+            outbound_readings=len(all_outbound),
+            inbound_readings=len(all_inbound),
+            peak_outbound_mph=peak_outbound,
+            peak_inbound_mph=peak_inbound,
+            all_outbound_speeds=outbound_speeds,
+            all_inbound_speeds=inbound_speeds,
+            peak_outbound_magnitude=peak_out_mag,
+            peak_inbound_magnitude=peak_in_mag,
+        )
 
         return capture
 
