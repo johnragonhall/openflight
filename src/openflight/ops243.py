@@ -814,7 +814,7 @@ class OPS243Radar:
     # Rolling Buffer Mode (G1)
     # =========================================================================
 
-    def enter_rolling_buffer_mode(self, pre_trigger_segments: int = 12):
+    def enter_rolling_buffer_mode(self, pre_trigger_segments: int = 12, sample_rate_ksps: int = 30):
         """
         Enter rolling buffer mode using the verified working sequence.
 
@@ -838,7 +838,7 @@ class OPS243Radar:
         if not self.serial or not self.serial.is_open:
             raise ConnectionError("Not connected to radar")
 
-        print(f"[RADAR] Entering rolling buffer mode (S#{pre_trigger_segments})...")
+        print(f"[RADAR] Entering rolling buffer mode (S#{pre_trigger_segments}, S={sample_rate_ksps})...")
         logger.info("Entering rolling buffer mode (pre_trigger_segments=%d)...",
                     pre_trigger_segments)
 
@@ -860,11 +860,11 @@ class OPS243Radar:
         time.sleep(0.1)
         logger.debug("PA: activate sampling")
 
-        # Step 4: Set sample rate (30ksps for golf) - requires \r
-        self.serial.write(b"S=30\r")
+        # Step 4: Set sample rate - requires \r
+        self.serial.write(f"S={sample_rate_ksps}\r".encode())
         self.serial.flush()
         time.sleep(0.15)
-        logger.debug("S=30: 30ksps sample rate")
+        logger.debug("S=%d: %dksps sample rate", sample_rate_ksps, sample_rate_ksps)
 
         # Step 5: Set trigger split - requires \r
         pre_trigger_segments = max(0, min(32, pre_trigger_segments))
@@ -886,9 +886,9 @@ class OPS243Radar:
         # to ensure stable state before accepting triggers
         time.sleep(0.3)
 
-        print(f"[RADAR] Rolling buffer mode ACTIVE (S#{pre_trigger_segments}, 30ksps)")
-        logger.info("Rolling buffer mode active (S#%d, 30ksps)",
-                    pre_trigger_segments)
+        print(f"[RADAR] Rolling buffer mode ACTIVE (S#{pre_trigger_segments}, {sample_rate_ksps}ksps)")
+        logger.info("Rolling buffer mode active (S#%d, %dksps)",
+                    pre_trigger_segments, sample_rate_ksps)
 
     def enable_rolling_buffer(self):
         """
@@ -1139,7 +1139,7 @@ class OPS243Radar:
 
         logger.debug("Rolling buffer re-armed (S#%d)", pre_trigger_segments)
 
-    def configure_for_rolling_buffer(self, pre_trigger_segments: int = 12):
+    def configure_for_rolling_buffer(self, pre_trigger_segments: int = 12, sample_rate_ksps: int = 30):
         """
         Configure radar optimally for rolling buffer mode.
 
@@ -1169,7 +1169,7 @@ class OPS243Radar:
         logger.info("Transmit power: max (P0)")
 
         # Enter rolling buffer mode using the single source of truth
-        self.enter_rolling_buffer_mode(pre_trigger_segments=pre_trigger_segments)
+        self.enter_rolling_buffer_mode(pre_trigger_segments=pre_trigger_segments, sample_rate_ksps=sample_rate_ksps)
 
         logger.info("Rolling buffer mode configured")
 

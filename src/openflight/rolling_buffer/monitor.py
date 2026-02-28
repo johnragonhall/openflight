@@ -234,6 +234,7 @@ class RollingBufferMonitor:
         self,
         port: Optional[str] = None,
         trigger_type: str = "speed",
+        sample_rate_ksps: int = 30,
         **trigger_kwargs,
     ):
         """
@@ -249,8 +250,9 @@ class RollingBufferMonitor:
             **trigger_kwargs: Arguments for trigger strategy
         """
         self.radar = OPS243Radar(port=port)
-        self.processor = RollingBufferProcessor()
+        self.processor = RollingBufferProcessor(sample_rate=sample_rate_ksps * 1000)
         self.trigger_type = trigger_type
+        self.sample_rate_ksps = sample_rate_ksps
         self.trigger = create_trigger(trigger_type, **trigger_kwargs)
 
         self._running = False
@@ -278,8 +280,11 @@ class RollingBufferMonitor:
         if self.trigger_type != "speed":
             # Get pre_trigger_segments from the trigger if available
             pre_trigger_segments = getattr(self.trigger, 'pre_trigger_segments', 12)
-            self.radar.configure_for_rolling_buffer(pre_trigger_segments=pre_trigger_segments)
-            logger.info("Rolling buffer mode configured with S#%d", pre_trigger_segments)
+            self.radar.configure_for_rolling_buffer(
+                pre_trigger_segments=pre_trigger_segments,
+                sample_rate_ksps=self.sample_rate_ksps,
+            )
+            logger.info("Rolling buffer mode configured with S#%d, S=%d", pre_trigger_segments, self.sample_rate_ksps)
         else:
             logger.info("Using speed trigger - configuration deferred to trigger")
 

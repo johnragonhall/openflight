@@ -695,6 +695,7 @@ def start_monitor(
     trigger_type: str = "polling",
     debug: bool = False,
     trigger_kwargs: Optional[dict] = None,
+    sample_rate_ksps: int = 30,
 ):
     """
     Start the launch monitor.
@@ -720,8 +721,8 @@ def start_monitor(
     elif mode == "rolling-buffer":
         # Rolling buffer mode for spin detection
         from .rolling_buffer import RollingBufferMonitor
-        monitor = RollingBufferMonitor(port=port, trigger_type=trigger_type, **(trigger_kwargs or {}))
-        print(f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type})")
+        monitor = RollingBufferMonitor(port=port, trigger_type=trigger_type, sample_rate_ksps=sample_rate_ksps, **(trigger_kwargs or {}))
+        print(f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)")
     else:
         # Default streaming mode
         monitor = LaunchMonitor(port=port, debug=debug)
@@ -968,6 +969,11 @@ def main():
         help="Pre-trigger segments for sound trigger (default: 32 = ~137ms pre / 0ms post, each ~4.27ms at 30ksps)"
     )
     parser.add_argument(
+        "--sample-rate",
+        type=int, default=30,
+        help="Radar sample rate in ksps (default: 30). Lower = longer buffer but lower max speed. 25=174mph/164ms, 27=187mph/152ms"
+    )
+    parser.add_argument(
         "--gpio-pin",
         type=int, default=17,
         help="GPIO pin (BCM numbering) for sound-gpio trigger (default: 17, physical pin 11)"
@@ -1064,6 +1070,7 @@ def main():
         trigger_type=args.trigger,
         debug=args.debug,
         trigger_kwargs=trigger_kwargs,
+        sample_rate_ksps=args.sample_rate,
     )
 
     if args.mock:

@@ -74,8 +74,14 @@ class RollingBufferProcessor:
     MAX_SPIN_RPM = 10000
     MIN_SPIN_SNR = 3.0
 
-    def __init__(self):
-        """Initialize processor with pre-computed window function."""
+    def __init__(self, sample_rate: int = 30000):
+        """Initialize processor with pre-computed window function.
+
+        Args:
+            sample_rate: Sample rate in Hz (default 30000). Lower rates
+                extend the buffer duration at the cost of max detectable speed.
+        """
+        self.SAMPLE_RATE = sample_rate
         self.hanning_window = np.hanning(self.WINDOW_SIZE)
 
     def parse_capture(self, response: str) -> Optional[IQCapture]:
