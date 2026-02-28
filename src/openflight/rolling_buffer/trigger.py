@@ -514,7 +514,7 @@ class GPIOSoundTrigger(TriggerStrategy):
         self,
         gpio_pin: int = 17,
         pre_trigger_segments: int = 32,
-        debounce_ms: int = 200,
+        debounce_ms: int = 20,
     ):
         """
         Initialize GPIO-assisted sound trigger.
@@ -533,7 +533,7 @@ class GPIOSoundTrigger(TriggerStrategy):
         self.pre_trigger_segments = pre_trigger_segments
         self.debounce_ms = debounce_ms
         self._button = None
-        self._trigger_event = {"triggered": False}
+        self._trigger_event = {"triggered": False, "edge_time": 0.0}
         self._gpio_initialized = False
 
     def _init_gpio(self):
@@ -548,6 +548,7 @@ class GPIOSoundTrigger(TriggerStrategy):
             return False
 
         def on_trigger():
+            self._trigger_event["edge_time"] = time.time()
             self._trigger_event["triggered"] = True
 
         self._button = Button(
@@ -593,13 +594,13 @@ class GPIOSoundTrigger(TriggerStrategy):
 
         while (time.time() - start_time) < timeout:
             if self._trigger_event["triggered"]:
+                edge_time = self._trigger_event["edge_time"]
                 self._trigger_event["triggered"] = False
-                edge_time = time.time()
-                logger.info("GPIO edge detected on GPIO%d, sending S! trigger...",
-                           self.gpio_pin)
 
-                # Measure edge-to-S! latency (trigger_capture sends S! immediately)
+                # Measure edge-to-S! latency (from GPIO callback to now)
                 trigger_latency = (time.time() - edge_time) * 1000
+                logger.info("GPIO edge detected on GPIO%d (%.1fms ago), sending S! trigger...",
+                           self.gpio_pin, trigger_latency)
                 response = radar.trigger_capture(timeout=5.0)
 
                 if not response:
@@ -612,7 +613,7 @@ class GPIOSoundTrigger(TriggerStrategy):
                         trigger_latency_ms=trigger_latency,
                     )
                     radar.rearm_rolling_buffer()
-                    time.sleep(0.3)
+                    self._trigger_event["triggered"] = False  # discard edges during rearm
                     continue
 
                 response_len = len(response)
@@ -625,7 +626,7 @@ class GPIOSoundTrigger(TriggerStrategy):
 
                 # Re-arm for next capture
                 radar.rearm_rolling_buffer()
-                time.sleep(0.3)
+                self._trigger_event["triggered"] = False  # discard edges during rearm
 
                 capture = processor.parse_capture(response)
 
@@ -707,7 +708,7 @@ class GPIOSoundTrigger(TriggerStrategy):
 
                 return capture
 
-            time.sleep(0.01)  # 10ms poll interval
+            time.sleep(0.001)  # 1ms poll interval — latency-critical path
 
         logger.info("GPIO sound trigger timeout - no trigger received")
         return None
