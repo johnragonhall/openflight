@@ -513,7 +513,7 @@ class GPIOSoundTrigger(TriggerStrategy):
     def __init__(
         self,
         gpio_pin: int = 17,
-        pre_trigger_segments: int = 20,
+        pre_trigger_segments: int = 32,
         debounce_ms: int = 20,
     ):
         """
