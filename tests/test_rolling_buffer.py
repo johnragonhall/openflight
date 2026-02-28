@@ -878,6 +878,58 @@ class TestDualPeakExtraction:
         assert speed > 10, f"Detected speed {speed} mph is too low (DC artifact?)"
         assert abs(speed - 80) < 5, f"Outbound speed {speed} not near 80 mph"
 
+    def test_two_outbound_peaks_extracted(self, processor):
+        """Two outbound signals (club+ball) should both be extracted."""
+        import numpy as np
+
+        n = processor.WINDOW_SIZE
+        t = np.arange(n) / processor.SAMPLE_RATE
+
+        # Club at ~40 mph, Ball at ~120 mph — both outbound (positive freq)
+        club_freq = (40 / processor.MPS_TO_MPH) * 2 / processor.WAVELENGTH_M
+        ball_freq = (120 / processor.MPS_TO_MPH) * 2 / processor.WAVELENGTH_M
+
+        i_signal = (
+            400 * np.cos(2 * np.pi * club_freq * t)
+            + 300 * np.cos(2 * np.pi * ball_freq * t)
+        )
+        q_signal = (
+            400 * np.sin(2 * np.pi * club_freq * t)
+            + 300 * np.sin(2 * np.pi * ball_freq * t)
+        )
+
+        i_block = (i_signal + 2048).astype(np.float64)
+        q_block = (q_signal + 2048).astype(np.float64)
+
+        results = processor._process_block(i_block, q_block)
+
+        outbound = [(s, m, d) for s, m, d in results if d == "outbound"]
+        assert len(outbound) >= 2, f"Expected 2+ outbound peaks, got {len(outbound)}: {results}"
+
+        speeds = sorted([s for s, m, d in outbound])
+        assert any(abs(s - 40) < 5 for s in speeds), f"No peak near 40 mph: {speeds}"
+        assert any(abs(s - 120) < 5 for s in speeds), f"No peak near 120 mph: {speeds}"
+
+    def test_single_outbound_peak_no_regression(self, processor):
+        """Single outbound signal should still work correctly."""
+        import numpy as np
+
+        n = processor.WINDOW_SIZE
+        t = np.arange(n) / processor.SAMPLE_RATE
+
+        outbound_freq = (80 / processor.MPS_TO_MPH) * 2 / processor.WAVELENGTH_M
+        i_signal = 500 * np.cos(2 * np.pi * outbound_freq * t)
+        q_signal = 500 * np.sin(2 * np.pi * outbound_freq * t)
+
+        i_block = (i_signal + 2048).astype(np.float64)
+        q_block = (q_signal + 2048).astype(np.float64)
+
+        results = processor._process_block(i_block, q_block)
+
+        outbound = [(s, m, d) for s, m, d in results if d == "outbound"]
+        assert len(outbound) >= 1
+        assert abs(outbound[0][0] - 80) < 5
+
     def test_ball_found_when_backswing_stronger(self, processor):
         """Outbound ball should be found even when inbound backswing is stronger."""
         import numpy as np
@@ -923,3 +975,267 @@ class TestDualPeakExtraction:
         # Peak outbound should be near 120 mph
         peak_outbound = max(r.speed_mph for r in outbound)
         assert peak_outbound > 100, f"Peak outbound {peak_outbound} mph too low"
+
+
+# =============================================================================
+# Tests for _find_peaks
+# =============================================================================
+
+class TestFindPeaks:
+    """Tests for the _find_peaks local maxima finder."""
+
+    @pytest.fixture
+    def processor(self):
+        return RollingBufferProcessor()
+
+    def test_single_peak(self, processor):
+        """Single peak above threshold should be found."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        magnitude[500] = 100.0  # Clear peak
+        magnitude[499] = 20.0   # Neighbors lower
+        magnitude[501] = 20.0
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        assert len(peaks) >= 1
+        assert peaks[0][0] == 500
+        assert peaks[0][1] == 100.0
+
+    def test_two_separated_peaks(self, processor):
+        """Two well-separated peaks should both be found."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        # Peak 1
+        magnitude[300] = 80.0
+        magnitude[299] = 10.0
+        magnitude[301] = 10.0
+        # Peak 2 — well separated (>50 bins apart)
+        magnitude[600] = 120.0
+        magnitude[599] = 10.0
+        magnitude[601] = 10.0
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        assert len(peaks) >= 2
+        bins = [p[0] for p in peaks]
+        assert 300 in bins
+        assert 600 in bins
+
+    def test_close_peaks_merged(self, processor):
+        """Two peaks within MIN_PEAK_SEPARATION_BINS should keep only the stronger."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        # Peak 1 — weaker
+        magnitude[300] = 50.0
+        magnitude[299] = 10.0
+        magnitude[301] = 10.0
+        # Peak 2 — stronger, only 20 bins away (< 50)
+        magnitude[320] = 80.0
+        magnitude[319] = 10.0
+        magnitude[321] = 10.0
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        # Should only keep the stronger peak at 320
+        assert len(peaks) == 1
+        assert peaks[0][0] == 320
+
+    def test_below_threshold_rejected(self, processor):
+        """Peaks below MAGNITUDE_THRESHOLD should be rejected."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        magnitude[500] = 1.0  # Below threshold (3)
+        magnitude[499] = 0.5
+        magnitude[501] = 0.5
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        assert len(peaks) == 0
+
+    def test_max_peaks_cap(self, processor):
+        """Should return at most MAX_PEAKS_PER_DIRECTION peaks."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        # Create 5 well-separated peaks
+        for i, pos in enumerate([200, 400, 600, 800, 1000]):
+            magnitude[pos] = 100.0 + i * 10
+            magnitude[pos - 1] = 5.0
+            magnitude[pos + 1] = 5.0
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        assert len(peaks) <= processor.MAX_PEAKS_PER_DIRECTION
+
+    def test_flat_region_no_peaks(self, processor):
+        """Flat constant signal should produce no peaks."""
+        import numpy as np
+
+        magnitude = np.ones(2048) * 50.0  # Flat — no local maxima
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        assert len(peaks) == 0
+
+    def test_sorted_by_magnitude_descending(self, processor):
+        """Returned peaks should be sorted by magnitude descending."""
+        import numpy as np
+
+        magnitude = np.zeros(2048)
+        magnitude[200] = 50.0
+        magnitude[199] = 5.0
+        magnitude[201] = 5.0
+        magnitude[400] = 100.0
+        magnitude[399] = 5.0
+        magnitude[401] = 5.0
+        magnitude[600] = 75.0
+        magnitude[599] = 5.0
+        magnitude[601] = 5.0
+
+        peaks = processor._find_peaks(magnitude, start=1, end=2048)
+        mags = [p[1] for p in peaks]
+        assert mags == sorted(mags, reverse=True)
+
+
+# =============================================================================
+# Tests for find_club_speed with concurrent readings
+# =============================================================================
+
+class TestFindClubSpeedOverlap:
+    """Tests for find_club_speed searching concurrent timestamps."""
+
+    @pytest.fixture
+    def processor(self):
+        return RollingBufferProcessor()
+
+    def test_club_at_same_timestamp_as_ball(self, processor):
+        """Club reading at the same timestamp as ball should be found."""
+        readings = [
+            SpeedReading(speed_mph=60.0, magnitude=200.0, timestamp_ms=10.0, direction="outbound"),
+            SpeedReading(speed_mph=80.0, magnitude=300.0, timestamp_ms=10.0, direction="outbound"),
+        ]
+        timeline = SpeedTimeline(readings=readings, sample_rate_hz=937.5)
+
+        club_speed, club_ts = processor.find_club_speed(
+            timeline, ball_speed_mph=80.0, ball_timestamp_ms=10.0
+        )
+
+        assert club_speed == 60.0
+        assert club_ts == 10.0
+
+    def test_club_before_ball_still_works(self, processor):
+        """Club at earlier timestamp should still be found."""
+        readings = [
+            SpeedReading(speed_mph=58.0, magnitude=200.0, timestamp_ms=5.0, direction="outbound"),
+            SpeedReading(speed_mph=80.0, magnitude=300.0, timestamp_ms=10.0, direction="outbound"),
+        ]
+        timeline = SpeedTimeline(readings=readings, sample_rate_hz=937.5)
+
+        club_speed, club_ts = processor.find_club_speed(
+            timeline, ball_speed_mph=80.0, ball_timestamp_ms=10.0
+        )
+
+        assert club_speed == 58.0
+        assert club_ts == 5.0
+
+    def test_ball_not_returned_as_club(self, processor):
+        """Ball reading itself should not be returned as club speed."""
+        readings = [
+            SpeedReading(speed_mph=80.0, magnitude=300.0, timestamp_ms=10.0, direction="outbound"),
+        ]
+        timeline = SpeedTimeline(readings=readings, sample_rate_hz=937.5)
+
+        club_speed, club_ts = processor.find_club_speed(
+            timeline, ball_speed_mph=80.0, ball_timestamp_ms=10.0
+        )
+
+        assert club_speed is None
+        assert club_ts is None
+
+    def test_speed_range_filtering(self, processor):
+        """Only speeds within 67-85% of ball speed should be candidates."""
+        readings = [
+            # Too slow (< 67% of 100)
+            SpeedReading(speed_mph=60.0, magnitude=200.0, timestamp_ms=10.0, direction="outbound"),
+            # Too fast (> 85% of 100)
+            SpeedReading(speed_mph=90.0, magnitude=200.0, timestamp_ms=10.0, direction="outbound"),
+            # Just right (75% of 100)
+            SpeedReading(speed_mph=75.0, magnitude=200.0, timestamp_ms=10.0, direction="outbound"),
+            # Ball
+            SpeedReading(speed_mph=100.0, magnitude=400.0, timestamp_ms=10.0, direction="outbound"),
+        ]
+        timeline = SpeedTimeline(readings=readings, sample_rate_hz=937.5)
+
+        club_speed, _ = processor.find_club_speed(
+            timeline, ball_speed_mph=100.0, ball_timestamp_ms=10.0
+        )
+
+        assert club_speed == 75.0
+
+    def test_highest_magnitude_selected(self, processor):
+        """Among valid candidates, highest magnitude should win."""
+        readings = [
+            SpeedReading(speed_mph=70.0, magnitude=100.0, timestamp_ms=10.0, direction="outbound"),
+            SpeedReading(speed_mph=75.0, magnitude=250.0, timestamp_ms=10.0, direction="outbound"),
+            SpeedReading(speed_mph=100.0, magnitude=400.0, timestamp_ms=10.0, direction="outbound"),
+        ]
+        timeline = SpeedTimeline(readings=readings, sample_rate_hz=937.5)
+
+        club_speed, _ = processor.find_club_speed(
+            timeline, ball_speed_mph=100.0, ball_timestamp_ms=10.0
+        )
+
+        assert club_speed == 75.0  # Higher magnitude
+
+
+# =============================================================================
+# Tests for Multi-Peak Integration (end-to-end)
+# =============================================================================
+
+class TestMultiPeakIntegration:
+    """End-to-end test: process_capture with synthetic club+ball I/Q."""
+
+    @pytest.fixture
+    def processor(self):
+        return RollingBufferProcessor()
+
+    def test_process_capture_finds_club_and_ball(self, processor):
+        """process_capture should find both club and ball from dual-tone I/Q."""
+        import numpy as np
+
+        n_samples = 4096
+        t = np.arange(n_samples) / processor.SAMPLE_RATE
+
+        # Club at ~60 mph (outbound), Ball at ~80 mph (outbound)
+        club_freq = (60 / processor.MPS_TO_MPH) * 2 / processor.WAVELENGTH_M
+        ball_freq = (80 / processor.MPS_TO_MPH) * 2 / processor.WAVELENGTH_M
+
+        i_signal = (
+            400 * np.cos(2 * np.pi * club_freq * t)
+            + 300 * np.cos(2 * np.pi * ball_freq * t)
+        )
+        q_signal = (
+            400 * np.sin(2 * np.pi * club_freq * t)
+            + 300 * np.sin(2 * np.pi * ball_freq * t)
+        )
+
+        i_samples = (i_signal + 2048).astype(int).tolist()
+        q_samples = (q_signal + 2048).astype(int).tolist()
+
+        capture = IQCapture(
+            sample_time=0.0,
+            trigger_time=0.0,
+            i_samples=i_samples,
+            q_samples=q_samples,
+            timestamp=1234567890.0,
+        )
+
+        result = processor.process_capture(capture)
+
+        assert result is not None
+        assert abs(result.ball_speed_mph - 80) < 5, (
+            f"Ball speed {result.ball_speed_mph} not near 80 mph"
+        )
+        assert result.club_speed_mph is not None, "Club speed not detected"
+        assert abs(result.club_speed_mph - 60) < 5, (
+            f"Club speed {result.club_speed_mph} not near 60 mph"
+        )
