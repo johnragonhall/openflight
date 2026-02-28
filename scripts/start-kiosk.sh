@@ -49,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             SOUND_PRE_TRIGGER="$2"
             shift 2
             ;;
+        --sample-rate)
+            SAMPLE_RATE="$2"
+            shift 2
+            ;;
         --port|-p)
             PORT="$2"
             shift 2
@@ -139,6 +143,10 @@ fi
 
 if [ -n "$SOUND_PRE_TRIGGER" ]; then
     SERVER_CMD="$SERVER_CMD --sound-pre-trigger $SOUND_PRE_TRIGGER"
+fi
+
+if [ -n "$SAMPLE_RATE" ]; then
+    SERVER_CMD="$SERVER_CMD --sample-rate $SAMPLE_RATE"
 fi
 
 # Start the server
