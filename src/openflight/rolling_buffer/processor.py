@@ -438,23 +438,41 @@ class RollingBufferProcessor:
         if np.std(detrended) < 0.1:
             return SpinResult.no_spin_detected("Speed variation too low")
 
-        # FFT on detrended speeds
+        # Apply Hann window to reduce spectral leakage
         n = len(detrended)
-        spin_fft = np.fft.fft(detrended)
-        frequencies = np.fft.fftfreq(n, d=1 / sample_rate_hz)
+        windowed = detrended * np.hanning(n)
 
-        # Only look at positive frequencies (up to Nyquist)
-        half = n // 2
+        # Zero-pad to 256 points for better frequency resolution.
+        # With 18-32 raw samples, the unpadded FFT has only 8-15 bins,
+        # each spanning 1000-2000 RPM. Zero-padding to 256 gives ~146 RPM/bin
+        # resolution, making peaks sharper and improving SNR measurement.
+        fft_size = max(256, n)
+        spin_fft = np.fft.fft(windowed, fft_size)
+        frequencies = np.fft.fftfreq(fft_size, d=1 / sample_rate_hz)
+
+        # Only look at positive frequencies in spin range
+        half = fft_size // 2
         magnitude = np.abs(spin_fft[1:half])
         freqs = frequencies[1:half]
 
-        # Find peak
-        peak_idx = np.argmax(magnitude)
-        peak_freq = freqs[peak_idx]
-        peak_mag = magnitude[peak_idx]
+        # Restrict to valid spin frequency range (MIN_SPIN_RPM to MAX_SPIN_RPM)
+        min_freq = self.MIN_SPIN_RPM / 60
+        max_freq = self.MAX_SPIN_RPM / 60
+        valid_mask = (freqs >= min_freq) & (freqs <= max_freq)
 
-        # Calculate SNR
-        noise_floor = np.median(magnitude)
+        if not np.any(valid_mask):
+            return SpinResult.no_spin_detected("No valid spin frequencies in range")
+
+        valid_magnitude = magnitude[valid_mask]
+        valid_freqs = freqs[valid_mask]
+
+        # Find peak in valid range
+        peak_idx = np.argmax(valid_magnitude)
+        peak_freq = valid_freqs[peak_idx]
+        peak_mag = valid_magnitude[peak_idx]
+
+        # Calculate SNR against noise floor (median of all valid-range bins)
+        noise_floor = np.median(valid_magnitude)
         snr = peak_mag / noise_floor if noise_floor > 0 else 0
 
         # Convert to RPM
@@ -580,6 +598,15 @@ class RollingBufferProcessor:
             timeline, ball_timestamp_ms, ball_speed_mph
         )
         spin = self.detect_spin(ball_speeds, timeline.sample_rate_hz)
+
+        logger.info(
+            "Spin analysis: %d ball speed samples in %.0f-%.0fms window, "
+            "sample_rate=%.0f Hz, spin=%.0f RPM, snr=%.2f, quality=%s",
+            len(ball_speeds),
+            ball_timestamp_ms, ball_timestamp_ms + 50,
+            timeline.sample_rate_hz,
+            spin.spin_rpm, spin.snr, spin.quality,
+        )
 
         return ProcessedCapture(
             timeline=timeline,
