@@ -83,7 +83,7 @@ function AppContent() {
     if (isNewShot && isLaunchDaddyMode) {
       triggerExplosion();
     }
-  }, [isNewShot, isLaunchDaddyMode, triggerExplosion]);
+  }, [shotVersion, isLaunchDaddyMode, triggerExplosion]);
 
   const handleClubChange = (club: string) => {
     setSelectedClub(club);
