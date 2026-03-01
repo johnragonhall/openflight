@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, type ReactNode } from "react";
-import type { Shot } from "../types/shot";
-import { ShotContext } from "./shotContext";
+import { useState, useCallback, useRef, type ReactNode } from 'react';
+import type { Shot } from '../types/shot';
+import { ShotContext } from './shotContext';
 
 /** Duration to keep isNewShot true — covers the longest animation (shot-glow: 2s) */
 const NEW_SHOT_DURATION_MS = 2500;
@@ -23,10 +23,7 @@ export function ShotProvider({ children }: { children: ReactNode }) {
     setIsNewShot(true);
     setShotVersion((v) => v + 1);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(
-      () => setIsNewShot(false),
-      NEW_SHOT_DURATION_MS,
-    );
+    timerRef.current = setTimeout(() => setIsNewShot(false), NEW_SHOT_DURATION_MS);
   }, []);
 
   const setShots = useCallback((newShots: Shot[]) => {

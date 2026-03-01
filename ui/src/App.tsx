@@ -1,25 +1,25 @@
-import { useState, useEffect } from "react";
-import { useSocket } from "./hooks/useSocket";
-import { ShotDisplay } from "./components/ShotDisplay";
-import { StatsView } from "./components/StatsView";
-import { ShotList } from "./components/ShotList";
-import { DebugPanel } from "./components/DebugPanel";
-import { CameraFeed } from "./components/CameraFeed";
-import { ConnectionStatus } from "./components/ConnectionStatus";
-import { ClubPicker } from "./components/ClubPicker";
-import { BallDetectionIndicator } from "./components/BallDetectionIndicator";
+import { useState, useEffect } from 'react';
+import { useSocket } from './hooks/useSocket';
+import { ShotDisplay } from './components/ShotDisplay';
+import { StatsView } from './components/StatsView';
+import { ShotList } from './components/ShotList';
+import { DebugPanel } from './components/DebugPanel';
+import { CameraFeed } from './components/CameraFeed';
+import { ConnectionStatus } from './components/ConnectionStatus';
+import { ClubPicker } from './components/ClubPicker';
+import { BallDetectionIndicator } from './components/BallDetectionIndicator';
 import {
   LaunchDaddyProvider,
   useLaunchDaddy,
   LaunchDaddyOverlay,
   LaunchDaddyBrand,
   LaunchDaddySecretIndicator,
-} from "./components/LaunchDaddy";
-import { ShotProvider } from "./state/ShotProvider";
-import { useShotContext } from "./state/useShotContext";
-import "./App.css";
+} from './components/LaunchDaddy';
+import { ShotProvider } from './state/ShotProvider';
+import { useShotContext } from './state/useShotContext';
+import './App.css';
 
-type View = "live" | "stats" | "shots" | "camera" | "debug";
+type View = 'live' | 'stats' | 'shots' | 'camera' | 'debug';
 
 // Navigation icons as inline SVGs for better control
 const Icons = {
@@ -32,20 +32,12 @@ const Icons = {
   ),
   stats: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-      <path
-        d="M18 20V10M12 20V4M6 20v-6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   shots: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-      <path
-        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   camera: (
@@ -56,11 +48,7 @@ const Icons = {
   ),
   debug: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-      <path
-        d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
 };
@@ -87,10 +75,9 @@ function AppContent() {
 
   const { latestShot, shots, isNewShot, shotVersion } = useShotContext();
 
-  const [currentView, setCurrentView] = useState<View>("live");
-  const [selectedClub, setSelectedClub] = useState("driver");
-  const { isLaunchDaddyMode, isExploding, triggerExplosion, handleSecretTap } =
-    useLaunchDaddy();
+  const [currentView, setCurrentView] = useState<View>('live');
+  const [selectedClub, setSelectedClub] = useState('driver');
+  const { isLaunchDaddyMode, isExploding, triggerExplosion, handleSecretTap } = useLaunchDaddy();
 
   // Trigger explosion when a new shot is detected in Launch Daddy mode
   useEffect(() => {
@@ -106,9 +93,7 @@ function AppContent() {
   };
 
   return (
-    <div
-      className={`app ${isLaunchDaddyMode ? "app--launch-daddy" : ""} ${isExploding ? "app--exploding" : ""}`}
-    >
+    <div className={`app ${isLaunchDaddyMode ? 'app--launch-daddy' : ''} ${isExploding ? 'app--exploding' : ''}`}>
       {/* Launch Daddy Overlay */}
       <LaunchDaddyOverlay />
       <LaunchDaddySecretIndicator />
@@ -118,30 +103,23 @@ function AppContent() {
         <div
           className="header__secret-tap"
           onClick={handleSecretTap}
-          onKeyDown={(e) => e.key === "Enter" && handleSecretTap()}
+          onKeyDown={(e) => e.key === 'Enter' && handleSecretTap()}
           role="button"
           tabIndex={0}
           style={{
-            padding: "8px",
-            cursor: "pointer",
-            minWidth: "44px",
-            minHeight: "44px",
-            display: "flex",
-            alignItems: "center",
-            userSelect: "none",
+            padding: '8px',
+            cursor: 'pointer',
+            minWidth: '44px',
+            minHeight: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            userSelect: 'none',
           }}
         >
-          {isLaunchDaddyMode ? (
-            <LaunchDaddyBrand />
-          ) : (
-            <span style={{ opacity: 0.3, fontSize: "1.2rem" }}>⛳</span>
-          )}
+          {isLaunchDaddyMode ? <LaunchDaddyBrand /> : <span style={{ opacity: 0.3, fontSize: '1.2rem' }}>⛳</span>}
         </div>
         <div className="header__controls">
-          <ClubPicker
-            selectedClub={selectedClub}
-            onClubChange={handleClubChange}
-          />
+          <ClubPicker selectedClub={selectedClub} onClubChange={handleClubChange} />
           <BallDetectionIndicator
             available={cameraStatus.available}
             enabled={cameraStatus.enabled}
@@ -155,40 +133,38 @@ function AppContent() {
 
       <nav className="nav">
         <button
-          className={`nav__button ${currentView === "live" ? "nav__button--active" : ""}`}
-          onClick={() => setCurrentView("live")}
+          className={`nav__button ${currentView === 'live' ? 'nav__button--active' : ''}`}
+          onClick={() => setCurrentView('live')}
         >
           {Icons.live}
           <span>Live</span>
         </button>
         <button
-          className={`nav__button ${currentView === "stats" ? "nav__button--active" : ""}`}
-          onClick={() => setCurrentView("stats")}
+          className={`nav__button ${currentView === 'stats' ? 'nav__button--active' : ''}`}
+          onClick={() => setCurrentView('stats')}
         >
           {Icons.stats}
           <span>Stats</span>
         </button>
         <button
-          className={`nav__button ${currentView === "shots" ? "nav__button--active" : ""}`}
-          onClick={() => setCurrentView("shots")}
+          className={`nav__button ${currentView === 'shots' ? 'nav__button--active' : ''}`}
+          onClick={() => setCurrentView('shots')}
         >
           {Icons.shots}
           <span>Shots</span>
-          {shots.length > 0 && (
-            <span className="nav__badge">{shots.length}</span>
-          )}
+          {shots.length > 0 && <span className="nav__badge">{shots.length}</span>}
         </button>
         <button
-          className={`nav__button ${currentView === "camera" ? "nav__button--active" : ""} ${cameraStatus.streaming ? "nav__button--streaming" : ""}`}
-          onClick={() => setCurrentView("camera")}
+          className={`nav__button ${currentView === 'camera' ? 'nav__button--active' : ''} ${cameraStatus.streaming ? 'nav__button--streaming' : ''}`}
+          onClick={() => setCurrentView('camera')}
         >
           {Icons.camera}
           <span>Camera</span>
           {cameraStatus.ball_detected && <span className="nav__ball-dot" />}
         </button>
         <button
-          className={`nav__button ${currentView === "debug" ? "nav__button--active" : ""} ${debugMode ? "nav__button--recording" : ""}`}
-          onClick={() => setCurrentView("debug")}
+          className={`nav__button ${currentView === 'debug' ? 'nav__button--active' : ''} ${debugMode ? 'nav__button--recording' : ''}`}
+          onClick={() => setCurrentView('debug')}
         >
           {Icons.debug}
           <span>Debug</span>
@@ -197,14 +173,10 @@ function AppContent() {
       </nav>
 
       <main className="main">
-        {currentView === "live" && (
+        {currentView === 'live' && (
           <div className="live-view">
             {isNewShot && <div key={shotVersion} className="shot-flash" />}
-            <ShotDisplay
-              key={shotVersion}
-              shot={latestShot}
-              animate={isNewShot}
-            />
+            <ShotDisplay key={shotVersion} shot={latestShot} animate={isNewShot} />
             {mockMode && (
               <button className="simulate-button" onClick={simulateShot}>
                 Simulate Shot
@@ -212,18 +184,12 @@ function AppContent() {
             )}
           </div>
         )}
-        {currentView === "stats" && (
-          <StatsView shots={shots} onClearSession={clearSession} />
+        {currentView === 'stats' && <StatsView shots={shots} onClearSession={clearSession} />}
+        {currentView === 'shots' && <ShotList shots={shots} />}
+        {currentView === 'camera' && (
+          <CameraFeed cameraStatus={cameraStatus} onToggleCamera={toggleCamera} onToggleStream={toggleCameraStream} />
         )}
-        {currentView === "shots" && <ShotList shots={shots} />}
-        {currentView === "camera" && (
-          <CameraFeed
-            cameraStatus={cameraStatus}
-            onToggleCamera={toggleCamera}
-            onToggleStream={toggleCameraStream}
-          />
-        )}
-        {currentView === "debug" && (
+        {currentView === 'debug' && (
           <DebugPanel
             enabled={debugMode}
             readings={debugReadings}
