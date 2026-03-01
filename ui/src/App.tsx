@@ -72,7 +72,7 @@ function AppContent() {
     toggleCameraStream,
   } = useSocket();
 
-  const { latestShot, shots, isNewShot } = useShotContext();
+  const { latestShot, shots, isNewShot, shotVersion } = useShotContext();
 
   const [currentView, setCurrentView] = useState<View>('live');
   const [selectedClub, setSelectedClub] = useState('driver');
@@ -173,8 +173,8 @@ function AppContent() {
       <main className="main">
         {currentView === 'live' && (
           <div className="live-view">
-            {isNewShot && <div className="shot-flash" />}
-            <ShotDisplay shot={latestShot} animate={isNewShot} />
+            {isNewShot && <div key={shotVersion} className="shot-flash" />}
+            <ShotDisplay key={shotVersion} shot={latestShot} animate={isNewShot} />
             {mockMode && (
               <button className="simulate-button" onClick={simulateShot}>
                 Simulate Shot

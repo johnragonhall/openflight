@@ -5,6 +5,8 @@ interface ShotContextValue {
   latestShot: Shot | null;
   shots: Shot[];
   isNewShot: boolean;
+  /** Increments on every new shot — use as React key to force animation remount */
+  shotVersion: number;
   addShot: (shot: Shot) => void;
   setShots: (shots: Shot[]) => void;
   clearShots: () => void;
@@ -19,6 +21,7 @@ export function ShotProvider({ children }: { children: ReactNode }) {
   const [latestShot, setLatestShot] = useState<Shot | null>(null);
   const [shots, setShotsState] = useState<Shot[]>([]);
   const [isNewShot, setIsNewShot] = useState(false);
+  const [shotVersion, setShotVersion] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const addShot = useCallback((shot: Shot) => {
@@ -30,6 +33,7 @@ export function ShotProvider({ children }: { children: ReactNode }) {
     });
 
     setIsNewShot(true);
+    setShotVersion((v) => v + 1);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setIsNewShot(false), NEW_SHOT_DURATION_MS);
   }, []);
@@ -50,7 +54,17 @@ export function ShotProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ShotContext.Provider value={{ latestShot, shots, isNewShot, addShot, setShots, clearShots }}>
+    <ShotContext.Provider
+      value={{
+        latestShot,
+        shots,
+        isNewShot,
+        shotVersion,
+        addShot,
+        setShots,
+        clearShots,
+      }}
+    >
       {children}
     </ShotContext.Provider>
   );
