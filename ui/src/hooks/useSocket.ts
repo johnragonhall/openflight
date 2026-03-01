@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import type { Shot, SessionStats, SessionState, TriggerDiagnostic, TriggerStatus } from '../types/shot';
-import { useShotContext } from '../state/ShotContext';
+import { useShotContext } from '../state/useShotContext';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:8080';
 
@@ -55,9 +55,12 @@ export function useSocket() {
   const addShotRef = useRef(addShot);
   const setShotsRef = useRef(setShots);
   const clearShotsRef = useRef(clearShots);
-  addShotRef.current = addShot;
-  setShotsRef.current = setShots;
-  clearShotsRef.current = clearShots;
+
+  useEffect(() => {
+    addShotRef.current = addShot;
+    setShotsRef.current = setShots;
+    clearShotsRef.current = clearShots;
+  }, [addShot, setShots, clearShots]);
 
   const [connected, setConnected] = useState(false);
   const [mockMode, setMockMode] = useState(false);

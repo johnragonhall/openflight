@@ -1,18 +1,6 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
-import type { Shot } from '../types/shot';
-
-interface ShotContextValue {
-  latestShot: Shot | null;
-  shots: Shot[];
-  isNewShot: boolean;
-  /** Increments on every new shot — use as React key to force animation remount */
-  shotVersion: number;
-  addShot: (shot: Shot) => void;
-  setShots: (shots: Shot[]) => void;
-  clearShots: () => void;
-}
-
-const ShotContext = createContext<ShotContextValue | null>(null);
+import { useState, useCallback, useRef, type ReactNode } from "react";
+import type { Shot } from "../types/shot";
+import { ShotContext } from "./shotContext";
 
 /** Duration to keep isNewShot true — covers the longest animation (shot-glow: 2s) */
 const NEW_SHOT_DURATION_MS = 2500;
@@ -35,7 +23,10 @@ export function ShotProvider({ children }: { children: ReactNode }) {
     setIsNewShot(true);
     setShotVersion((v) => v + 1);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setIsNewShot(false), NEW_SHOT_DURATION_MS);
+    timerRef.current = setTimeout(
+      () => setIsNewShot(false),
+      NEW_SHOT_DURATION_MS,
+    );
   }, []);
 
   const setShots = useCallback((newShots: Shot[]) => {
@@ -68,12 +59,4 @@ export function ShotProvider({ children }: { children: ReactNode }) {
       {children}
     </ShotContext.Provider>
   );
-}
-
-export function useShotContext(): ShotContextValue {
-  const ctx = useContext(ShotContext);
-  if (!ctx) {
-    throw new Error('useShotContext must be used within a <ShotProvider>');
-  }
-  return ctx;
 }
