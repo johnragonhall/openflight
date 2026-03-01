@@ -4,7 +4,7 @@ import './ShotDisplay.css';
 
 interface ShotDisplayProps {
   shot: Shot | null;
-  isLatest?: boolean;
+  animate?: boolean;
 }
 
 // Speed gauge configuration
@@ -119,7 +119,7 @@ function getLaunchAngleQuality(confidence: number | null): 'high' | 'medium' | '
   return 'low';
 }
 
-export function ShotDisplay({ shot, isLatest = true }: ShotDisplayProps) {
+export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
   const carryRange = useMemo(() => {
     if (!shot) return null;
     return `${shot.carry_range[0]}–${shot.carry_range[1]} yds`;
@@ -151,7 +151,7 @@ export function ShotDisplay({ shot, isLatest = true }: ShotDisplayProps) {
   const hasLaunchAngle = shot.launch_angle_vertical !== null;
 
   return (
-    <div className={`shot-display ${isLatest ? 'shot-display--latest' : ''}`}>
+    <div className={`shot-display ${animate ? 'shot-display--animate' : ''}`}>
       <div className="shot-display__layout">
         {/* Left: Ball Speed Gauge */}
         <div className="shot-display__primary">

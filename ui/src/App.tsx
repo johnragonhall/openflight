@@ -15,6 +15,7 @@ import {
   LaunchDaddyBrand,
   LaunchDaddySecretIndicator,
 } from './components/LaunchDaddy';
+import { ShotProvider, useShotContext } from './state/ShotContext';
 import './App.css';
 
 type View = 'live' | 'stats' | 'shots' | 'camera' | 'debug';
@@ -59,8 +60,6 @@ function AppContent() {
     debugReadings,
     debugShotLogs,
     radarConfig,
-    latestShot,
-    shots,
     cameraStatus,
     triggerDiagnostics,
     triggerStatus,
@@ -72,16 +71,19 @@ function AppContent() {
     toggleCamera,
     toggleCameraStream,
   } = useSocket();
+
+  const { latestShot, shots, isNewShot } = useShotContext();
+
   const [currentView, setCurrentView] = useState<View>('live');
   const [selectedClub, setSelectedClub] = useState('driver');
   const { isLaunchDaddyMode, isExploding, triggerExplosion, handleSecretTap } = useLaunchDaddy();
 
-  // Trigger explosion when a new shot is detected
+  // Trigger explosion when a new shot is detected in Launch Daddy mode
   useEffect(() => {
-    if (latestShot && isLaunchDaddyMode) {
+    if (isNewShot && isLaunchDaddyMode) {
       triggerExplosion();
     }
-  }, [latestShot?.timestamp, isLaunchDaddyMode, triggerExplosion]);
+  }, [isNewShot, isLaunchDaddyMode, triggerExplosion]);
 
   const handleClubChange = (club: string) => {
     setSelectedClub(club);
@@ -151,9 +153,7 @@ function AppContent() {
           {shots.length > 0 && <span className="nav__badge">{shots.length}</span>}
         </button>
         <button
-          className={`nav__button ${
-            currentView === 'camera' ? 'nav__button--active' : ''
-          } ${cameraStatus.streaming ? 'nav__button--streaming' : ''}`}
+          className={`nav__button ${currentView === 'camera' ? 'nav__button--active' : ''} ${cameraStatus.streaming ? 'nav__button--streaming' : ''}`}
           onClick={() => setCurrentView('camera')}
         >
           {Icons.camera}
@@ -161,9 +161,7 @@ function AppContent() {
           {cameraStatus.ball_detected && <span className="nav__ball-dot" />}
         </button>
         <button
-          className={`nav__button ${
-            currentView === 'debug' ? 'nav__button--active' : ''
-          } ${debugMode ? 'nav__button--recording' : ''}`}
+          className={`nav__button ${currentView === 'debug' ? 'nav__button--active' : ''} ${debugMode ? 'nav__button--recording' : ''}`}
           onClick={() => setCurrentView('debug')}
         >
           {Icons.debug}
@@ -175,8 +173,8 @@ function AppContent() {
       <main className="main">
         {currentView === 'live' && (
           <div className="live-view">
-            {latestShot && <div key={`shot-flash-${latestShot.timestamp}`} className="shot-flash" />}
-            <ShotDisplay key={latestShot?.timestamp} shot={latestShot} isLatest={true} />
+            {isNewShot && <div className="shot-flash" />}
+            <ShotDisplay shot={latestShot} animate={isNewShot} />
             {mockMode && (
               <button className="simulate-button" onClick={simulateShot}>
                 Simulate Shot
@@ -211,7 +209,9 @@ function AppContent() {
 function App() {
   return (
     <LaunchDaddyProvider>
-      <AppContent />
+      <ShotProvider>
+        <AppContent />
+      </ShotProvider>
     </LaunchDaddyProvider>
   );
 }
