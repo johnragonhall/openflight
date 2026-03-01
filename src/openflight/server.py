@@ -759,7 +759,7 @@ def start_monitor(
             radar_port=port,
             firmware_version=radar_info.get("Version"),
             camera_enabled=camera is not None,
-            camera_model=camera_tracker.model_path if camera_tracker else None,
+            camera_model="hough" if (camera_tracker and camera_tracker.use_hough) else None,
             config=radar_config.copy(),
             mode=mode,
             trigger_type=trigger_type if mode == "rolling-buffer" else None
