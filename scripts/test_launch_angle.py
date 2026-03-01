@@ -21,8 +21,11 @@ Usage:
     # Mock mode (no hardware required)
     uv run python scripts/test_launch_angle.py --mock
 
-    # Tune Hough sensitivity
-    uv run python scripts/test_launch_angle.py --hough-param2 20
+    # Tune Hough params with live sliders
+    uv run python scripts/test_launch_angle.py --tune
+
+    # Start tuning from your known-good values
+    uv run python scripts/test_launch_angle.py --tune --hough-param2 36 --hough-param1 51
 """
 
 import argparse
@@ -40,9 +43,93 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import cv2
 import numpy as np
 
-from openflight.camera_tracker import CameraTracker
+from openflight.camera_tracker import CameraTracker, HoughDetector
 
 SAVE_DIR = Path("launch_angle_frames")
+
+
+def run_tune_mode(camera, args, width, height):
+    """
+    Live tuning mode with OpenCV trackbar sliders.
+
+    Adjust Hough parameters in real-time and see results immediately.
+    Press 'q' to quit and print the final parameter values.
+    """
+    WINDOW = "Hough Tuner"
+    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+
+    # Create trackbars with current values
+    cv2.createTrackbar("param1", WINDOW, args.hough_param1, 200, lambda x: None)
+    cv2.createTrackbar("param2", WINDOW, args.hough_param2, 100, lambda x: None)
+    cv2.createTrackbar("minRadius", WINDOW, args.hough_min_radius, 100, lambda x: None)
+    cv2.createTrackbar("maxRadius", WINDOW, args.hough_max_radius, 200, lambda x: None)
+    cv2.createTrackbar("minDist", WINDOW, args.hough_min_dist, 500, lambda x: None)
+
+    fps_start = time.time()
+    fps_count = 0
+    current_fps = 0.0
+
+    print("  Drag sliders to tune. Press 'q' to quit and print values.")
+    print()
+
+    while True:
+        frame = camera.capture_array()
+
+        # Read current slider values
+        p1 = max(1, cv2.getTrackbarPos("param1", WINDOW))
+        p2 = max(1, cv2.getTrackbarPos("param2", WINDOW))
+        min_r = cv2.getTrackbarPos("minRadius", WINDOW)
+        max_r = max(min_r + 1, cv2.getTrackbarPos("maxRadius", WINDOW))
+        min_d = max(1, cv2.getTrackbarPos("minDist", WINDOW))
+
+        # Detect with current params
+        detector = HoughDetector(
+            param1=p1, param2=p2,
+            min_radius=min_r, max_radius=max_r,
+            min_dist=min_d,
+        )
+        detections = detector.detect(frame)
+
+        # Draw detections
+        display = frame.copy()
+        for det in detections:
+            cx, cy, r = int(det['x']), int(det['y']), int(det['radius'])
+            cv2.circle(display, (cx, cy), r, (0, 255, 0), 2)
+            cv2.circle(display, (cx, cy), 2, (0, 0, 255), -1)
+
+        # FPS counter
+        fps_count += 1
+        elapsed = time.time() - fps_start
+        if elapsed >= 1.0:
+            current_fps = fps_count / elapsed
+            fps_count = 0
+            fps_start = time.time()
+
+        n = len(detections)
+        status = (f"p1={p1} p2={p2} r={min_r}-{max_r} dist={min_d} | "
+                  f"{n} detection{'s' if n != 1 else ''} | FPS: {current_fps:.0f} | 'q' to quit")
+        cv2.putText(display, status, (10, display.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
+        cv2.imshow(WINDOW, display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            break
+
+    cv2.destroyAllWindows()
+
+    # Print final values as a ready-to-use command
+    print("=" * 60)
+    print("  FINAL PARAMETERS")
+    print("=" * 60)
+    print(f"  param1={p1}  param2={p2}  radius={min_r}-{max_r}  minDist={min_d}")
+    print()
+    print("  Run with these settings:")
+    print(f"  uv run python scripts/test_launch_angle.py \\")
+    print(f"    --hough-param1 {p1} --hough-param2 {p2} \\")
+    print(f"    --hough-min-radius {min_r} --hough-max-radius {max_r} \\")
+    print(f"    --hough-min-dist {min_d}")
+    print("=" * 60)
 
 
 def wait_for_sound_trigger_with_preview(
@@ -159,6 +246,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Launch angle test — live preview + sound trigger + Hough detection"
     )
+    parser.add_argument("--tune", action="store_true",
+                        help="Live tuning mode — adjust Hough params with sliders")
     parser.add_argument("--mock", action="store_true",
                         help="Simulate a shot sequence (no hardware needed)")
     parser.add_argument("--headless", action="store_true",
@@ -259,6 +348,16 @@ def main():
 
     # Warm up
     time.sleep(0.5)
+
+    # Tune mode: live sliders, no shot capture
+    if args.tune:
+        print("  Mode: Tune (live sliders)")
+        try:
+            run_tune_mode(camera, args, width, height)
+        finally:
+            camera.stop()
+            camera.close()
+        return
 
     SAVE_DIR.mkdir(parents=True, exist_ok=True)
     results = []
