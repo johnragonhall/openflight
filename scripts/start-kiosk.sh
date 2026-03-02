@@ -149,6 +149,28 @@ if [ -n "$SAMPLE_RATE" ]; then
     SERVER_CMD="$SERVER_CMD --sample-rate $SAMPLE_RATE"
 fi
 
+# Start Grafana Alloy for log shipping (if installed and credentials configured)
+if command -v alloy &> /dev/null || systemctl is-enabled alloy &> /dev/null 2>&1; then
+    if [ -f /etc/alloy/credentials.env ]; then
+        # Check if credentials are actually filled in (not just the template)
+        if grep -q "LOKI_URL=https\?://" /etc/alloy/credentials.env 2>/dev/null; then
+            if ! systemctl is-active alloy &> /dev/null 2>&1; then
+                log "Starting Grafana Alloy for log shipping..."
+                sudo systemctl start alloy 2>/dev/null || warn "Failed to start Alloy (try: sudo systemctl start alloy)"
+            else
+                log "Grafana Alloy already running (log shipping active)"
+            fi
+        else
+            warn "Alloy installed but credentials not configured (/etc/alloy/credentials.env)"
+        fi
+    else
+        warn "Alloy installed but no credentials file found (run: sudo scripts/setup_alloy.sh)"
+    fi
+else
+    warn "Grafana Alloy not installed — session logs will only be saved locally"
+    warn "  Install with: sudo scripts/setup_alloy.sh"
+fi
+
 # Start the server
 if [ "$MOCK_MODE" = true ]; then
     log "Starting OpenFlight server on port $PORT (MOCK MODE)..."
