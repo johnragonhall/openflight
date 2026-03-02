@@ -67,6 +67,55 @@ latest_frame: Optional[bytes] = None
 frame_lock = threading.Lock()
 
 
+def estimate_launch_angle(club: ClubType, ball_speed_mph: float) -> tuple:
+    """
+    Estimate launch angle from club type and ball speed.
+
+    Uses TrackMan averages as baseline, then adjusts: faster ball speed
+    relative to club average = lower launch (compressed), slower = higher
+    launch (ballooned). Each mph deviation adjusts ~0.3° for irons, ~0.2° for woods.
+
+    Returns (vertical_angle, confidence) where confidence is always low (0.2)
+    to indicate this is estimated, not measured.
+    """
+    # Baseline launch angles by club (same TrackMan data as MockLaunchMonitor)
+    # Format: (avg_launch_deg, avg_ball_speed_mph, deg_per_mph_deviation)
+    _CLUB_LAUNCH_MODEL = {
+        ClubType.DRIVER: (11.0, 143, 0.15),
+        ClubType.WOOD_3: (12.5, 135, 0.18),
+        ClubType.WOOD_5: (14.0, 128, 0.20),
+        ClubType.WOOD_7: (15.5, 122, 0.20),
+        ClubType.HYBRID_3: (13.5, 123, 0.22),
+        ClubType.HYBRID_5: (15.0, 118, 0.22),
+        ClubType.HYBRID_7: (16.5, 112, 0.25),
+        ClubType.HYBRID_9: (18.0, 106, 0.25),
+        ClubType.IRON_2: (13.0, 120, 0.25),
+        ClubType.IRON_3: (14.5, 118, 0.25),
+        ClubType.IRON_4: (16.0, 114, 0.28),
+        ClubType.IRON_5: (17.5, 110, 0.28),
+        ClubType.IRON_6: (19.0, 105, 0.30),
+        ClubType.IRON_7: (20.5, 100, 0.30),
+        ClubType.IRON_8: (23.0, 94, 0.30),
+        ClubType.IRON_9: (25.5, 88, 0.30),
+        ClubType.PW: (28.0, 82, 0.30),
+        ClubType.GW: (30.0, 76, 0.30),
+        ClubType.SW: (32.0, 73, 0.30),
+        ClubType.LW: (35.0, 70, 0.30),
+        ClubType.UNKNOWN: (18.0, 120, 0.25),
+    }
+
+    avg_launch, avg_speed, deg_per_mph = _CLUB_LAUNCH_MODEL.get(
+        club, (18.0, 120, 0.25)
+    )
+
+    # Slower than average → higher launch, faster → lower launch
+    speed_delta = ball_speed_mph - avg_speed
+    adjustment = -speed_delta * deg_per_mph
+    launch_angle = max(5.0, round(avg_launch + adjustment, 1))
+
+    return (launch_angle, 0.2)
+
+
 def shot_to_dict(shot: Shot) -> dict:
     """Convert Shot to JSON-serializable dict."""
     return {
@@ -644,6 +693,15 @@ def on_shot_detected(shot: Shot):
     except Exception as e:
         logger.warning("Camera processing error: %s", e)
         camera_data = None
+
+    # If no camera launch angle, estimate from club type and ball speed
+    if shot.launch_angle_vertical is None and shot.mode != 'mock':
+        estimated = estimate_launch_angle(shot.club, shot.ball_speed_mph)
+        shot.launch_angle_vertical = estimated[0]
+        shot.launch_angle_horizontal = 0.0
+        shot.launch_angle_confidence = estimated[1]
+        logger.info("Estimated launch angle: %.1f° (conf: %.0f%%)",
+                     estimated[0], estimated[1] * 100)
 
     # Log shot with all data (radar + spin + camera) in one entry
     try:

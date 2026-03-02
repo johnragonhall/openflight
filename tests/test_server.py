@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime
 
 from openflight.launch_monitor import Shot, ClubType
-from openflight.server import MockLaunchMonitor, shot_to_dict
+from openflight.server import MockLaunchMonitor, shot_to_dict, estimate_launch_angle
 
 
 class TestShotToDict:
@@ -54,6 +54,42 @@ class TestShotToDict:
         assert result["ball_speed_mph"] == 150.5  # 1 decimal
         assert result["club_speed_mph"] == 103.8  # 1 decimal
         assert result["smash_factor"] == 1.45  # 2 decimals
+
+
+class TestEstimateLaunchAngle:
+    """Tests for launch angle estimation from club type and ball speed."""
+
+    def test_driver_average_speed(self):
+        """Driver at average speed should return baseline launch angle."""
+        angle, confidence = estimate_launch_angle(ClubType.DRIVER, 143)
+        assert angle == 11.0
+        assert confidence == 0.2
+
+    def test_driver_fast_lowers_launch(self):
+        """Faster than average ball speed should produce lower launch."""
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 160)
+        assert angle < 11.0
+
+    def test_driver_slow_raises_launch(self):
+        """Slower than average ball speed should produce higher launch."""
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 120)
+        assert angle > 11.0
+
+    def test_wedge_high_launch(self):
+        """Wedges should have high baseline launch angle."""
+        angle, _ = estimate_launch_angle(ClubType.LW, 70)
+        assert angle >= 30.0
+
+    def test_floor_at_5_degrees(self):
+        """Launch angle should never go below 5 degrees."""
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 300)
+        assert angle >= 5.0
+
+    def test_unknown_club(self):
+        """Unknown club should still return a reasonable estimate."""
+        angle, confidence = estimate_launch_angle(ClubType.UNKNOWN, 120)
+        assert 5.0 <= angle <= 40.0
+        assert confidence == 0.2
 
 
 class TestMockLaunchMonitor:
