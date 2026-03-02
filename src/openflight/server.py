@@ -920,13 +920,11 @@ class MockLaunchMonitor:
         spin_rpm = max(1000, random.gauss(avg_spin, spin_std))
         spin_confidence = random.choice([0.3, 0.6, 0.7, 0.9])
 
-        # Generate launch angle
+        # Generate launch angle (vertical always positive, minimum 5°)
         avg_launch, launch_std = club_launch.get(self._current_club, (18.0, 3.0))
-        launch_v = max(5.0, random.gauss(avg_launch, launch_std))
+        launch_v = random.gauss(avg_launch, launch_std)
+        launch_v = max(5.0, abs(launch_v))  # Floor at 5° — no real shot launches below that
         launch_h = random.gauss(0, 2.0)  # Slight left/right dispersion
-        # Ensure neither angle rounds to exactly 0
-        if abs(launch_v) < 0.1:
-            launch_v = 5.0
         if abs(launch_h) < 0.1:
             launch_h = 0.5 * random.choice([-1, 1])
         launch_confidence = random.uniform(0.5, 0.95)
