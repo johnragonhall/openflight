@@ -922,8 +922,13 @@ class MockLaunchMonitor:
 
         # Generate launch angle
         avg_launch, launch_std = club_launch.get(self._current_club, (18.0, 3.0))
-        launch_v = max(2.0, random.gauss(avg_launch, launch_std))
+        launch_v = max(5.0, random.gauss(avg_launch, launch_std))
         launch_h = random.gauss(0, 2.0)  # Slight left/right dispersion
+        # Ensure neither angle rounds to exactly 0
+        if abs(launch_v) < 0.1:
+            launch_v = 5.0
+        if abs(launch_h) < 0.1:
+            launch_h = 0.5 * random.choice([-1, 1])
         launch_confidence = random.uniform(0.5, 0.95)
 
         shot = Shot(
