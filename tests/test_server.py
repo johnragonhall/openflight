@@ -86,6 +86,11 @@ class TestMockLaunchMonitor:
         assert len(monitor._shots) == 1
         assert 140.0 <= shot.ball_speed_mph <= 160.0  # ±10 variance
         assert shot.club == ClubType.DRIVER
+        assert shot.mode == "mock"
+        assert shot.spin_rpm is not None and shot.spin_rpm >= 1000
+        assert shot.launch_angle_vertical is not None and shot.launch_angle_vertical >= 5.0
+        assert shot.launch_angle_horizontal is not None
+        assert shot.launch_angle_confidence is not None
 
     def test_simulate_shot_with_callback(self):
         """Callback should be called when shot is simulated."""

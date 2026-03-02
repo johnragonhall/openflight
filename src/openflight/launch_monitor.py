@@ -168,6 +168,8 @@ class Shot:
         spin_rpm: Spin rate in RPM (from rolling buffer mode)
         spin_confidence: Confidence in spin measurement (0-1)
         carry_spin_adjusted: Carry distance adjusted for spin (yards)
+        mode: Shot source — "streaming", "rolling-buffer", or "mock"
+        readings_data: Serialized readings for session logging
     """
     ball_speed_mph: float
     timestamp: datetime
@@ -181,6 +183,8 @@ class Shot:
     spin_rpm: Optional[float] = None
     spin_confidence: Optional[float] = None
     carry_spin_adjusted: Optional[float] = None
+    mode: str = "streaming"
+    readings_data: Optional[list] = None
 
     @property
     def ball_speed_ms(self) -> float:
@@ -633,14 +637,12 @@ class LaunchMonitor:
         else:
             print(f"[SHOT CREATED] Ball: {ball_speed:.1f} mph (club not detected)")
 
-        # Attach readings data for session logging (server.py logs after camera data is added)
-        shot._readings_data = [
+        # Attach serialized readings for session logging
+        shot.readings_data = [
             {"speed": r.speed, "direction": r.direction.value, "magnitude": r.magnitude,
              "timestamp": r.timestamp}
             for r in self._current_readings
         ]
-        shot._readings_count = len(self._current_readings)
-        shot._peak_magnitude = peak_mag
 
         # Log I/Q blocks for this shot (for post-session analysis)
         logger = get_session_logger()

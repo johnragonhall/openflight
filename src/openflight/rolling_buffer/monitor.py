@@ -448,12 +448,6 @@ class RollingBufferMonitor:
                         f"{shot.spin_rpm:.0f}" if shot.spin_rpm else "N/A"
                     )
 
-                    # Attach metadata for server.py to log with camera data
-                    shot._readings_count = len(processed.timeline.readings)
-                    shot._readings_data = None  # Raw readings not stored in rolling buffer mode
-                    shot._peak_magnitude = None  # Not available in rolling buffer mode
-                    shot._mode = "rolling-buffer"
-
                     # Log raw I/Q data and trigger events to session logger
                     session_logger = get_session_logger()
                     if session_logger:
@@ -621,6 +615,7 @@ class RollingBufferMonitor:
             spin_rpm=spin_rpm,
             spin_confidence=spin_confidence,
             carry_spin_adjusted=carry if has_reliable_spin else None,
+            mode="rolling-buffer",
         )
 
         return shot

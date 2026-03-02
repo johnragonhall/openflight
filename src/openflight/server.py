@@ -619,9 +619,8 @@ def on_shot_detected(shot: Shot):
     # Try to get launch angle from camera BEFORE emitting shot
     # Skip camera for mock shots — they already have simulated launch angle
     camera_data = None
-    is_mock = getattr(shot, '_mode', None) == 'mock'
     try:
-        if camera_tracker and camera_enabled and not is_mock:
+        if camera_tracker and camera_enabled and shot.mode != 'mock':
             launch_angle = camera_tracker.calculate_launch_angle()
             if launch_angle:
                 # Update shot object with launch angle data
@@ -656,14 +655,14 @@ def on_shot_detected(shot: Shot):
                 smash_factor=shot.smash_factor,
                 estimated_carry_yards=shot.estimated_carry_yards,
                 club=shot.club.value,
-                peak_magnitude=getattr(shot, '_peak_magnitude', None),
-                readings_count=getattr(shot, '_readings_count', 0),
-                readings=getattr(shot, '_readings_data', None),
+                peak_magnitude=shot.peak_magnitude,
+                readings_count=len(shot.readings),
+                readings=shot.readings_data,
                 spin_rpm=shot.spin_rpm,
                 spin_confidence=shot.spin_confidence,
                 spin_quality=shot.spin_quality,
                 carry_spin_adjusted=shot.carry_spin_adjusted,
-                mode=getattr(shot, '_mode', 'streaming'),
+                mode=shot.mode,
                 launch_angle_vertical=shot.launch_angle_vertical,
                 launch_angle_horizontal=shot.launch_angle_horizontal,
                 launch_angle_confidence=shot.launch_angle_confidence,
@@ -687,28 +686,28 @@ def on_shot_detected(shot: Shot):
         return
 
     # Debug logging (optional)
-    try:
-        debug_log_entry = {
-            "type": "shot",
-            "timestamp": datetime.now().isoformat(),
-            "radar": {
-                "ball_speed_mph": shot_data["ball_speed_mph"],
-                "club_speed_mph": shot_data["club_speed_mph"],
-                "smash_factor": shot_data["smash_factor"],
-                "peak_magnitude": shot_data["peak_magnitude"],
-            },
-            "camera": camera_data,
-            "club": shot_data["club"],
-        }
+    if debug_mode:
+        try:
+            debug_log_entry = {
+                "type": "shot",
+                "timestamp": datetime.now().isoformat(),
+                "radar": {
+                    "ball_speed_mph": shot_data["ball_speed_mph"],
+                    "club_speed_mph": shot_data["club_speed_mph"],
+                    "smash_factor": shot_data["smash_factor"],
+                    "peak_magnitude": shot_data["peak_magnitude"],
+                },
+                "camera": camera_data,
+                "club": shot_data["club"],
+            }
 
-        if debug_mode and debug_log_file:
-            debug_log_file.write(json.dumps(debug_log_entry) + "\n")
-            debug_log_file.flush()
+            if debug_log_file:
+                debug_log_file.write(json.dumps(debug_log_entry) + "\n")
+                debug_log_file.flush()
 
-        if debug_mode:
             socketio.emit("debug_shot", debug_log_entry)
-    except Exception as e:
-        print(f"[WARN] Debug logging error: {e}")
+        except Exception as e:
+            print(f"[WARN] Debug logging error: {e}")
 
 
 def start_monitor(
@@ -799,6 +798,81 @@ def stop_monitor():
 class MockLaunchMonitor:
     """Mock launch monitor for UI development without radar hardware."""
 
+    # TrackMan averages for amateur golfers: (avg_ball_speed, std_dev, smash_factor)
+    _CLUB_BALL_SPEEDS = {
+        ClubType.DRIVER: (143, 12, 1.45),
+        ClubType.WOOD_3: (135, 10, 1.42),
+        ClubType.WOOD_5: (128, 10, 1.40),
+        ClubType.WOOD_7: (122, 9, 1.40),
+        ClubType.HYBRID_3: (123, 9, 1.39),
+        ClubType.HYBRID_5: (118, 9, 1.37),
+        ClubType.HYBRID_7: (112, 8, 1.35),
+        ClubType.HYBRID_9: (106, 8, 1.33),
+        ClubType.IRON_2: (120, 9, 1.35),
+        ClubType.IRON_3: (118, 9, 1.35),
+        ClubType.IRON_4: (114, 8, 1.33),
+        ClubType.IRON_5: (110, 8, 1.31),
+        ClubType.IRON_6: (105, 7, 1.29),
+        ClubType.IRON_7: (100, 7, 1.27),
+        ClubType.IRON_8: (94, 6, 1.25),
+        ClubType.IRON_9: (88, 6, 1.23),
+        ClubType.PW: (82, 5, 1.21),
+        ClubType.GW: (76, 5, 1.20),
+        ClubType.SW: (73, 5, 1.19),
+        ClubType.LW: (70, 5, 1.18),
+        ClubType.UNKNOWN: (120, 15, 1.35),
+    }
+
+    # Spin rates (avg_rpm, std_dev) — drivers: low spin, wedges: high spin
+    _CLUB_SPIN = {
+        ClubType.DRIVER: (2700, 400),
+        ClubType.WOOD_3: (3200, 400),
+        ClubType.WOOD_5: (3700, 400),
+        ClubType.WOOD_7: (4200, 500),
+        ClubType.HYBRID_3: (3800, 400),
+        ClubType.HYBRID_5: (4200, 500),
+        ClubType.HYBRID_7: (4600, 500),
+        ClubType.HYBRID_9: (5000, 500),
+        ClubType.IRON_2: (3800, 400),
+        ClubType.IRON_3: (4100, 400),
+        ClubType.IRON_4: (4500, 500),
+        ClubType.IRON_5: (5000, 500),
+        ClubType.IRON_6: (5500, 600),
+        ClubType.IRON_7: (6000, 600),
+        ClubType.IRON_8: (7000, 700),
+        ClubType.IRON_9: (7800, 800),
+        ClubType.PW: (8500, 800),
+        ClubType.GW: (9200, 900),
+        ClubType.SW: (9800, 1000),
+        ClubType.LW: (10200, 1000),
+        ClubType.UNKNOWN: (5000, 800),
+    }
+
+    # Launch angles in degrees (avg, std_dev) — drivers: low, wedges: high
+    _CLUB_LAUNCH = {
+        ClubType.DRIVER: (11.0, 2.0),
+        ClubType.WOOD_3: (12.5, 2.0),
+        ClubType.WOOD_5: (14.0, 2.0),
+        ClubType.WOOD_7: (15.5, 2.0),
+        ClubType.HYBRID_3: (13.5, 2.0),
+        ClubType.HYBRID_5: (15.0, 2.0),
+        ClubType.HYBRID_7: (16.5, 2.0),
+        ClubType.HYBRID_9: (18.0, 2.5),
+        ClubType.IRON_2: (13.0, 2.0),
+        ClubType.IRON_3: (14.5, 2.0),
+        ClubType.IRON_4: (16.0, 2.0),
+        ClubType.IRON_5: (17.5, 2.0),
+        ClubType.IRON_6: (19.0, 2.5),
+        ClubType.IRON_7: (20.5, 2.5),
+        ClubType.IRON_8: (23.0, 3.0),
+        ClubType.IRON_9: (25.5, 3.0),
+        ClubType.PW: (28.0, 3.0),
+        ClubType.GW: (30.0, 3.5),
+        ClubType.SW: (32.0, 4.0),
+        ClubType.LW: (35.0, 4.0),
+        ClubType.UNKNOWN: (18.0, 3.0),
+    }
+
     def __init__(self):
         """Initialize mock monitor."""
         self._shots: List[Shot] = []
@@ -826,110 +900,24 @@ class MockLaunchMonitor:
 
     def simulate_shot(self, ball_speed: float = None):
         """Simulate a shot for testing using realistic TrackMan-based values."""
-        # Typical ball speeds by club (TrackMan averages for amateur golfers)
-        # Format: (avg_ball_speed, std_dev, typical_smash_factor)
-        club_ball_speeds = {
-            ClubType.DRIVER: (143, 12, 1.45),
-            ClubType.WOOD_3: (135, 10, 1.42),
-            ClubType.WOOD_5: (128, 10, 1.40),
-            ClubType.WOOD_7: (122, 9, 1.40),
-            ClubType.HYBRID_3: (123, 9, 1.39),
-            ClubType.HYBRID_5: (118, 9, 1.37),
-            ClubType.HYBRID_7: (112, 8, 1.35),
-            ClubType.HYBRID_9: (106, 8, 1.33),
-            ClubType.IRON_2: (120, 9, 1.35),
-            ClubType.IRON_3: (118, 9, 1.35),
-            ClubType.IRON_4: (114, 8, 1.33),
-            ClubType.IRON_5: (110, 8, 1.31),
-            ClubType.IRON_6: (105, 7, 1.29),
-            ClubType.IRON_7: (100, 7, 1.27),
-            ClubType.IRON_8: (94, 6, 1.25),
-            ClubType.IRON_9: (88, 6, 1.23),
-            ClubType.PW: (82, 5, 1.21),
-            ClubType.GW: (76, 5, 1.20),
-            ClubType.SW: (73, 5, 1.19),
-            ClubType.LW: (70, 5, 1.18),
-            ClubType.UNKNOWN: (120, 15, 1.35),
-        }
-
-        avg_speed, std_dev, smash = club_ball_speeds.get(
+        avg_speed, std_dev, smash = self._CLUB_BALL_SPEEDS.get(
             self._current_club, (120, 15, 1.35)
         )
 
-        # Generate realistic ball speed with normal distribution
         if ball_speed is None:
-            ball_speed = random.gauss(avg_speed, std_dev)
-            ball_speed = max(50, min(200, ball_speed))  # Clamp to realistic range
+            ball_speed = max(50, min(200, random.gauss(avg_speed, std_dev)))
 
-        # Calculate club speed from smash factor with small variance
         smash_factor = smash + random.uniform(-0.03, 0.03)
         club_speed = ball_speed / smash_factor
 
-        # Realistic spin rates by club (TrackMan averages, RPM)
-        # Drivers: low spin, wedges: high spin
-        club_spin = {
-            ClubType.DRIVER: (2700, 400),
-            ClubType.WOOD_3: (3200, 400),
-            ClubType.WOOD_5: (3700, 400),
-            ClubType.WOOD_7: (4200, 500),
-            ClubType.HYBRID_3: (3800, 400),
-            ClubType.HYBRID_5: (4200, 500),
-            ClubType.HYBRID_7: (4600, 500),
-            ClubType.HYBRID_9: (5000, 500),
-            ClubType.IRON_2: (3800, 400),
-            ClubType.IRON_3: (4100, 400),
-            ClubType.IRON_4: (4500, 500),
-            ClubType.IRON_5: (5000, 500),
-            ClubType.IRON_6: (5500, 600),
-            ClubType.IRON_7: (6000, 600),
-            ClubType.IRON_8: (7000, 700),
-            ClubType.IRON_9: (7800, 800),
-            ClubType.PW: (8500, 800),
-            ClubType.GW: (9200, 900),
-            ClubType.SW: (9800, 1000),
-            ClubType.LW: (10200, 1000),
-            ClubType.UNKNOWN: (5000, 800),
-        }
-
-        # Realistic launch angles by club (degrees)
-        # Drivers: low launch, wedges: high launch
-        club_launch = {
-            ClubType.DRIVER: (11.0, 2.0),
-            ClubType.WOOD_3: (12.5, 2.0),
-            ClubType.WOOD_5: (14.0, 2.0),
-            ClubType.WOOD_7: (15.5, 2.0),
-            ClubType.HYBRID_3: (13.5, 2.0),
-            ClubType.HYBRID_5: (15.0, 2.0),
-            ClubType.HYBRID_7: (16.5, 2.0),
-            ClubType.HYBRID_9: (18.0, 2.5),
-            ClubType.IRON_2: (13.0, 2.0),
-            ClubType.IRON_3: (14.5, 2.0),
-            ClubType.IRON_4: (16.0, 2.0),
-            ClubType.IRON_5: (17.5, 2.0),
-            ClubType.IRON_6: (19.0, 2.5),
-            ClubType.IRON_7: (20.5, 2.5),
-            ClubType.IRON_8: (23.0, 3.0),
-            ClubType.IRON_9: (25.5, 3.0),
-            ClubType.PW: (28.0, 3.0),
-            ClubType.GW: (30.0, 3.5),
-            ClubType.SW: (32.0, 4.0),
-            ClubType.LW: (35.0, 4.0),
-            ClubType.UNKNOWN: (18.0, 3.0),
-        }
-
         # Generate spin
-        avg_spin, spin_std = club_spin.get(self._current_club, (5000, 800))
+        avg_spin, spin_std = self._CLUB_SPIN.get(self._current_club, (5000, 800))
         spin_rpm = max(1000, random.gauss(avg_spin, spin_std))
-        spin_confidence = random.choice([0.3, 0.6, 0.7, 0.9])
 
         # Generate launch angle (vertical always positive, minimum 5°)
-        avg_launch, launch_std = club_launch.get(self._current_club, (18.0, 3.0))
-        launch_v = random.gauss(avg_launch, launch_std)
-        launch_v = max(5.0, abs(launch_v))  # Floor at 5° — no real shot launches below that
-        launch_h = random.gauss(0, 2.0)  # Slight left/right dispersion
-        if abs(launch_h) < 0.1:
-            launch_h = 0.5 * random.choice([-1, 1])
-        launch_confidence = random.uniform(0.5, 0.95)
+        avg_launch, launch_std = self._CLUB_LAUNCH.get(self._current_club, (18.0, 3.0))
+        launch_v = max(5.0, random.gauss(avg_launch, launch_std))
+        launch_h = random.gauss(0, 2.0)
 
         shot = Shot(
             ball_speed_mph=ball_speed,
@@ -937,17 +925,12 @@ class MockLaunchMonitor:
             timestamp=datetime.now(),
             club=self._current_club,
             spin_rpm=spin_rpm,
-            spin_confidence=spin_confidence,
+            spin_confidence=random.choice([0.3, 0.6, 0.7, 0.9]),
             launch_angle_vertical=round(launch_v, 1),
             launch_angle_horizontal=round(launch_h, 1),
-            launch_angle_confidence=round(launch_confidence, 2),
+            launch_angle_confidence=round(random.uniform(0.5, 0.95), 2),
+            mode="mock",
         )
-
-        # Attach metadata for session logging
-        shot._readings_data = None
-        shot._readings_count = 0
-        shot._peak_magnitude = None
-        shot._mode = "mock"
 
         self._shots.append(shot)
 
