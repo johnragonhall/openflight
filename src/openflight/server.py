@@ -863,12 +863,87 @@ class MockLaunchMonitor:
         smash_factor = smash + random.uniform(-0.03, 0.03)
         club_speed = ball_speed / smash_factor
 
+        # Realistic spin rates by club (TrackMan averages, RPM)
+        # Drivers: low spin, wedges: high spin
+        club_spin = {
+            ClubType.DRIVER: (2700, 400),
+            ClubType.WOOD_3: (3200, 400),
+            ClubType.WOOD_5: (3700, 400),
+            ClubType.WOOD_7: (4200, 500),
+            ClubType.HYBRID_3: (3800, 400),
+            ClubType.HYBRID_5: (4200, 500),
+            ClubType.HYBRID_7: (4600, 500),
+            ClubType.HYBRID_9: (5000, 500),
+            ClubType.IRON_2: (3800, 400),
+            ClubType.IRON_3: (4100, 400),
+            ClubType.IRON_4: (4500, 500),
+            ClubType.IRON_5: (5000, 500),
+            ClubType.IRON_6: (5500, 600),
+            ClubType.IRON_7: (6000, 600),
+            ClubType.IRON_8: (7000, 700),
+            ClubType.IRON_9: (7800, 800),
+            ClubType.PW: (8500, 800),
+            ClubType.GW: (9200, 900),
+            ClubType.SW: (9800, 1000),
+            ClubType.LW: (10200, 1000),
+            ClubType.UNKNOWN: (5000, 800),
+        }
+
+        # Realistic launch angles by club (degrees)
+        # Drivers: low launch, wedges: high launch
+        club_launch = {
+            ClubType.DRIVER: (11.0, 2.0),
+            ClubType.WOOD_3: (12.5, 2.0),
+            ClubType.WOOD_5: (14.0, 2.0),
+            ClubType.WOOD_7: (15.5, 2.0),
+            ClubType.HYBRID_3: (13.5, 2.0),
+            ClubType.HYBRID_5: (15.0, 2.0),
+            ClubType.HYBRID_7: (16.5, 2.0),
+            ClubType.HYBRID_9: (18.0, 2.5),
+            ClubType.IRON_2: (13.0, 2.0),
+            ClubType.IRON_3: (14.5, 2.0),
+            ClubType.IRON_4: (16.0, 2.0),
+            ClubType.IRON_5: (17.5, 2.0),
+            ClubType.IRON_6: (19.0, 2.5),
+            ClubType.IRON_7: (20.5, 2.5),
+            ClubType.IRON_8: (23.0, 3.0),
+            ClubType.IRON_9: (25.5, 3.0),
+            ClubType.PW: (28.0, 3.0),
+            ClubType.GW: (30.0, 3.5),
+            ClubType.SW: (32.0, 4.0),
+            ClubType.LW: (35.0, 4.0),
+            ClubType.UNKNOWN: (18.0, 3.0),
+        }
+
+        # Generate spin
+        avg_spin, spin_std = club_spin.get(self._current_club, (5000, 800))
+        spin_rpm = max(1000, random.gauss(avg_spin, spin_std))
+        spin_confidence = random.choice([0.3, 0.6, 0.7, 0.9])
+
+        # Generate launch angle
+        avg_launch, launch_std = club_launch.get(self._current_club, (18.0, 3.0))
+        launch_v = max(2.0, random.gauss(avg_launch, launch_std))
+        launch_h = random.gauss(0, 2.0)  # Slight left/right dispersion
+        launch_confidence = random.uniform(0.5, 0.95)
+
         shot = Shot(
             ball_speed_mph=ball_speed,
             club_speed_mph=club_speed,
             timestamp=datetime.now(),
             club=self._current_club,
+            spin_rpm=spin_rpm,
+            spin_confidence=spin_confidence,
+            launch_angle_vertical=round(launch_v, 1),
+            launch_angle_horizontal=round(launch_h, 1),
+            launch_angle_confidence=round(launch_confidence, 2),
         )
+
+        # Attach metadata for session logging
+        shot._readings_data = None
+        shot._readings_count = 0
+        shot._peak_magnitude = None
+        shot._mode = "mock"
+
         self._shots.append(shot)
 
         if self._shot_callback:
