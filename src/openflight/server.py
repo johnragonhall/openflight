@@ -753,15 +753,15 @@ def start_monitor(
 
     # Start session logging
     session_logger = get_session_logger()
-    if session_logger and not mock:
-        radar_info = monitor.get_radar_info()
+    if session_logger:
+        radar_info = monitor.get_radar_info() if not mock else {}
         session_logger.start_session(
-            radar_port=port,
+            radar_port=port if not mock else "mock",
             firmware_version=radar_info.get("Version"),
             camera_enabled=camera is not None,
             camera_model="hough" if (camera_tracker and camera_tracker.use_hough) else None,
             config=radar_config.copy(),
-            mode=mode,
+            mode="mock" if mock else mode,
             trigger_type=trigger_type if mode == "rolling-buffer" else None
         )
 
@@ -1053,8 +1053,8 @@ def main():
     print("=" * 50)
     print()
 
-    # Initialize session logger
-    if not args.no_logging and not args.mock:
+    # Initialize session logger (enabled for both real and mock modes)
+    if not args.no_logging:
         from pathlib import Path
         log_dir = Path(args.log_dir) if args.log_dir else None
         init_session_logger(
@@ -1065,8 +1065,7 @@ def main():
         print(f"Session logging enabled (location: {args.session_location})")
     else:
         init_session_logger(enabled=False)
-        if args.no_logging:
-            print("Session logging DISABLED")
+        print("Session logging DISABLED")
 
     # Configure radar logging if requested
     if args.radar_log:
