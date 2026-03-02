@@ -42,7 +42,7 @@ fi
 
 # Step 1: Add Grafana APT repository
 echo -e "\n${GREEN}[1/5] Adding Grafana APT repository...${NC}"
-apt-get install -y apt-transport-https software-properties-common wget
+apt-get install -y wget gpg
 
 mkdir -p /etc/apt/keyrings/
 wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor > /etc/apt/keyrings/grafana.gpg
