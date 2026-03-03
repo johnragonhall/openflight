@@ -91,6 +91,38 @@ class TestEstimateLaunchAngle:
         assert 5.0 <= angle <= 40.0
         assert confidence == 0.2
 
+    def test_low_smash_lowers_launch(self):
+        """Low smash factor (thin hit) should lower launch angle."""
+        baseline, _ = estimate_launch_angle(ClubType.DRIVER, 143)
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 143, club_speed_mph=110)
+        # smash = 143/110 = 1.30, well below optimal 1.48
+        assert angle < baseline
+
+    def test_optimal_smash_no_change(self):
+        """Optimal smash factor should not shift launch angle much."""
+        baseline, _ = estimate_launch_angle(ClubType.DRIVER, 143)
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 143, club_speed_mph=96.6)
+        # smash = 143/96.6 ≈ 1.48 (optimal for driver)
+        assert abs(angle - baseline) <= 0.5
+
+    def test_smash_raises_confidence(self):
+        """Providing club speed should raise confidence from 0.2 to 0.35."""
+        _, conf = estimate_launch_angle(ClubType.DRIVER, 143, club_speed_mph=96.6)
+        assert conf == 0.35
+
+    def test_iron_smash_adjustment(self):
+        """Iron smash factor adjustment should work correctly."""
+        baseline, _ = estimate_launch_angle(ClubType.IRON_7, 100)
+        # Low smash for 7-iron: smash = 100/80 = 1.25, below optimal ~1.34
+        angle, _ = estimate_launch_angle(ClubType.IRON_7, 100, club_speed_mph=80)
+        assert angle < baseline
+
+    def test_no_club_speed_unchanged(self):
+        """Without club speed, behavior should be identical to current."""
+        angle, conf = estimate_launch_angle(ClubType.DRIVER, 143)
+        assert angle == 11.0
+        assert conf == 0.2
+
 
 class TestMockLaunchMonitor:
     """Tests for MockLaunchMonitor."""
