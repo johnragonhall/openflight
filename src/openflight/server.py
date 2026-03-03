@@ -20,6 +20,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 
 from .launch_monitor import ClubType, LaunchMonitor, Shot
+from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
 from .session_logger import get_session_logger, init_session_logger
 
@@ -128,6 +129,11 @@ _MAX_SMASH_ADJ_HIGH = 2.0   # max degrees to add for high-face hits
 _SMASH_DEG_PER_HUNDREDTH_LOW = 0.4   # below optimal (thin hits penalized more)
 _SMASH_DEG_PER_HUNDREDTH_HIGH = 0.2  # above optimal
 
+# Spin rate adjustment: degrees per 500 rpm deviation from optimal
+_SPIN_DEG_PER_500RPM = 0.3
+# Max spin adjustment in degrees (clamped like smash)
+_MAX_SPIN_ADJ = 2.0
+
 
 def estimate_launch_angle(
     club: ClubType,
@@ -164,6 +170,19 @@ def estimate_launch_angle(
         adjustment += smash_adj
 
         confidence = 0.35
+
+    # Spin rate adjustment: compare actual spin to optimal for this club/speed
+    if spin_rpm is not None and spin_rpm > 0:
+        optimal_spin = get_optimal_spin_for_ball_speed(ball_speed_mph, club)
+        spin_delta = spin_rpm - optimal_spin
+        spin_adj = (spin_delta / 500.0) * _SPIN_DEG_PER_500RPM
+        spin_adj = max(-_MAX_SPIN_ADJ, min(_MAX_SPIN_ADJ, spin_adj))
+        adjustment += spin_adj
+
+        if confidence >= 0.35:
+            confidence = 0.5
+        else:
+            confidence = 0.35
 
     launch_angle = max(5.0, round(avg_launch + adjustment, 1))
 

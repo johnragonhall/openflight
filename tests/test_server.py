@@ -139,6 +139,31 @@ class TestEstimateLaunchAngle:
         assert angle == 11.0
         assert conf == 0.2
 
+    def test_high_spin_raises_launch(self):
+        """High spin should nudge launch angle up."""
+        baseline, _ = estimate_launch_angle(ClubType.DRIVER, 143)
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 143, spin_rpm=4000)
+        # 4000 rpm is above optimal ~2500 for driver at 143 mph
+        assert angle > baseline
+
+    def test_low_spin_lowers_launch(self):
+        """Low spin should nudge launch angle down."""
+        baseline, _ = estimate_launch_angle(ClubType.DRIVER, 143)
+        angle, _ = estimate_launch_angle(ClubType.DRIVER, 143, spin_rpm=1000)
+        assert angle < baseline
+
+    def test_spin_with_smash_raises_confidence(self):
+        """Providing both club speed and spin should raise confidence to 0.5."""
+        _, conf = estimate_launch_angle(
+            ClubType.DRIVER, 143, club_speed_mph=96.6, spin_rpm=2500
+        )
+        assert conf == 0.5
+
+    def test_spin_alone_confidence(self):
+        """Spin without club speed should raise confidence to 0.35."""
+        _, conf = estimate_launch_angle(ClubType.DRIVER, 143, spin_rpm=2500)
+        assert conf == 0.35
+
 
 class TestMockLaunchMonitor:
     """Tests for MockLaunchMonitor."""
