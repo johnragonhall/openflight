@@ -80,7 +80,7 @@ openflight-server --no-camera
 openflight-server --mode rolling-buffer
 
 # Rolling buffer with sound trigger (requires SparkFun SEN-14262)
-openflight-server --mode rolling-buffer --trigger sound-passthrough
+openflight-server --mode rolling-buffer --trigger sound
 ```
 
 Then open http://localhost:8080 in a browser.
@@ -419,6 +419,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines. Quick summary:
 - [Raspberry Pi Setup Guide](docs/raspberry-pi-setup.md) - Complete Pi 5 setup with touchscreen and camera
 - [Parts List](docs/PARTS.md) - Full hardware requirements
 - [Rolling Buffer & Spin Detection](docs/rolling_buffer_spin_detection.md) - Spin rate measurement via I/Q analysis
+- [Sound Trigger Wiring](docs/sound-trigger-wiring.md) - MOSFET circuit for sound-triggered capture
+- [Observability & Log Shipping](docs/observability.md) - Ship session logs to Grafana Cloud with Alloy
 - [YOLO Performance Tuning](docs/yolo-performance-tuning.md) - Optimize YOLO ball detection FPS
 - [Contributing Guide](CONTRIBUTING.md) - How to contribute
 - [Changelog](docs/CHANGELOG.md) - Version history

@@ -81,11 +81,11 @@ Options:
 # Mock mode (no radar)
 ./scripts/start-kiosk.sh --mock
 
+# Rolling buffer mode with sound trigger (for spin detection)
+./scripts/start-kiosk.sh --mode rolling-buffer --trigger sound
+
 # Disable camera
 ./scripts/start-kiosk.sh --no-camera
-
-# Use a custom YOLO model for ball detection
-./scripts/start-kiosk.sh --camera-model models/golf_ball_yolo11n.onnx
 
 # Custom port
 ./scripts/start-kiosk.sh --port 3000
@@ -214,6 +214,22 @@ Calibration options:
 | `--exposure` | Camera exposure in microseconds (default 2000) |
 | `--gain` | Camera gain for IR sensitivity (default 4.0) |
 | `--headless` | Save frames to disk instead of displaying |
+
+## Observability (Grafana Cloud)
+
+OpenFlight can ship session logs to Grafana Cloud for long-term analysis and dashboarding.
+
+```bash
+# Install and configure Alloy
+sudo ./scripts/setup_alloy.sh
+
+# Fill in your Grafana Cloud credentials
+sudo vim /etc/alloy/credentials.env
+```
+
+Once configured, Alloy starts automatically with `start-kiosk.sh`. Session logs are shipped to Loki where you can query shot data, spin metrics, and trigger events.
+
+See [docs/observability.md](observability.md) for full setup instructions, LogQL queries, and troubleshooting.
 
 ## IR LED Setup
 
