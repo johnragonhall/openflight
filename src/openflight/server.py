@@ -139,13 +139,15 @@ def estimate_launch_angle(
     club: ClubType,
     ball_speed_mph: float,
     club_speed_mph: Optional[float] = None,
-    spin_rpm: Optional[float] = None,  # currently unused; Task 2 adds spin adjustment
+    spin_rpm: Optional[float] = None,
 ) -> tuple:
     """
-    Estimate launch angle from club type, ball speed, and optional smash factor.
+    Estimate launch angle from club type, ball speed, and optional smash/spin data.
 
-    Uses TrackMan averages as baseline, then adjusts for ball speed deviation
-    and smash factor deviation from optimal.
+    Uses TrackMan averages as baseline, then adjusts for:
+    - Ball speed deviation from club average
+    - Smash factor deviation from optimal (if club_speed provided)
+    - Spin rate deviation from optimal (if spin_rpm provided)
 
     Returns (vertical_angle, confidence).
     """
