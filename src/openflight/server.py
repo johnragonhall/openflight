@@ -69,83 +69,80 @@ latest_frame: Optional[bytes] = None
 frame_lock = threading.Lock()
 
 
+# Baseline launch angles by club (TrackMan data)
+# Format: (avg_launch_deg, avg_ball_speed_mph, deg_per_mph_deviation)
+_CLUB_LAUNCH_MODEL = {
+    ClubType.DRIVER: (11.0, 143, 0.15),
+    ClubType.WOOD_3: (12.5, 135, 0.18),
+    ClubType.WOOD_5: (14.0, 128, 0.20),
+    ClubType.WOOD_7: (15.5, 122, 0.20),
+    ClubType.HYBRID_3: (13.5, 123, 0.22),
+    ClubType.HYBRID_5: (15.0, 118, 0.22),
+    ClubType.HYBRID_7: (16.5, 112, 0.25),
+    ClubType.HYBRID_9: (18.0, 106, 0.25),
+    ClubType.IRON_2: (13.0, 120, 0.25),
+    ClubType.IRON_3: (14.5, 118, 0.25),
+    ClubType.IRON_4: (16.0, 114, 0.28),
+    ClubType.IRON_5: (17.5, 110, 0.28),
+    ClubType.IRON_6: (19.0, 105, 0.30),
+    ClubType.IRON_7: (20.5, 100, 0.30),
+    ClubType.IRON_8: (23.0, 94, 0.30),
+    ClubType.IRON_9: (25.5, 88, 0.30),
+    ClubType.PW: (28.0, 82, 0.30),
+    ClubType.GW: (30.0, 76, 0.30),
+    ClubType.SW: (32.0, 73, 0.30),
+    ClubType.LW: (35.0, 70, 0.30),
+    ClubType.UNKNOWN: (18.0, 120, 0.25),
+}
+
+# Optimal smash factor by club type (ball_speed / club_speed)
+_OPTIMAL_SMASH = {
+    ClubType.DRIVER: 1.48,
+    ClubType.WOOD_3: 1.44,
+    ClubType.WOOD_5: 1.42,
+    ClubType.WOOD_7: 1.42,
+    ClubType.HYBRID_3: 1.39,
+    ClubType.HYBRID_5: 1.38,
+    ClubType.HYBRID_7: 1.37,
+    ClubType.HYBRID_9: 1.36,
+    ClubType.IRON_2: 1.37,
+    ClubType.IRON_3: 1.36,
+    ClubType.IRON_4: 1.35,
+    ClubType.IRON_5: 1.35,
+    ClubType.IRON_6: 1.34,
+    ClubType.IRON_7: 1.34,
+    ClubType.IRON_8: 1.33,
+    ClubType.IRON_9: 1.33,
+    ClubType.PW: 1.25,
+    ClubType.GW: 1.23,
+    ClubType.SW: 1.22,
+    ClubType.LW: 1.20,
+    ClubType.UNKNOWN: 1.35,
+}
+
+# Max smash factor adjustment in degrees (clamped to prevent floor-dependence)
+_MAX_SMASH_ADJ_LOW = -3.0   # max degrees to subtract for thin/toe hits
+_MAX_SMASH_ADJ_HIGH = 2.0   # max degrees to add for high-face hits
+
+# Degrees of launch angle change per 0.01 smash factor unit
+_SMASH_DEG_PER_HUNDREDTH_LOW = 0.4   # below optimal (thin hits penalized more)
+_SMASH_DEG_PER_HUNDREDTH_HIGH = 0.2  # above optimal
+
+
 def estimate_launch_angle(
     club: ClubType,
     ball_speed_mph: float,
     club_speed_mph: Optional[float] = None,
-    spin_rpm: Optional[float] = None,
+    spin_rpm: Optional[float] = None,  # currently unused; Task 2 adds spin adjustment
 ) -> tuple:
     """
     Estimate launch angle from club type, ball speed, and optional smash factor.
 
-    Uses TrackMan averages as baseline, then adjusts: faster ball speed
-    relative to club average = lower launch (compressed), slower = higher
-    launch (ballooned). Each mph deviation adjusts ~0.3° for irons, ~0.2° for woods.
+    Uses TrackMan averages as baseline, then adjusts for ball speed deviation
+    and smash factor deviation from optimal.
 
-    When club_speed_mph is provided, computes smash factor (ball_speed / club_speed)
-    and compares to the optimal smash for that club. Low smash (thin/toe hit)
-    lowers the launch angle; high smash raises it slightly.
-
-    Args:
-        club: The club type used for the shot.
-        ball_speed_mph: Measured ball speed in mph.
-        club_speed_mph: Measured club speed in mph (optional).
-        spin_rpm: Measured spin rate in RPM (reserved for future use).
-
-    Returns (vertical_angle, confidence) where confidence is 0.2 (estimated)
-    or 0.35 (estimated with smash factor data).
+    Returns (vertical_angle, confidence).
     """
-    # Baseline launch angles by club (same TrackMan data as MockLaunchMonitor)
-    # Format: (avg_launch_deg, avg_ball_speed_mph, deg_per_mph_deviation)
-    _CLUB_LAUNCH_MODEL = {
-        ClubType.DRIVER: (11.0, 143, 0.15),
-        ClubType.WOOD_3: (12.5, 135, 0.18),
-        ClubType.WOOD_5: (14.0, 128, 0.20),
-        ClubType.WOOD_7: (15.5, 122, 0.20),
-        ClubType.HYBRID_3: (13.5, 123, 0.22),
-        ClubType.HYBRID_5: (15.0, 118, 0.22),
-        ClubType.HYBRID_7: (16.5, 112, 0.25),
-        ClubType.HYBRID_9: (18.0, 106, 0.25),
-        ClubType.IRON_2: (13.0, 120, 0.25),
-        ClubType.IRON_3: (14.5, 118, 0.25),
-        ClubType.IRON_4: (16.0, 114, 0.28),
-        ClubType.IRON_5: (17.5, 110, 0.28),
-        ClubType.IRON_6: (19.0, 105, 0.30),
-        ClubType.IRON_7: (20.5, 100, 0.30),
-        ClubType.IRON_8: (23.0, 94, 0.30),
-        ClubType.IRON_9: (25.5, 88, 0.30),
-        ClubType.PW: (28.0, 82, 0.30),
-        ClubType.GW: (30.0, 76, 0.30),
-        ClubType.SW: (32.0, 73, 0.30),
-        ClubType.LW: (35.0, 70, 0.30),
-        ClubType.UNKNOWN: (18.0, 120, 0.25),
-    }
-
-    # Optimal smash factor by club type (ball_speed / club_speed)
-    _OPTIMAL_SMASH = {
-        ClubType.DRIVER: 1.48,
-        ClubType.WOOD_3: 1.44,
-        ClubType.WOOD_5: 1.42,
-        ClubType.WOOD_7: 1.42,
-        ClubType.HYBRID_3: 1.39,
-        ClubType.HYBRID_5: 1.38,
-        ClubType.HYBRID_7: 1.37,
-        ClubType.HYBRID_9: 1.36,
-        ClubType.IRON_2: 1.37,
-        ClubType.IRON_3: 1.36,
-        ClubType.IRON_4: 1.35,
-        ClubType.IRON_5: 1.35,
-        ClubType.IRON_6: 1.34,
-        ClubType.IRON_7: 1.34,
-        ClubType.IRON_8: 1.33,
-        ClubType.IRON_9: 1.33,
-        ClubType.PW: 1.25,
-        ClubType.GW: 1.23,
-        ClubType.SW: 1.22,
-        ClubType.LW: 1.20,
-        ClubType.UNKNOWN: 1.35,
-    }
-
     avg_launch, avg_speed, deg_per_mph = _CLUB_LAUNCH_MODEL.get(club, (18.0, 120, 0.25))
 
     # Slower than average → higher launch, faster → lower launch
@@ -160,14 +157,11 @@ def estimate_launch_angle(
         optimal_smash = _OPTIMAL_SMASH.get(club, 1.35)
         smash_delta = smash_factor - optimal_smash
 
-        # Low smash (thin/toe): reduce launch angle more aggressively
-        # High smash (pure/high face): slightly higher launch
         if smash_delta < 0:
-            # 0.4 degrees per 0.01 below optimal (negative = lower angle)
-            adjustment += smash_delta * (0.4 / 0.01)
+            smash_adj = max(_MAX_SMASH_ADJ_LOW, smash_delta * 100 * _SMASH_DEG_PER_HUNDREDTH_LOW)
         else:
-            # 0.2 degrees per 0.01 above optimal (positive = higher angle)
-            adjustment += smash_delta * (0.2 / 0.01)
+            smash_adj = min(_MAX_SMASH_ADJ_HIGH, smash_delta * 100 * _SMASH_DEG_PER_HUNDREDTH_HIGH)
+        adjustment += smash_adj
 
         confidence = 0.35
 
