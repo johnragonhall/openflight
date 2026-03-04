@@ -802,7 +802,12 @@ def on_shot_detected(shot: Shot):
 
     # If no camera launch angle, estimate from club type and ball speed
     if shot.launch_angle_vertical is None and shot.mode != "mock":
-        estimated = estimate_launch_angle(shot.club, shot.ball_speed_mph)
+        estimated = estimate_launch_angle(
+            shot.club,
+            shot.ball_speed_mph,
+            club_speed_mph=shot.club_speed_mph,
+            spin_rpm=shot.spin_rpm,
+        )
         shot.launch_angle_vertical = estimated[0]
         shot.launch_angle_horizontal = 0.0
         shot.launch_angle_confidence = estimated[1]
