@@ -20,8 +20,8 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 
 from .launch_monitor import ClubType, LaunchMonitor, Shot
-from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
+from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .session_logger import get_session_logger, init_session_logger
 
 # Configure logging
@@ -122,11 +122,11 @@ _OPTIMAL_SMASH = {
 }
 
 # Max smash factor adjustment in degrees (clamped to prevent floor-dependence)
-_MAX_SMASH_ADJ_LOW = -3.0   # max degrees to subtract for thin/toe hits
-_MAX_SMASH_ADJ_HIGH = 2.0   # max degrees to add for high-face hits
+_MAX_SMASH_ADJ_LOW = -3.0  # max degrees to subtract for thin/toe hits
+_MAX_SMASH_ADJ_HIGH = 2.0  # max degrees to add for high-face hits
 
 # Degrees of launch angle change per 0.01 smash factor unit
-_SMASH_DEG_PER_HUNDREDTH_LOW = 0.4   # below optimal (thin hits penalized more)
+_SMASH_DEG_PER_HUNDREDTH_LOW = 0.4  # below optimal (thin hits penalized more)
 _SMASH_DEG_PER_HUNDREDTH_HIGH = 0.2  # above optimal
 
 # Spin rate adjustment: degrees per 500 rpm deviation from optimal
