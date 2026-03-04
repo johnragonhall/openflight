@@ -21,6 +21,7 @@ from flask_socketio import SocketIO
 
 from .launch_monitor import ClubType, LaunchMonitor, Shot
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
+from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .session_logger import get_session_logger, init_session_logger
 
 # Configure logging
@@ -31,6 +32,7 @@ try:
     import cv2
 
     from .camera_tracker import CameraTracker
+
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
@@ -38,6 +40,7 @@ except ImportError:
 
 try:
     from picamera2 import Picamera2
+
     PICAMERA_AVAILABLE = True
 except ImportError:
     PICAMERA_AVAILABLE = False
@@ -67,53 +70,125 @@ latest_frame: Optional[bytes] = None
 frame_lock = threading.Lock()
 
 
-def estimate_launch_angle(club: ClubType, ball_speed_mph: float) -> tuple:
+# Baseline launch angles by club (TrackMan data)
+# Format: (avg_launch_deg, avg_ball_speed_mph, deg_per_mph_deviation)
+_CLUB_LAUNCH_MODEL = {
+    ClubType.DRIVER: (11.0, 143, 0.15),
+    ClubType.WOOD_3: (12.5, 135, 0.18),
+    ClubType.WOOD_5: (14.0, 128, 0.20),
+    ClubType.WOOD_7: (15.5, 122, 0.20),
+    ClubType.HYBRID_3: (13.5, 123, 0.22),
+    ClubType.HYBRID_5: (15.0, 118, 0.22),
+    ClubType.HYBRID_7: (16.5, 112, 0.25),
+    ClubType.HYBRID_9: (18.0, 106, 0.25),
+    ClubType.IRON_2: (13.0, 120, 0.25),
+    ClubType.IRON_3: (14.5, 118, 0.25),
+    ClubType.IRON_4: (16.0, 114, 0.28),
+    ClubType.IRON_5: (17.5, 110, 0.28),
+    ClubType.IRON_6: (19.0, 105, 0.30),
+    ClubType.IRON_7: (20.5, 100, 0.30),
+    ClubType.IRON_8: (23.0, 94, 0.30),
+    ClubType.IRON_9: (25.5, 88, 0.30),
+    ClubType.PW: (28.0, 82, 0.30),
+    ClubType.GW: (30.0, 76, 0.30),
+    ClubType.SW: (32.0, 73, 0.30),
+    ClubType.LW: (35.0, 70, 0.30),
+    ClubType.UNKNOWN: (18.0, 120, 0.25),
+}
+
+# Optimal smash factor by club type (ball_speed / club_speed)
+_OPTIMAL_SMASH = {
+    ClubType.DRIVER: 1.48,
+    ClubType.WOOD_3: 1.44,
+    ClubType.WOOD_5: 1.42,
+    ClubType.WOOD_7: 1.42,
+    ClubType.HYBRID_3: 1.39,
+    ClubType.HYBRID_5: 1.38,
+    ClubType.HYBRID_7: 1.37,
+    ClubType.HYBRID_9: 1.36,
+    ClubType.IRON_2: 1.37,
+    ClubType.IRON_3: 1.36,
+    ClubType.IRON_4: 1.35,
+    ClubType.IRON_5: 1.35,
+    ClubType.IRON_6: 1.34,
+    ClubType.IRON_7: 1.34,
+    ClubType.IRON_8: 1.33,
+    ClubType.IRON_9: 1.33,
+    ClubType.PW: 1.25,
+    ClubType.GW: 1.23,
+    ClubType.SW: 1.22,
+    ClubType.LW: 1.20,
+    ClubType.UNKNOWN: 1.35,
+}
+
+# Max smash factor adjustment in degrees (clamped to prevent floor-dependence)
+_MAX_SMASH_ADJ_LOW = -3.0  # max degrees to subtract for thin/toe hits
+_MAX_SMASH_ADJ_HIGH = 2.0  # max degrees to add for high-face hits
+
+# Degrees of launch angle change per 0.01 smash factor unit
+_SMASH_DEG_PER_HUNDREDTH_LOW = 0.4  # below optimal (thin hits penalized more)
+_SMASH_DEG_PER_HUNDREDTH_HIGH = 0.2  # above optimal
+
+# Spin rate adjustment: degrees per 500 rpm deviation from optimal
+_SPIN_DEG_PER_500RPM = 0.3
+# Max spin adjustment in degrees (clamped like smash)
+_MAX_SPIN_ADJ = 2.0
+
+
+def estimate_launch_angle(
+    club: ClubType,
+    ball_speed_mph: float,
+    club_speed_mph: Optional[float] = None,
+    spin_rpm: Optional[float] = None,
+) -> tuple:
     """
-    Estimate launch angle from club type and ball speed.
+    Estimate launch angle from club type, ball speed, and optional smash/spin data.
 
-    Uses TrackMan averages as baseline, then adjusts: faster ball speed
-    relative to club average = lower launch (compressed), slower = higher
-    launch (ballooned). Each mph deviation adjusts ~0.3° for irons, ~0.2° for woods.
+    Uses TrackMan averages as baseline, then adjusts for:
+    - Ball speed deviation from club average
+    - Smash factor deviation from optimal (if club_speed provided)
+    - Spin rate deviation from optimal (if spin_rpm provided)
 
-    Returns (vertical_angle, confidence) where confidence is always low (0.2)
-    to indicate this is estimated, not measured.
+    Returns (vertical_angle, confidence).
     """
-    # Baseline launch angles by club (same TrackMan data as MockLaunchMonitor)
-    # Format: (avg_launch_deg, avg_ball_speed_mph, deg_per_mph_deviation)
-    _CLUB_LAUNCH_MODEL = {
-        ClubType.DRIVER: (11.0, 143, 0.15),
-        ClubType.WOOD_3: (12.5, 135, 0.18),
-        ClubType.WOOD_5: (14.0, 128, 0.20),
-        ClubType.WOOD_7: (15.5, 122, 0.20),
-        ClubType.HYBRID_3: (13.5, 123, 0.22),
-        ClubType.HYBRID_5: (15.0, 118, 0.22),
-        ClubType.HYBRID_7: (16.5, 112, 0.25),
-        ClubType.HYBRID_9: (18.0, 106, 0.25),
-        ClubType.IRON_2: (13.0, 120, 0.25),
-        ClubType.IRON_3: (14.5, 118, 0.25),
-        ClubType.IRON_4: (16.0, 114, 0.28),
-        ClubType.IRON_5: (17.5, 110, 0.28),
-        ClubType.IRON_6: (19.0, 105, 0.30),
-        ClubType.IRON_7: (20.5, 100, 0.30),
-        ClubType.IRON_8: (23.0, 94, 0.30),
-        ClubType.IRON_9: (25.5, 88, 0.30),
-        ClubType.PW: (28.0, 82, 0.30),
-        ClubType.GW: (30.0, 76, 0.30),
-        ClubType.SW: (32.0, 73, 0.30),
-        ClubType.LW: (35.0, 70, 0.30),
-        ClubType.UNKNOWN: (18.0, 120, 0.25),
-    }
-
-    avg_launch, avg_speed, deg_per_mph = _CLUB_LAUNCH_MODEL.get(
-        club, (18.0, 120, 0.25)
-    )
+    avg_launch, avg_speed, deg_per_mph = _CLUB_LAUNCH_MODEL.get(club, (18.0, 120, 0.25))
 
     # Slower than average → higher launch, faster → lower launch
     speed_delta = ball_speed_mph - avg_speed
     adjustment = -speed_delta * deg_per_mph
+
+    confidence = 0.2
+
+    # Smash factor adjustment: compare actual smash to optimal for this club
+    if club_speed_mph is not None and club_speed_mph > 0:
+        smash_factor = ball_speed_mph / club_speed_mph
+        optimal_smash = _OPTIMAL_SMASH.get(club, 1.35)
+        smash_delta = smash_factor - optimal_smash
+
+        if smash_delta < 0:
+            smash_adj = max(_MAX_SMASH_ADJ_LOW, smash_delta * 100 * _SMASH_DEG_PER_HUNDREDTH_LOW)
+        else:
+            smash_adj = min(_MAX_SMASH_ADJ_HIGH, smash_delta * 100 * _SMASH_DEG_PER_HUNDREDTH_HIGH)
+        adjustment += smash_adj
+
+        confidence = 0.35
+
+    # Spin rate adjustment: compare actual spin to optimal for this club/speed
+    if spin_rpm is not None and spin_rpm > 0:
+        optimal_spin = get_optimal_spin_for_ball_speed(ball_speed_mph, club)
+        spin_delta = spin_rpm - optimal_spin
+        spin_adj = (spin_delta / 500.0) * _SPIN_DEG_PER_500RPM
+        spin_adj = max(-_MAX_SPIN_ADJ, min(_MAX_SPIN_ADJ, spin_adj))
+        adjustment += spin_adj
+
+        if confidence >= 0.35:
+            confidence = 0.5
+        else:
+            confidence = 0.35
+
     launch_angle = max(5.0, round(avg_launch + adjustment, 1))
 
-    return (launch_angle, 0.2)
+    return (launch_angle, confidence)
 
 
 def shot_to_dict(shot: Shot) -> dict:
@@ -138,7 +213,9 @@ def shot_to_dict(shot: Shot) -> dict:
         "spin_rpm": round(shot.spin_rpm) if shot.spin_rpm else None,
         "spin_confidence": round(shot.spin_confidence, 2) if shot.spin_confidence else None,
         "spin_quality": shot.spin_quality,
-        "carry_spin_adjusted": round(shot.carry_spin_adjusted) if shot.carry_spin_adjusted else None,
+        "carry_spin_adjusted": round(shot.carry_spin_adjusted)
+        if shot.carry_spin_adjusted
+        else None,
     }
 
 
@@ -184,7 +261,7 @@ def init_camera(
         config = camera.create_video_configuration(
             main={"size": (640, 480), "format": "RGB888"},
             buffer_count=2,  # Balance between latency and stability
-            controls={"FrameRate": 60}  # Higher FPS for ball tracking
+            controls={"FrameRate": 60},  # Higher FPS for ball tracking
         )
         camera.configure(config)
         camera.start()
@@ -244,13 +321,19 @@ def camera_processing_loop():
                 new_confidence = detection.confidence if detection else 0.0
 
                 # Emit update if state changed
-                if new_detected != ball_detected or abs(new_confidence - ball_detection_confidence) > 0.05:
+                if (
+                    new_detected != ball_detected
+                    or abs(new_confidence - ball_detection_confidence) > 0.05
+                ):
                     ball_detected = new_detected
                     ball_detection_confidence = new_confidence
-                    socketio.emit("ball_detection", {
-                        "detected": ball_detected,
-                        "confidence": round(ball_detection_confidence, 2),
-                    })
+                    socketio.emit(
+                        "ball_detection",
+                        {
+                            "detected": ball_detected,
+                            "confidence": round(ball_detection_confidence, 2),
+                        },
+                    )
 
                 # Get debug frame with overlay if streaming
                 if camera_streaming:
@@ -260,7 +343,7 @@ def camera_processing_loop():
             if camera_streaming:
                 # Convert RGB to BGR for cv2
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                _, jpeg = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                _, jpeg = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 with frame_lock:
                     latest_frame = jpeg.tobytes()
 
@@ -303,8 +386,7 @@ def generate_mjpeg():
             frame = latest_frame
 
         if frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
         else:
             time.sleep(0.03)
 
@@ -315,10 +397,7 @@ def camera_stream():
     if not camera_enabled or not camera_streaming:
         return "Camera not available", 503
 
-    return Response(
-        generate_mjpeg(),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
+    return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 @socketio.on("toggle_camera")
@@ -327,19 +406,21 @@ def handle_toggle_camera():
     global camera_enabled  # pylint: disable=global-statement
 
     if not camera:
-        socketio.emit("camera_status", {
-            "enabled": False,
-            "available": False,
-            "error": "Camera not initialized"
-        })
+        socketio.emit(
+            "camera_status",
+            {"enabled": False, "available": False, "error": "Camera not initialized"},
+        )
         return
 
     camera_enabled = not camera_enabled
-    socketio.emit("camera_status", {
-        "enabled": camera_enabled,
-        "available": True,
-        "streaming": camera_streaming,
-    })
+    socketio.emit(
+        "camera_status",
+        {
+            "enabled": camera_enabled,
+            "available": True,
+            "streaming": camera_streaming,
+        },
+    )
     print(f"Camera {'enabled' if camera_enabled else 'disabled'}")
 
 
@@ -349,33 +430,42 @@ def handle_toggle_camera_stream():
     global camera_streaming  # pylint: disable=global-statement
 
     if not camera or not camera_enabled:
-        socketio.emit("camera_status", {
-            "enabled": camera_enabled,
-            "available": camera is not None,
-            "streaming": False,
-            "error": "Camera not enabled"
-        })
+        socketio.emit(
+            "camera_status",
+            {
+                "enabled": camera_enabled,
+                "available": camera is not None,
+                "streaming": False,
+                "error": "Camera not enabled",
+            },
+        )
         return
 
     camera_streaming = not camera_streaming
-    socketio.emit("camera_status", {
-        "enabled": camera_enabled,
-        "available": True,
-        "streaming": camera_streaming,
-    })
+    socketio.emit(
+        "camera_status",
+        {
+            "enabled": camera_enabled,
+            "available": True,
+            "streaming": camera_streaming,
+        },
+    )
     print(f"Camera streaming {'started' if camera_streaming else 'stopped'}")
 
 
 @socketio.on("get_camera_status")
 def handle_get_camera_status():
     """Get current camera status."""
-    socketio.emit("camera_status", {
-        "enabled": camera_enabled,
-        "available": camera is not None,
-        "streaming": camera_streaming,
-        "ball_detected": ball_detected,
-        "ball_confidence": round(ball_detection_confidence, 2),
-    })
+    socketio.emit(
+        "camera_status",
+        {
+            "enabled": camera_enabled,
+            "available": camera is not None,
+            "streaming": camera_streaming,
+            "ball_detected": ball_detected,
+            "ball_confidence": round(ball_detection_confidence, 2),
+        },
+    )
 
 
 def start_debug_logging():
@@ -401,7 +491,7 @@ def start_debug_logging():
     raw_log_path = log_dir / f"radar_raw_{timestamp}.log"
     file_handler = logging.FileHandler(raw_log_path)
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
     radar_raw_logger.addHandler(file_handler)
     radar_logger.addHandler(file_handler)
 
@@ -435,7 +525,9 @@ def log_debug_reading(reading: SpeedReading):
         debug_log_file.flush()
 
         # Also print to console for immediate feedback
-        print(f"[RADAR] {reading.speed:.1f} mph {reading.direction.value} (mag={reading.magnitude})")
+        print(
+            f"[RADAR] {reading.speed:.1f} mph {reading.direction.value} (mag={reading.magnitude})"
+        )
 
 
 def on_live_reading(reading: SpeedReading):
@@ -445,13 +537,16 @@ def on_live_reading(reading: SpeedReading):
         log_debug_reading(reading)
 
         # Emit ALL readings to UI debug panel (including inbound)
-        socketio.emit("debug_reading", {
-            "speed": reading.speed,
-            "direction": reading.direction.value,
-            "magnitude": reading.magnitude,
-            "timestamp": datetime.now().isoformat(),
-            "filtered": reading.direction != Direction.OUTBOUND,
-        })
+        socketio.emit(
+            "debug_reading",
+            {
+                "speed": reading.speed,
+                "direction": reading.direction.value,
+                "magnitude": reading.magnitude,
+                "timestamp": datetime.now().isoformat(),
+                "filtered": reading.direction != Direction.OUTBOUND,
+            },
+        )
 
     # Filter out inbound readings for shot detection
     # Note: shot filtering happens in launch_monitor.py but we also filter here
@@ -474,7 +569,7 @@ def _get_trigger_status() -> dict:
 
     if is_rolling_buffer:
         trigger_type = monitor.trigger_type
-        if hasattr(monitor, 'radar') and hasattr(monitor.radar, 'port'):
+        if hasattr(monitor, "radar") and hasattr(monitor.radar, "port"):
             radar_port = monitor.radar.port
 
     return {
@@ -495,16 +590,19 @@ def handle_connect():
     if monitor:
         stats = monitor.get_session_stats()
         shots = [shot_to_dict(s) for s in monitor.get_shots()]
-        socketio.emit("session_state", {
-            "stats": stats,
-            "shots": shots,
-            "mock_mode": mock_mode,
-            "debug_mode": debug_mode,
-            "camera_available": camera is not None,
-            "camera_enabled": camera_enabled,
-            "camera_streaming": camera_streaming,
-            "ball_detected": ball_detected,
-        })
+        socketio.emit(
+            "session_state",
+            {
+                "stats": stats,
+                "shots": shots,
+                "mock_mode": mock_mode,
+                "debug_mode": debug_mode,
+                "camera_available": camera is not None,
+                "camera_enabled": camera_enabled,
+                "camera_streaming": camera_streaming,
+                "ball_detected": ball_detected,
+            },
+        )
         socketio.emit("trigger_status", _get_trigger_status())
 
 
@@ -577,10 +675,13 @@ def handle_toggle_debug():
 @socketio.on("get_debug_status")
 def handle_get_debug_status():
     """Get current debug mode status."""
-    socketio.emit("debug_status", {
-        "enabled": debug_mode,
-        "log_path": str(debug_log_path) if debug_log_path else None,
-    })
+    socketio.emit(
+        "debug_status",
+        {
+            "enabled": debug_mode,
+            "log_path": str(debug_log_path) if debug_log_path else None,
+        },
+    )
 
 
 # Radar tuning state
@@ -669,7 +770,7 @@ def on_shot_detected(shot: Shot):
     # Skip camera for mock shots — they already have simulated launch angle
     camera_data = None
     try:
-        if camera_tracker and camera_enabled and shot.mode != 'mock':
+        if camera_tracker and camera_enabled and shot.mode != "mock":
             launch_angle = camera_tracker.calculate_launch_angle()
             if launch_angle:
                 # Update shot object with launch angle data
@@ -684,7 +785,12 @@ def on_shot_detected(shot: Shot):
                     "positions_tracked": len(launch_angle.positions),
                     "launch_detected": camera_tracker.launch_detected,
                 }
-                logger.info("Launch angle: %.1f° V, %.1f° H (conf: %.0f%%)", launch_angle.vertical, launch_angle.horizontal, launch_angle.confidence * 100)
+                logger.info(
+                    "Launch angle: %.1f° V, %.1f° H (conf: %.0f%%)",
+                    launch_angle.vertical,
+                    launch_angle.horizontal,
+                    launch_angle.confidence * 100,
+                )
 
             # Reset camera tracker for next shot
             camera_tracker.reset()
@@ -695,13 +801,19 @@ def on_shot_detected(shot: Shot):
         camera_data = None
 
     # If no camera launch angle, estimate from club type and ball speed
-    if shot.launch_angle_vertical is None and shot.mode != 'mock':
-        estimated = estimate_launch_angle(shot.club, shot.ball_speed_mph)
+    if shot.launch_angle_vertical is None and shot.mode != "mock":
+        estimated = estimate_launch_angle(
+            shot.club,
+            shot.ball_speed_mph,
+            club_speed_mph=shot.club_speed_mph,
+            spin_rpm=shot.spin_rpm,
+        )
         shot.launch_angle_vertical = estimated[0]
         shot.launch_angle_horizontal = 0.0
         shot.launch_angle_confidence = estimated[1]
-        logger.info("Estimated launch angle: %.1f° (conf: %.0f%%)",
-                     estimated[0], estimated[1] * 100)
+        logger.info(
+            "Estimated launch angle: %.1f° (conf: %.0f%%)", estimated[0], estimated[1] * 100
+        )
 
     # Log shot with all data (radar + spin + camera) in one entry
     try:
@@ -738,7 +850,12 @@ def on_shot_detected(shot: Shot):
         angle_str = ""
         if shot.launch_angle_vertical is not None:
             angle_str = f", Launch: {shot.launch_angle_vertical:.1f}°"
-        logger.info("Shot: ball=%.1f mph, carry=%.0f yds%s", shot.ball_speed_mph, shot.estimated_carry_yards, angle_str)
+        logger.info(
+            "Shot: ball=%.1f mph, carry=%.0f yds%s",
+            shot.ball_speed_mph,
+            shot.estimated_carry_yards,
+            angle_str,
+        )
     except Exception as e:
         logger.error("Failed to emit shot: %s", e)
         return
@@ -801,8 +918,16 @@ def start_monitor(
     elif mode == "rolling-buffer":
         # Rolling buffer mode for spin detection
         from .rolling_buffer import RollingBufferMonitor
-        monitor = RollingBufferMonitor(port=port, trigger_type=trigger_type, sample_rate_ksps=sample_rate_ksps, **(trigger_kwargs or {}))
-        print(f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)")
+
+        monitor = RollingBufferMonitor(
+            port=port,
+            trigger_type=trigger_type,
+            sample_rate_ksps=sample_rate_ksps,
+            **(trigger_kwargs or {}),
+        )
+        print(
+            f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)"
+        )
     else:
         # Default streaming mode
         monitor = LaunchMonitor(port=port, debug=debug)
@@ -821,10 +946,11 @@ def start_monitor(
             camera_model="hough" if (camera_tracker and camera_tracker.use_hough) else None,
             config=radar_config.copy(),
             mode="mock" if mock else mode,
-            trigger_type=trigger_type if mode == "rolling-buffer" else None
+            trigger_type=trigger_type if mode == "rolling-buffer" else None,
         )
 
     if mode == "rolling-buffer":
+
         def on_trigger_diagnostic(data: dict):
             """Forward trigger diagnostics to connected UI clients."""
             socketio.emit("trigger_diagnostic", data)
@@ -958,9 +1084,7 @@ class MockLaunchMonitor:
 
     def simulate_shot(self, ball_speed: float = None):
         """Simulate a shot for testing using realistic TrackMan-based values."""
-        avg_speed, std_dev, smash = self._CLUB_BALL_SPEEDS.get(
-            self._current_club, (120, 15, 1.35)
-        )
+        avg_speed, std_dev, smash = self._CLUB_BALL_SPEEDS.get(self._current_club, (120, 15, 1.35))
 
         if ball_speed is None:
             ball_speed = max(50, min(200, random.gauss(avg_speed, std_dev)))
@@ -1026,9 +1150,7 @@ class MockLaunchMonitor:
             "std_dev": statistics.stdev(ball_speeds) if len(ball_speeds) > 1 else 0,
             "avg_club_speed": statistics.mean(club_speeds) if club_speeds else None,
             "avg_smash_factor": statistics.mean(smash_factors) if smash_factors else None,
-            "avg_carry_est": statistics.mean(
-                [s.estimated_carry_yards for s in self._shots]
-            ),
+            "avg_carry_est": statistics.mean([s.estimated_carry_yards for s in self._shots]),
         }
 
     def clear_session(self):
@@ -1046,123 +1168,136 @@ def main():
 
     parser = argparse.ArgumentParser(description="OpenFlight UI Server")
     parser.add_argument("--port", "-p", help="Serial port for radar")
-    parser.add_argument(
-        "--mock", "-m", action="store_true", help="Run in mock mode without radar"
-    )
-    parser.add_argument(
-        "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
-    )
+    parser.add_argument("--mock", "-m", action="store_true", help="Run in mock mode without radar")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     parser.add_argument(
         "--web-port", type=int, default=8080, help="Web server port (default: 8080)"
     )
-    parser.add_argument("--debug", "-d", action="store_true", help="Enable verbose FFT/CFAR debug output")
-    parser.add_argument("--radar-log", action="store_true", help="Log raw radar data to console (Python logging)")
-    parser.add_argument("--show-raw", action="store_true", help="Show raw radar readings in console (signed values)")
+    parser.add_argument(
+        "--debug", "-d", action="store_true", help="Enable verbose FFT/CFAR debug output"
+    )
+    parser.add_argument(
+        "--radar-log", action="store_true", help="Log raw radar data to console (Python logging)"
+    )
+    parser.add_argument(
+        "--show-raw", action="store_true", help="Show raw radar readings in console (signed values)"
+    )
     parser.add_argument(
         "--no-camera", action="store_true", help="Disable camera (auto-enabled if available)"
     )
     parser.add_argument(
-        "--camera-model", default=None,
-        help="Path to YOLO model for ball detection (uses Hough by default)"
+        "--camera-model",
+        default=None,
+        help="Path to YOLO model for ball detection (uses Hough by default)",
     )
     parser.add_argument(
-        "--camera-imgsz", type=int, default=256,
-        help="YOLO inference input size (256 for speed, 640 for accuracy)"
+        "--camera-imgsz",
+        type=int,
+        default=256,
+        help="YOLO inference input size (256 for speed, 640 for accuracy)",
     )
     parser.add_argument(
-        "--hough-param2", type=int, default=33,
-        help="Hough accumulator threshold (lower = more sensitive, default 33)"
+        "--hough-param2",
+        type=int,
+        default=33,
+        help="Hough accumulator threshold (lower = more sensitive, default 33)",
     )
     parser.add_argument(
-        "--hough-param1", type=int, default=48,
-        help="Canny edge threshold (lower = detects weaker edges, default 48)"
+        "--hough-param1",
+        type=int,
+        default=48,
+        help="Canny edge threshold (lower = detects weaker edges, default 48)",
     )
     parser.add_argument(
-        "--hough-min-radius", type=int, default=4,
-        help="Min ball radius in pixels (default 4)"
+        "--hough-min-radius", type=int, default=4, help="Min ball radius in pixels (default 4)"
     )
     parser.add_argument(
-        "--hough-max-radius", type=int, default=43,
-        help="Max ball radius in pixels (default 43)"
+        "--hough-max-radius", type=int, default=43, help="Max ball radius in pixels (default 43)"
     )
     parser.add_argument(
-        "--hough-min-dist", type=int, default=266,
-        help="Min distance between detected circles in pixels (default 266)"
+        "--hough-min-dist",
+        type=int,
+        default=266,
+        help="Min distance between detected circles in pixels (default 266)",
     )
     parser.add_argument(
         "--roboflow-model",
-        help="Roboflow model ID (e.g., 'golfballdetector/10'). Uses Roboflow API instead of Hough."
+        help="Roboflow model ID (e.g., 'golfballdetector/10'). Uses Roboflow API instead of Hough.",
     )
     parser.add_argument(
-        "--roboflow-api-key",
-        help="Roboflow API key (can also use ROBOFLOW_API_KEY env var)"
+        "--roboflow-api-key", help="Roboflow API key (can also use ROBOFLOW_API_KEY env var)"
     )
     parser.add_argument(
-        "--session-location", "-l", default="range",
-        help="Location identifier for session logs (e.g., 'range', 'course', 'home')"
+        "--session-location",
+        "-l",
+        default="range",
+        help="Location identifier for session logs (e.g., 'range', 'course', 'home')",
     )
     parser.add_argument(
-        "--log-dir",
-        help="Directory for session logs (default: ~/openflight_sessions)"
+        "--log-dir", help="Directory for session logs (default: ~/openflight_sessions)"
     )
+    parser.add_argument("--no-logging", action="store_true", help="Disable session logging")
     parser.add_argument(
-        "--no-logging", action="store_true",
-        help="Disable session logging"
-    )
-    parser.add_argument(
-        "--mode", "-M",
+        "--mode",
+        "-M",
         choices=["streaming", "rolling-buffer"],
         default="streaming",
-        help="Radar mode: streaming (default, real-time) or rolling-buffer (higher resolution, spin detection)"
+        help="Radar mode: streaming (default, real-time) or rolling-buffer (higher resolution, spin detection)",
     )
     parser.add_argument(
         "--trigger",
         choices=["polling", "threshold", "speed", "sound", "sound-gpio", "sound-passthrough"],
         default="polling",
-        help="Trigger strategy for rolling-buffer mode (default: polling)"
+        help="Trigger strategy for rolling-buffer mode (default: polling)",
     )
     parser.add_argument(
         "--sound-pre-trigger",
-        type=int, default=32,
-        help="Pre-trigger segments for sound trigger (default: 32 = ~137ms pre / 0ms post, each ~4.27ms at 30ksps)"
+        type=int,
+        default=32,
+        help="Pre-trigger segments for sound trigger (default: 32 = ~137ms pre / 0ms post, each ~4.27ms at 30ksps)",
     )
     parser.add_argument(
         "--sample-rate",
-        type=int, default=30,
-        help="Radar sample rate in ksps (default: 30). Lower = longer buffer but lower max speed. 25=174mph/164ms, 27=187mph/152ms"
+        type=int,
+        default=30,
+        help="Radar sample rate in ksps (default: 30). Lower = longer buffer but lower max speed. 25=174mph/164ms, 27=187mph/152ms",
     )
     parser.add_argument(
         "--gpio-pin",
-        type=int, default=17,
-        help="GPIO pin (BCM numbering) for sound-gpio trigger (default: 17, physical pin 11)"
+        type=int,
+        default=17,
+        help="GPIO pin (BCM numbering) for sound-gpio trigger (default: 17, physical pin 11)",
     )
     parser.add_argument(
         "--gpio-debounce",
-        type=int, default=200,
-        help="Debounce time in ms for sound-gpio trigger (default: 200)"
+        type=int,
+        default=200,
+        help="Debounce time in ms for sound-gpio trigger (default: 200)",
     )
     parser.add_argument(
         "--gpio-input",
-        type=int, default=17,
-        help="GPIO input pin (BCM) for sound-passthrough trigger (default: 17, physical pin 11)"
+        type=int,
+        default=17,
+        help="GPIO input pin (BCM) for sound-passthrough trigger (default: 17, physical pin 11)",
     )
     parser.add_argument(
         "--gpio-output",
-        type=int, default=27,
-        help="GPIO output pin (BCM) for sound-passthrough trigger (default: 27, physical pin 13)"
+        type=int,
+        default=27,
+        help="GPIO output pin (BCM) for sound-passthrough trigger (default: 27, physical pin 13)",
     )
     parser.add_argument(
         "--pulse-width",
-        type=int, default=100,
-        help="Pulse width in microseconds for sound-passthrough trigger (default: 100)"
+        type=int,
+        default=100,
+        help="Pulse width in microseconds for sound-passthrough trigger (default: 100)",
     )
     args = parser.parse_args()
 
     # Configure logging - always show INFO and above for openflight modules
     # This ensures trigger events and important messages are visible
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     # Set rolling buffer logger to INFO so trigger events are visible
     logging.getLogger("openflight.rolling_buffer").setLevel(logging.INFO)
@@ -1177,12 +1312,9 @@ def main():
     # Initialize session logger (enabled for both real and mock modes)
     if not args.no_logging:
         from pathlib import Path
+
         log_dir = Path(args.log_dir) if args.log_dir else None
-        init_session_logger(
-            log_dir=log_dir,
-            location=args.session_location,
-            enabled=True
-        )
+        init_session_logger(log_dir=log_dir, location=args.session_location, enabled=True)
         print(f"Session logging enabled (location: {args.session_location})")
     else:
         init_session_logger(enabled=False)
@@ -1191,8 +1323,7 @@ def main():
     # Configure radar logging if requested
     if args.radar_log:
         logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         radar_logger = logging.getLogger("ops243")
         radar_raw_logger = logging.getLogger("ops243.raw")
@@ -1263,7 +1394,9 @@ def main():
     try:
         # Note: Flask debug mode (reloader) is disabled to prevent duplicate processes
         # fighting over the serial port. OpenFlight --debug enables verbose logging only.
-        socketio.run(app, host=args.host, port=args.web_port, debug=False, allow_unsafe_werkzeug=True)
+        socketio.run(
+            app, host=args.host, port=args.web_port, debug=False, allow_unsafe_werkzeug=True
+        )
     finally:
         stop_camera_thread()
         if camera:
