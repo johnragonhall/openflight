@@ -42,6 +42,22 @@ class ClubType(Enum):
     UNKNOWN = "unknown"
 
 
+# Optimal launch angles by club (from TrackMan data)
+_OPTIMAL_LAUNCH = {
+    ClubType.DRIVER: 11.0, ClubType.WOOD_3: 12.5,
+    ClubType.WOOD_5: 14.0, ClubType.WOOD_7: 15.5,
+    ClubType.HYBRID_3: 13.5, ClubType.HYBRID_5: 15.0,
+    ClubType.HYBRID_7: 16.5, ClubType.HYBRID_9: 18.0,
+    ClubType.IRON_2: 13.0, ClubType.IRON_3: 14.5,
+    ClubType.IRON_4: 16.0, ClubType.IRON_5: 17.5,
+    ClubType.IRON_6: 19.0, ClubType.IRON_7: 20.5,
+    ClubType.IRON_8: 23.0, ClubType.IRON_9: 25.5,
+    ClubType.PW: 28.0, ClubType.GW: 30.0,
+    ClubType.SW: 32.0, ClubType.LW: 35.0,
+    ClubType.UNKNOWN: 18.0,
+}
+
+
 def estimate_carry_distance(ball_speed_mph: float, club: ClubType = ClubType.DRIVER) -> float:
     """
     Estimate carry distance from ball speed using TrackMan-derived data.
@@ -147,6 +163,44 @@ def estimate_carry_distance(ball_speed_mph: float, club: ClubType = ClubType.DRI
     # Apply club factor
     factor = CLUB_FACTORS.get(club, 1.0)
     return carry * factor
+
+
+def adjust_carry_for_launch_angle(
+    base_carry: float,
+    launch_angle: float,
+    club: ClubType = ClubType.DRIVER,
+    confidence: float = 1.0,
+) -> float:
+    """
+    Adjust carry distance based on launch angle deviation from optimal.
+
+    Deviation from optimal costs carry:
+    - Too low: -2.0 yards per degree (ball doesn't get enough height)
+    - Too high: -1.5 yards per degree (ball balloons, less severe)
+    - Penalty is scaled by confidence and capped at 10% of base carry.
+
+    Args:
+        base_carry: Base carry distance in yards (from estimate_carry_distance)
+        launch_angle: Measured vertical launch angle in degrees
+        club: Club type (determines optimal launch angle)
+        confidence: Confidence in the launch angle measurement (0-1)
+
+    Returns:
+        Adjusted carry distance in yards
+    """
+    optimal = _OPTIMAL_LAUNCH.get(club, 18.0)
+    angle_delta = launch_angle - optimal
+
+    if angle_delta < 0:
+        raw_penalty = abs(angle_delta) * 2.0
+    else:
+        raw_penalty = angle_delta * 1.5
+
+    penalty = raw_penalty * confidence
+    max_penalty = base_carry * 0.10
+    penalty = min(penalty, max_penalty)
+
+    return base_carry - penalty
 
 
 @dataclass
