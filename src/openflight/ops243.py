@@ -188,10 +188,9 @@ class OPS243Radar:
                 parity=serial.PARITY_NONE,
                 stopbits=serial.STOPBITS_ONE
             )
-            # Give sensor time to initialize
-            time.sleep(0.5)
-            # Flush any startup data
-            self.serial.reset_input_buffer()
+            # Drain any in-progress dump (e.g. radar triggered while no software was running).
+            # Opening the port unblocks the radar's UART TX, so we read until silence.
+            self._drain_serial()
             return True
         except serial.SerialException as e:
             raise ConnectionError(f"Failed to connect to {self.port}: {e}") from e
@@ -202,6 +201,35 @@ class OPS243Radar:
         if self.serial and self.serial.is_open:
             self.serial.close()
             self.serial = None
+
+    def _drain_serial(self, quiet_period: float = 0.5, max_wait: float = 5.0):
+        """
+        Drain serial port until no data arrives for quiet_period seconds.
+
+        Handles the case where the radar was triggered while no software was
+        running. The radar may be mid-dump (I/Q data streaming out) when we
+        connect. We need to let it finish before sending any commands.
+
+        Args:
+            quiet_period: Seconds of silence before considering drain complete
+            max_wait: Maximum total seconds to wait before giving up
+        """
+        start = time.monotonic()
+        drained = 0
+        old_timeout = self.serial.timeout
+        self.serial.timeout = quiet_period
+
+        while time.monotonic() - start < max_wait:
+            chunk = self.serial.read(4096)
+            if not chunk:
+                break  # No data for quiet_period — drain complete
+            drained += len(chunk)
+
+        self.serial.timeout = old_timeout
+        self.serial.reset_input_buffer()
+
+        if drained > 0:
+            logger.info("Drained %d bytes of stale data from serial buffer", drained)
 
     def _send_command(self, cmd: str) -> str:
         """
