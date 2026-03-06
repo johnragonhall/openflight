@@ -914,6 +914,49 @@ class OPS243Radar:
         time.sleep(0.1)
         logger.info("Rolling buffer mode disabled (returned to CW mode)")
 
+    def persist_rolling_buffer_mode(self, pre_trigger_segments: int = 12,
+                                     sample_rate_ksps: int = 30):
+        """
+        Save rolling buffer mode to persistent memory.
+
+        The OPS243-A has a bug where the HOST_INT pin mode switches
+        unexpectedly when transitioning from normal mode (GS) to rolling
+        buffer mode (GC) at runtime. OmniPreSense workaround:
+
+        1. Enter rolling buffer mode (GC) with desired settings
+        2. Save to persistent memory (A!)
+        3. Power cycle the board
+
+        After power cycle, the board starts in rolling buffer mode and
+        HOST_INT works correctly. Re-arm after each capture with PA.
+
+        This only needs to be done ONCE per radar board (or when changing
+        sample rate / pre-trigger settings).
+
+        Args:
+            pre_trigger_segments: Number of pre-trigger segments (0-32).
+            sample_rate_ksps: Sample rate in ksps (default: 30).
+        """
+        if not self.serial or not self.serial.is_open:
+            raise ConnectionError("Not connected to radar")
+
+        logger.info("Persisting rolling buffer mode to flash memory...")
+
+        # Enter rolling buffer mode with desired settings
+        self.enter_rolling_buffer_mode(
+            pre_trigger_segments=pre_trigger_segments,
+            sample_rate_ksps=sample_rate_ksps
+        )
+
+        # Save to persistent memory
+        self.serial.write(b"A!")
+        time.sleep(0.5)
+
+        logger.info("Rolling buffer mode saved to persistent memory. "
+                     "Power cycle the board for changes to take effect.")
+        print("[RADAR] Settings saved to persistent memory.")
+        print("[RADAR] Power cycle the board (unplug USB, wait 3s, replug).")
+
     def set_trigger_split(self, segments: int = 8):
         """
         Set the pre/post trigger data split for rolling buffer.
@@ -1095,38 +1138,28 @@ class OPS243Radar:
         """
         Re-arm rolling buffer for next capture.
 
-        After trigger_capture() outputs data, the sensor pauses in Idle mode.
-        This method re-enters rolling buffer mode to be ready for the next capture.
+        After a hardware trigger dumps data, the sensor pauses in Idle mode.
+        Per OmniPreSense: "do a PA or GC to start the Rolling Buffer
+        sampling again" after each capture.
 
-        Uses a simplified sequence since we're already in the right mode:
-        1. GC - re-enable rolling buffer mode
-        2. PA - activate sampling
-        3. Wait for buffer to fill
-
-        NOTE: Sample rate persists, so we don't need to set S=30 again.
-        However, trigger split (S#n) may need to be reset if it was changed.
+        We also re-send S#n to ensure the pre/post trigger split is
+        correct, then PA again to activate with the new setting.
 
         Args:
             pre_trigger_segments: Number of pre-trigger segments (0-32).
-                Pass the same value used in enter_rolling_buffer_mode().
+                Each segment = 128 samples = ~4.27ms at 30ksps.
         """
         if not self.serial or not self.serial.is_open:
             raise ConnectionError("Not connected to radar")
 
-        # Clear any stale data
         self.serial.reset_input_buffer()
 
-        # Re-enable rolling buffer mode
-        self.serial.write(b"GC")
-        self.serial.flush()
-        time.sleep(0.1)
-
-        # Activate sampling
+        # Restart sampling
         self.serial.write(b"PA")
         self.serial.flush()
         time.sleep(0.1)
 
-        # Re-send trigger split (GC may reset to default)
+        # Re-send trigger split (may reset after capture dump)
         pre_trigger_segments = max(0, min(32, pre_trigger_segments))
         self.serial.write(f"S#{pre_trigger_segments}\r".encode())
         self.serial.flush()
@@ -1135,8 +1168,9 @@ class OPS243Radar:
         # Reactivate after settings change
         self.serial.write(b"PA")
         self.serial.flush()
-        time.sleep(0.15)  # Allow buffer to start filling
+        time.sleep(0.15)
 
+        self.serial.reset_input_buffer()
         logger.debug("Rolling buffer re-armed (S#%d)", pre_trigger_segments)
 
     def configure_for_rolling_buffer(self, pre_trigger_segments: int = 12, sample_rate_ksps: int = 30):

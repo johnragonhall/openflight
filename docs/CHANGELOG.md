@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Persistent rolling buffer mode workaround for OPS243-A HOST_INT pin bug (per OmniPreSense)
+  - `persist_rolling_buffer_mode()` method saves settings to flash memory
+  - `test_rolling_buffer_persist.py` script for one-time radar setup and verification
+  - Rolling buffer + sound trigger is now the default operating mode
 - Grafana Alloy integration for shipping session logs to Grafana Cloud Loki
   - Setup script (`scripts/setup_alloy.sh`) and config (`config/alloy.alloy`)
   - Auto-starts with `start-kiosk.sh` when credentials are configured

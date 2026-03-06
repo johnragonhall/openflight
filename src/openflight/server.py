@@ -1246,7 +1246,7 @@ def main():
     )
     parser.add_argument(
         "--trigger",
-        choices=["polling", "threshold", "speed", "sound", "sound-gpio", "sound-passthrough"],
+        choices=["polling", "threshold", "speed", "sound", "sound-gpio"],
         default="polling",
         help="Trigger strategy for rolling-buffer mode (default: polling)",
     )
@@ -1273,24 +1273,6 @@ def main():
         type=int,
         default=200,
         help="Debounce time in ms for sound-gpio trigger (default: 200)",
-    )
-    parser.add_argument(
-        "--gpio-input",
-        type=int,
-        default=17,
-        help="GPIO input pin (BCM) for sound-passthrough trigger (default: 17, physical pin 11)",
-    )
-    parser.add_argument(
-        "--gpio-output",
-        type=int,
-        default=27,
-        help="GPIO output pin (BCM) for sound-passthrough trigger (default: 27, physical pin 13)",
-    )
-    parser.add_argument(
-        "--pulse-width",
-        type=int,
-        default=100,
-        help="Pulse width in microseconds for sound-passthrough trigger (default: 100)",
     )
     args = parser.parse_args()
 
@@ -1337,19 +1319,11 @@ def main():
         print("Raw radar readings display ENABLED - signed speed values will be shown")
 
     # Start the monitor
-    # Build trigger-specific kwargs
-    trigger_kwargs = {}
-    if args.trigger == "sound":
-        trigger_kwargs["pre_trigger_segments"] = args.sound_pre_trigger
-    elif args.trigger == "sound-gpio":
+    # Build trigger-specific kwargs (pre_trigger_segments always passed)
+    trigger_kwargs = {"pre_trigger_segments": args.sound_pre_trigger}
+    if args.trigger == "sound-gpio":
         trigger_kwargs["gpio_pin"] = args.gpio_pin
-        trigger_kwargs["pre_trigger_segments"] = args.sound_pre_trigger
         trigger_kwargs["debounce_ms"] = args.gpio_debounce
-    elif args.trigger == "sound-passthrough":
-        trigger_kwargs["input_pin"] = args.gpio_input
-        trigger_kwargs["output_pin"] = args.gpio_output
-        trigger_kwargs["pre_trigger_segments"] = args.sound_pre_trigger
-        trigger_kwargs["pulse_width_us"] = args.pulse_width
 
     # Initialize camera BEFORE starting monitor (so session log is accurate)
     if not args.no_camera:

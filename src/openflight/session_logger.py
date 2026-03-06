@@ -411,7 +411,7 @@ class SessionLogger:
         nearby players can trip sound triggers.
 
         Args:
-            trigger_type: Type of trigger (e.g., "sound-passthrough", "sound-gpio")
+            trigger_type: Type of trigger (e.g., "sound", "sound-gpio")
             accepted: True if trigger led to valid shot detection
             reason: Reason for rejection (if not accepted)
             peak_speed_mph: Peak speed detected (if any)

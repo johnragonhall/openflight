@@ -54,6 +54,32 @@ uv pip install -e ".[ui,camera]"
 cd ui && npm install && npm run build && cd ..
 ```
 
+## Radar Setup (One-Time)
+
+The OPS243-A needs a one-time configuration to enable rolling buffer mode with hardware sound triggering. This saves the settings to the radar's flash memory so it starts in the correct mode on every power-up.
+
+### 1. Configure and Save
+
+```bash
+uv run python scripts/test_rolling_buffer_persist.py --setup
+```
+
+This enters rolling buffer mode (GC) with 30ksps sample rate and saves to persistent memory (A!).
+
+### 2. Power Cycle
+
+Unplug the radar's USB cable, wait 3 seconds, plug it back in. The radar will boot directly into rolling buffer mode.
+
+### 3. Verify
+
+```bash
+uv run python scripts/test_rolling_buffer_persist.py --test
+```
+
+Make a sound near the SEN-14262 sensor — you should see trigger data with I/Q samples.
+
+> **Why is this needed?** The OPS243-A has a firmware bug where the HOST_INT pin mode switches unexpectedly when transitioning from normal mode to rolling buffer mode at runtime. Saving rolling buffer mode to persistent memory and power cycling bypasses this issue. This was confirmed by OmniPreSense engineering.
+
 ## Running OpenFlight
 
 ### Manual Start
@@ -74,15 +100,18 @@ Then open `http://localhost:8080` in a browser.
 ./scripts/start-kiosk.sh
 ```
 
-This starts the server and launches Chromium in fullscreen kiosk mode. Camera is enabled by default if available.
+This starts the server in rolling buffer mode with sound triggering (default). Camera is enabled by default if available.
 
 Options:
 ```bash
+# Default: rolling buffer + sound trigger (requires one-time radar setup above)
+./scripts/start-kiosk.sh
+
 # Mock mode (no radar)
 ./scripts/start-kiosk.sh --mock
 
-# Rolling buffer mode with sound trigger (for spin detection)
-./scripts/start-kiosk.sh --mode rolling-buffer --trigger sound
+# Override mode/trigger (e.g., streaming mode without sound trigger)
+./scripts/start-kiosk.sh --mode streaming --trigger ""
 
 # Disable camera
 ./scripts/start-kiosk.sh --no-camera
@@ -319,9 +348,9 @@ openflight-server --web-port 3000        # Custom port
 ### Kiosk
 
 ```bash
-./scripts/start-kiosk.sh              # Production mode (Hough detection, camera auto-enabled)
-./scripts/start-kiosk.sh --mock       # Mock mode
+./scripts/start-kiosk.sh              # Default: rolling buffer + sound trigger + camera
+./scripts/start-kiosk.sh --mock       # Mock mode (no radar)
 ./scripts/start-kiosk.sh --no-camera  # Disable camera
-./scripts/start-kiosk.sh --hough-param2 25  # Tune detection sensitivity
-./scripts/start-kiosk.sh --camera-model models/golf_ball_yolo11n.onnx  # Use YOLO instead
+./scripts/start-kiosk.sh --mode streaming  # Streaming mode (no spin detection)
+./scripts/start-kiosk.sh --hough-param2 25  # Tune ball detection sensitivity
 ```

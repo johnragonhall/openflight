@@ -29,8 +29,9 @@ class TriggerStrategy(ABC):
     Different strategies trade off between simplicity, reliability, and efficiency.
     """
 
-    def __init__(self):
+    def __init__(self, pre_trigger_segments: int = 12):
         self._diagnostics: List[dict] = []
+        self.pre_trigger_segments = pre_trigger_segments
 
     def drain_diagnostics(self) -> List[dict]:
         """Return and clear accumulated diagnostic entries.
@@ -125,6 +126,7 @@ class PollingTrigger(TriggerStrategy):
         poll_interval: float = 0.3,
         min_readings: int = 1,
         min_speed_mph: float = 15,
+        pre_trigger_segments: int = 12,
     ):
         """
         Initialize polling trigger.
@@ -133,8 +135,9 @@ class PollingTrigger(TriggerStrategy):
             poll_interval: Seconds between poll attempts (default 0.3s for faster response)
             min_readings: Minimum outbound readings above min_speed (default 1)
             min_speed_mph: Minimum speed to consider activity (default 15 mph)
+            pre_trigger_segments: Number of pre-trigger segments for re-arm (0-32)
         """
-        super().__init__()
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
         self.poll_interval = poll_interval
         self.min_readings = min_readings
         self.min_speed_mph = min_speed_mph
@@ -154,7 +157,7 @@ class PollingTrigger(TriggerStrategy):
                 response = radar.trigger_capture(timeout=10.0)
 
                 # Re-arm for next capture (sensor goes to idle after output)
-                radar.rearm_rolling_buffer()
+                radar.rearm_rolling_buffer(self.pre_trigger_segments)
 
                 # Parse response
                 capture = processor.parse_capture(response)
@@ -204,6 +207,7 @@ class ThresholdTrigger(TriggerStrategy):
         speed_threshold_mph: float = 50,
         check_interval: float = 0.1,
         settling_time: float = 0.05,
+        pre_trigger_segments: int = 12,
     ):
         """
         Initialize threshold trigger.
@@ -212,8 +216,9 @@ class ThresholdTrigger(TriggerStrategy):
             speed_threshold_mph: Speed that triggers capture
             check_interval: Seconds between threshold checks
             settling_time: Time to wait after threshold before capture
+            pre_trigger_segments: Number of pre-trigger segments for re-arm (0-32)
         """
-        super().__init__()
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
         self.speed_threshold_mph = speed_threshold_mph
         self.check_interval = check_interval
         self.settling_time = settling_time
@@ -240,7 +245,7 @@ class ThresholdTrigger(TriggerStrategy):
                 response = radar.trigger_capture(timeout=10.0)
 
                 # Re-arm for next capture
-                radar.rearm_rolling_buffer()
+                radar.rearm_rolling_buffer(self.pre_trigger_segments)
 
                 capture = processor.parse_capture(response)
 
@@ -262,7 +267,7 @@ class ThresholdTrigger(TriggerStrategy):
 
                     # Capture again for complete swing data
                     response = radar.trigger_capture(timeout=10.0)
-                    radar.rearm_rolling_buffer()
+                    radar.rearm_rolling_buffer(self.pre_trigger_segments)
                     final_capture = processor.parse_capture(response)
 
                     return final_capture or capture
@@ -289,8 +294,8 @@ class ManualTrigger(TriggerStrategy):
     Useful for controlled testing scenarios.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, pre_trigger_segments: int = 12):
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
         self._trigger_requested = False
 
     def request_trigger(self):
@@ -312,7 +317,7 @@ class ManualTrigger(TriggerStrategy):
                 logger.info("Manual trigger activated")
 
                 response = radar.trigger_capture(timeout=10.0)
-                radar.rearm_rolling_buffer()
+                radar.rearm_rolling_buffer(self.pre_trigger_segments)
                 return processor.parse_capture(response)
 
             time.sleep(0.1)
@@ -351,6 +356,7 @@ class SpeedTriggeredCapture(TriggerStrategy):
         min_trigger_speed_mph: float = 20.0,
         min_ball_speed_mph: float = 35.0,
         trigger_to_capture_delay_ms: float = 15.0,
+        pre_trigger_segments: int = 0,  # Speed trigger defaults to 0 (no pre-trigger)
     ):
         """
         Initialize speed-triggered capture.
@@ -360,8 +366,9 @@ class SpeedTriggeredCapture(TriggerStrategy):
             min_ball_speed_mph: Minimum ball speed to consider valid shot (default 35mph)
             trigger_to_capture_delay_ms: Delay after trigger before capture (default 15ms)
                 This allows ball impact to happen before we dump the buffer.
+            pre_trigger_segments: Pre-trigger segments (default 0 for speed trigger)
         """
-        super().__init__()
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
         self.min_trigger_speed_mph = min_trigger_speed_mph
         self.min_ball_speed_mph = min_ball_speed_mph
         self.trigger_to_capture_delay_ms = trigger_to_capture_delay_ms
@@ -511,9 +518,8 @@ class GPIOSoundTrigger(TriggerStrategy):
                 The trigger does NOT configure rolling buffer mode itself.
             debounce_ms: Debounce time in ms to ignore rapid triggers (default: 200)
         """
-        super().__init__()
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
         self.gpio_pin = gpio_pin
-        self.pre_trigger_segments = pre_trigger_segments
         self.debounce_ms = debounce_ms
         self._button = None
         self._trigger_event = {"triggered": False, "edge_time": 0.0}
@@ -708,239 +714,6 @@ class GPIOSoundTrigger(TriggerStrategy):
             self._gpio_initialized = False
 
 
-class GPIOPassthroughTrigger(TriggerStrategy):
-    """
-    Ultra-low-latency GPIO passthrough trigger using Pi as voltage booster.
-
-    IMPORTANT: Rolling buffer mode must be configured BEFORE using this trigger.
-    Call radar.configure_for_rolling_buffer() or radar.enter_rolling_buffer_mode()
-    before calling wait_for_trigger().
-
-    Wiring:
-        SEN-14262 GATE → Pi GPIO17 (input, default)
-        Pi GPIO27 (output, default) → OPS243-A HOST_INT (J3 Pin 3)
-
-    How it works:
-        1. GATE goes HIGH (~2.5V) on sound detection
-        2. Pi GPIO input detects edge (threshold ~1.8V, faster than HOST_INT)
-        3. lgpio callback immediately sets GPIO output HIGH (3.3V)
-        4. Radar HOST_INT receives clean 3.3V signal, triggers buffer dump
-        5. Python waits for I/Q data on serial (existing wait_for_hardware_trigger)
-
-    Trigger latency: ~10μs (hardware + C callback), vs 1-18ms for software S!
-
-    Physical pin mapping:
-        GPIO17 = Physical pin 11
-        GPIO27 = Physical pin 13
-        3.3V   = Physical pin 1
-        GND    = Physical pin 6, 9, 14, 20, 25, 30, 34, 39
-
-    Requires: lgpio library (uv pip install lgpio)
-    """
-
-    def __init__(
-        self,
-        input_pin: int = 17,
-        output_pin: int = 27,
-        pre_trigger_segments: int = 12,
-        pulse_width_us: int = 100,
-    ):
-        """
-        Initialize GPIO passthrough trigger.
-
-        Args:
-            input_pin: GPIO pin (BCM) for GATE input (default: 17, physical pin 11)
-            output_pin: GPIO pin (BCM) for HOST_INT output (default: 27, physical pin 13)
-            pre_trigger_segments: Number of pre-trigger segments for S# command.
-                Each segment = 128 samples = ~4.27ms at 30ksps.
-                Default 12 gives ~51ms pre-trigger, ~85ms post-trigger.
-                NOTE: This is passed to enter_rolling_buffer_mode() by the caller.
-                The trigger does NOT configure rolling buffer mode itself.
-            pulse_width_us: Pulse width in microseconds (default: 100)
-        """
-        super().__init__()
-        self.input_pin = input_pin
-        self.output_pin = output_pin
-        self.pre_trigger_segments = pre_trigger_segments
-        self.pulse_width_us = pulse_width_us
-        self._handle = None
-        self._gpio_initialized = False
-
-    def _init_gpio(self):
-        """Initialize GPIO with lgpio for lowest latency."""
-        if self._gpio_initialized:
-            return True
-
-        try:
-            import lgpio  # pylint: disable=import-outside-toplevel
-        except ImportError:
-            logger.error("lgpio not available. Install with: uv pip install lgpio")
-            return False
-
-        try:
-            self._handle = lgpio.gpiochip_open(0)
-
-            # Configure input with pull-down and alert for edge detection
-            lgpio.gpio_claim_alert(self._handle, self.input_pin, lgpio.RISING_EDGE, lgpio.SET_PULL_DOWN)
-
-            # Configure output, initially LOW
-            lgpio.gpio_claim_output(self._handle, self.output_pin, 0)
-
-            # Store lgpio module reference for callback
-            self._lgpio = lgpio
-
-            # Set up edge callback - runs in lgpio's C thread for minimal latency
-            def on_gate_rising(chip, gpio, level, tick):  # pylint: disable=unused-argument
-                if level == 1:  # Rising edge
-                    # Immediately pulse output HIGH - this is C-speed!
-                    lgpio.gpio_write(self._handle, self.output_pin, 1)
-                    time.sleep(self.pulse_width_us / 1_000_000)  # Brief pulse
-                    lgpio.gpio_write(self._handle, self.output_pin, 0)
-
-            self._callback_id = lgpio.callback(
-                self._handle,
-                self.input_pin,
-                lgpio.RISING_EDGE,
-                on_gate_rising
-            )
-
-            self._gpio_initialized = True
-            logger.info(
-                "GPIO passthrough configured: GPIO%d (in) → GPIO%d (out), pulse=%dμs",
-                self.input_pin, self.output_pin, self.pulse_width_us
-            )
-            return True
-
-        except Exception as e:
-            logger.error("Failed to initialize GPIO passthrough: %s", e)
-            if self._handle is not None:
-                try:
-                    lgpio.gpiochip_close(self._handle)
-                except Exception:
-                    pass
-                self._handle = None
-            return False
-
-    def wait_for_trigger(
-        self,
-        radar: "OPS243Radar",
-        processor: RollingBufferProcessor,
-        timeout: float = 30.0,
-    ) -> Optional[IQCapture]:
-        """
-        Wait for hardware trigger (fired by GPIO passthrough).
-
-        PREREQUISITE: Rolling buffer mode must already be configured via
-        radar.configure_for_rolling_buffer() or radar.enter_rolling_buffer_mode().
-
-        The GPIO passthrough fires HOST_INT directly via hardware callback.
-        We just wait for the radar to dump its buffer via serial.
-        """
-        if not self._init_gpio():
-            logger.error("GPIO passthrough initialization failed")
-            return None
-
-        logger.info(
-            "Waiting for GPIO passthrough trigger: GPIO%d→GPIO%d (timeout=%ss)...",
-            self.input_pin, self.output_pin, timeout
-        )
-
-        # Use existing wait_for_hardware_trigger - radar triggered via HOST_INT
-        response = radar.wait_for_hardware_trigger(timeout=timeout)
-
-        if not response:
-            logger.info("GPIO passthrough trigger timeout - no hardware trigger received")
-            return None
-
-        response_len = len(response)
-        logger.info("Hardware trigger fired (via GPIO passthrough), received %d bytes", response_len)
-
-        # Re-arm for next capture
-        radar.rearm_rolling_buffer(self.pre_trigger_segments)
-
-        capture = processor.parse_capture(response)
-
-        if not capture:
-            self._append_diagnostic(
-                accepted=False,
-                reason="parse_failed",
-                response_bytes=response_len,
-            )
-            return None
-
-        # Log raw I/Q for ALL triggers for offline analysis
-        self._log_capture(capture, accepted=False)
-
-        # Quick validation: does the capture contain any real swing data?
-        timeline = processor.process_standard(capture)
-        all_readings = timeline.readings
-        all_outbound = [r for r in all_readings if r.is_outbound]
-        all_inbound = [r for r in all_readings if not r.is_outbound]
-        outbound_speeds = [r.speed_mph for r in all_outbound]
-        inbound_speeds = [r.speed_mph for r in all_inbound]
-        peak_outbound = max(outbound_speeds, default=0)
-        peak_inbound = max(inbound_speeds, default=0)
-        peak_out_mag = max((r.magnitude for r in all_outbound), default=0)
-        peak_in_mag = max((r.magnitude for r in all_inbound), default=0)
-
-        outbound_valid = [r for r in all_outbound if r.speed_mph >= 15.0]
-
-        if not outbound_valid:
-            logger.info("GPIO passthrough trigger: no swing detected in capture, re-arming")
-            self._append_diagnostic(
-                accepted=False,
-                reason="no_outbound_speed",
-                response_bytes=response_len,
-                total_readings=len(all_readings),
-                outbound_readings=len(all_outbound),
-                inbound_readings=len(all_inbound),
-                peak_outbound_mph=peak_outbound,
-                peak_inbound_mph=peak_inbound,
-                all_outbound_speeds=outbound_speeds,
-                all_inbound_speeds=inbound_speeds,
-                peak_outbound_magnitude=peak_out_mag,
-                peak_inbound_magnitude=peak_in_mag,
-            )
-            return None
-
-        peak = max(r.speed_mph for r in outbound_valid)
-        logger.info("GPIO passthrough capture: %d readings, peak %.1f mph",
-                   len(outbound_valid), peak)
-        self._append_diagnostic(
-            accepted=True,
-            reason="accepted",
-            response_bytes=response_len,
-            total_readings=len(all_readings),
-            outbound_readings=len(all_outbound),
-            inbound_readings=len(all_inbound),
-            peak_outbound_mph=peak_outbound,
-            peak_inbound_mph=peak_inbound,
-            all_outbound_speeds=outbound_speeds,
-            all_inbound_speeds=inbound_speeds,
-            peak_outbound_magnitude=peak_out_mag,
-            peak_inbound_magnitude=peak_in_mag,
-        )
-
-        return capture
-
-    def reset(self):
-        """Reset trigger state."""
-        pass  # No state to reset
-
-    def cleanup(self):
-        """Clean up GPIO resources."""
-        if self._handle is not None:
-            try:
-                import lgpio  # pylint: disable=import-outside-toplevel
-                if hasattr(self, '_callback_id'):
-                    lgpio.callback_cancel(self._callback_id)
-                lgpio.gpiochip_close(self._handle)
-            except Exception as e:
-                logger.warning("Error cleaning up GPIO: %s", e)
-            self._handle = None
-            self._gpio_initialized = False
-
-
 class SoundTrigger(TriggerStrategy):
     """
     Hardware sound trigger using SparkFun SEN-14262.
@@ -974,8 +747,7 @@ class SoundTrigger(TriggerStrategy):
                 NOTE: This is passed to enter_rolling_buffer_mode() by the caller.
                 The trigger does NOT configure rolling buffer mode itself.
         """
-        super().__init__()
-        self.pre_trigger_segments = pre_trigger_segments
+        super().__init__(pre_trigger_segments=pre_trigger_segments)
 
     def wait_for_trigger(
         self,
@@ -1090,7 +862,7 @@ def create_trigger(trigger_type: str = "speed", **kwargs) -> TriggerStrategy:
 
     Args:
         trigger_type: "speed" (recommended), "polling", "threshold", "manual",
-                      "sound", "sound-gpio", or "sound-passthrough"
+                      "sound", or "sound-gpio"
         **kwargs: Arguments passed to trigger constructor
 
     Returns:
@@ -1107,10 +879,6 @@ def create_trigger(trigger_type: str = "speed", **kwargs) -> TriggerStrategy:
         - "sound-gpio": GPIO-assisted sound trigger via Pi GPIO + S! command.
                         Use when GATE voltage doesn't reach HOST_INT threshold.
                         Requires gpiozero library.
-        - "sound-passthrough": Ultra-low-latency GPIO passthrough trigger.
-                               Uses Pi as voltage booster: GATE → Pi GPIO (in) → Pi GPIO (out) → HOST_INT.
-                               ~10μs trigger latency vs 1-18ms for software S! trigger.
-                               Requires lgpio library.
     """
     triggers = {
         "speed": SpeedTriggeredCapture,
@@ -1119,7 +887,6 @@ def create_trigger(trigger_type: str = "speed", **kwargs) -> TriggerStrategy:
         "manual": ManualTrigger,
         "sound": SoundTrigger,
         "sound-gpio": GPIOSoundTrigger,
-        "sound-passthrough": GPIOPassthroughTrigger,
     }
 
     if trigger_type not in triggers:

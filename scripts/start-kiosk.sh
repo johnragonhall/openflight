@@ -14,8 +14,8 @@ MOCK_MODE=false
 RADAR_LOG=false
 DEBUG_MODE=false
 NO_CAMERA=false  # Camera auto-enabled by default (uses Hough + ByteTrack)
-MODE=""
-TRIGGER=""
+MODE="rolling-buffer"  # Default: rolling buffer mode (requires one-time radar setup)
+TRIGGER="sound"  # Default: hardware sound trigger (SEN-14262 → HOST_INT)
 SOUND_PRE_TRIGGER=""
 
 # Parse arguments
@@ -176,6 +176,12 @@ if [ "$MOCK_MODE" = true ]; then
     log "Starting OpenFlight server on port $PORT (MOCK MODE)..."
 else
     log "Starting OpenFlight server on port $PORT..."
+    if [ -n "$MODE" ]; then
+        log "Mode: $MODE"
+    fi
+    if [ -n "$TRIGGER" ]; then
+        log "Trigger: $TRIGGER"
+    fi
 fi
 
 if [ "$DEBUG_MODE" = true ]; then
