@@ -94,6 +94,12 @@ Examples:
         help="Pre-trigger segments S#n, 0-32 (default: 16 = 50/50 split)"
     )
     parser.add_argument(
+        "--buffer-split", "-b",
+        choices=["balanced", "post-heavy", "pre-heavy"],
+        help="Buffer split preset (overrides --pre-trigger): "
+             "balanced=S#16 (50/50), post-heavy=S#12 (37/63), pre-heavy=S#24 (75/25)"
+    )
+    parser.add_argument(
         "--sample-rate", "-s", type=int, default=30,
         help="Sample rate in ksps (default: 30)"
     )
@@ -106,6 +112,11 @@ Examples:
         help="Stop after N captures (default: 0 = unlimited, Ctrl+C to stop)"
     )
     args = parser.parse_args()
+
+    # Resolve buffer split preset
+    if args.buffer_split:
+        presets = {"balanced": 16, "post-heavy": 12, "pre-heavy": 24}
+        args.pre_trigger = presets[args.buffer_split]
 
     # Output file
     if args.output:
