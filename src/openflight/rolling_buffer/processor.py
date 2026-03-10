@@ -72,7 +72,7 @@ class RollingBufferProcessor:
     # Spin detection
     MIN_SPIN_RPM = 1000
     MAX_SPIN_RPM = 10000
-    MIN_SPIN_SNR = 3.0
+    MIN_SPIN_SNR = 4.0
 
     def __init__(self, sample_rate: int = 30000):
         """Initialize processor with pre-computed window function.
@@ -426,7 +426,7 @@ class RollingBufferProcessor:
         Returns:
             SpinResult with detected spin or failure reason
         """
-        if len(ball_speeds) < 10:
+        if len(ball_speeds) < 15:
             return SpinResult.no_spin_detected("Insufficient ball speed samples")
 
         speeds = np.array(ball_speeds)
@@ -470,6 +470,17 @@ class RollingBufferProcessor:
         peak_idx = np.argmax(valid_magnitude)
         peak_freq = valid_freqs[peak_idx]
         peak_mag = valid_magnitude[peak_idx]
+
+        # Reject if peak is at the first valid bin — this is almost always
+        # spectral leakage from the Hann window, not real spin signal.
+        # With 256-pt FFT at 937.5 Hz, bin 5 = 1099 RPM is always the
+        # first bin above MIN_SPIN_RPM and consistently "wins" on noise.
+        freq_resolution = sample_rate_hz / fft_size
+        first_valid_bin_freq = np.ceil(min_freq / freq_resolution) * freq_resolution
+        if abs(peak_freq - first_valid_bin_freq) < freq_resolution * 0.5:
+            return SpinResult.no_spin_detected(
+                f"Peak at first valid bin ({abs(peak_freq) * 60:.0f} RPM) — likely spectral leakage"
+            )
 
         # Calculate SNR against noise floor (median of all valid-range bins)
         noise_floor = np.median(valid_magnitude)

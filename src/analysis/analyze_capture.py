@@ -6,13 +6,13 @@
 # ]
 # ///
 
-import matplotlib
-matplotlib.use('TkAgg')
-
 import argparse
 import pickle
 import os
 import numpy as np
+
+# matplotlib backend set after arg parsing (Agg for headless, TkAgg for interactive)
+import matplotlib
 import matplotlib.pyplot as plt
 
 
@@ -26,31 +26,34 @@ def load_data(file_path):
         print(f"Error: {e}")
 
 
-def time_domain_plot(sig, t_s, title_suffix=""):
-    plt.figure()
-    plt.subplot(1, 2, 1)
-    plt.plot(t_s, sig.real, color='blue', label='I')
-    plt.plot(t_s, sig.imag, color='red', label='Q')
+def time_domain_plot(sig, t_s, title_suffix="", save_path=None):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-    plt.title(f"Time Domain Signal (True Time){title_suffix}")
-    plt.xlabel("Time (seconds)")
-    plt.ylabel("Amplitude")
-    plt.legend()
-    plt.grid(True)
+    ax1.plot(t_s * 1000, sig.real, color='blue', label='I')
+    ax1.plot(t_s * 1000, sig.imag, color='red', label='Q')
+    ax1.set_title(f"Time Domain Signal{title_suffix}")
+    ax1.set_xlabel("Time (ms)")
+    ax1.set_ylabel("Amplitude")
+    ax1.legend()
+    ax1.grid(True)
 
-    plt.subplot(1, 2, 2)
-    plt.plot(sig.real, color='blue', label='I')
-    plt.plot(sig.imag, color='red', label='Q')
+    ax2.plot(sig.real, color='blue', label='I')
+    ax2.plot(sig.imag, color='red', label='Q')
+    ax2.set_title(f"Time Domain Signal (Sample Index){title_suffix}")
+    ax2.set_xlabel("Sample Index")
+    ax2.set_ylabel("Amplitude")
+    ax2.legend()
+    ax2.grid(True)
 
-    plt.title(f"Time Domain Signal (Sample Index){title_suffix}")
-    plt.xlabel("Sample Index")
-    plt.ylabel("Amplitude")
-    plt.legend()
-    plt.grid(True)
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"    Saved: {save_path}")
+        plt.close(fig)
 
 
-def analyze(fname, capture_idx=None):
-    # get data
+def analyze(fname, capture_idx=None, save_dir=None):
     data = load_data(fname)
     if data is None:
         return
@@ -59,26 +62,33 @@ def analyze(fname, capture_idx=None):
     mode = metadata.get("mode", "iq_streaming")
     fs_hz = metadata.get("sample_rate", 30000)
     captures = data.get("captures", [])
+    pre_trigger = metadata.get("pre_trigger_segments")
+    valid = metadata.get("valid_captures")
 
     print(f"  Mode: {mode}")
     print(f"  Sample rate: {fs_hz} Hz")
-    print(f"  Captures: {len(captures)}")
+    print(f"  Captures: {len(captures)} ({valid} valid)")
+    if pre_trigger is not None:
+        print(f"  Pre-trigger: S#{pre_trigger}")
 
     if mode == "rolling_buffer":
-        analyze_rolling_buffer(data, fs_hz, capture_idx)
+        analyze_rolling_buffer(data, fs_hz, capture_idx, save_dir)
     else:
-        analyze_streaming(data, fs_hz)
+        analyze_streaming(data, fs_hz, save_dir)
 
 
-def analyze_streaming(data, fs_hz):
+def analyze_streaming(data, fs_hz, save_dir=None):
     """Analyze old-style streaming captures (128-sample blocks with complex_signal)."""
     [sig, t_s, fs_hz] = parse_streaming_datastruct(data, fs_hz)
 
-    time_domain_plot(sig, t_s)
-    spectrogram(sig, fs_hz, window_size=4096, overlap=0)
+    save_td = os.path.join(save_dir, "time_domain.png") if save_dir else None
+    save_spec = os.path.join(save_dir, "spectrogram.png") if save_dir else None
+
+    time_domain_plot(sig, t_s, save_path=save_td)
+    spectrogram(sig, fs_hz, window_size=4096, overlap=0, save_path=save_spec)
 
 
-def analyze_rolling_buffer(data, fs_hz, capture_idx=None):
+def analyze_rolling_buffer(data, fs_hz, capture_idx=None, save_dir=None):
     """Analyze rolling buffer captures (4096-sample I/Q per trigger event)."""
     captures = data.get("captures", [])
 
@@ -90,12 +100,25 @@ def analyze_rolling_buffer(data, fs_hz, capture_idx=None):
     else:
         captures_to_plot = list(enumerate(captures, 1))
 
+    # Print summary table
+    print()
+    print(f"  {'#':>3s}  {'ball':>6s}  {'club':>6s}  {'smash':>5s}  {'spin':>6s}  {'trigger':>8s}")
+    print(f"  {'---':>3s}  {'------':>6s}  {'------':>6s}  {'-----':>5s}  {'------':>6s}  {'--------':>8s}")
+    for idx, capture in enumerate(captures, 1):
+        ball = capture.get("ball_speed_mph")
+        club = capture.get("club_speed_mph")
+        smash = capture.get("smash_factor")
+        spin = capture.get("spin_rpm")
+        trig = capture.get("trigger_offset_ms", 0)
+        print(f"  {idx:3d}  {fmt(ball, '{:.1f}'):>6s}  {fmt(club, '{:.1f}'):>6s}  "
+              f"{fmt(smash, '{:.2f}'):>5s}  {fmt(spin, '{:.0f}'):>6s}  {trig:7.1f}ms")
+    print()
+
     for idx, capture in captures_to_plot:
         sig = get_complex_signal(capture, fs_hz)
         n_samples = len(sig)
         t_s = np.arange(n_samples) / fs_hz
 
-        # Print capture info
         trigger_offset = capture.get("trigger_offset_ms", 0)
         ball_speed = capture.get("ball_speed_mph")
         club_speed = capture.get("club_speed_mph")
@@ -110,13 +133,25 @@ def analyze_rolling_buffer(data, fs_hz, capture_idx=None):
             info_parts.append(f"spin={spin_rpm}rpm")
 
         info_str = ", ".join(info_parts)
-        print(f"  Capture #{idx}: {n_samples} samples, {n_samples/fs_hz*1000:.1f}ms ({info_str})")
+        print(f"  Plotting capture #{idx}: {n_samples} samples, {n_samples/fs_hz*1000:.1f}ms ({info_str})")
 
         suffix = f" - Capture #{idx}"
-        time_domain_plot(sig, t_s, title_suffix=suffix)
-        # Use 128-sample window with 75% overlap for rolling buffer spectrograms
-        # to match the processor's overlapping analysis
-        spectrogram(sig, fs_hz, window_size=128, overlap=96, title_suffix=suffix)
+        if ball_speed:
+            suffix += f" ({ball_speed}mph)"
+
+        save_td = os.path.join(save_dir, f"capture_{idx:02d}_time.png") if save_dir else None
+        save_spec = os.path.join(save_dir, f"capture_{idx:02d}_spectrogram.png") if save_dir else None
+
+        time_domain_plot(sig, t_s, title_suffix=suffix, save_path=save_td)
+        spectrogram(sig, fs_hz, window_size=128, overlap=96,
+                    title_suffix=suffix, trigger_ms=trigger_offset, save_path=save_spec)
+
+
+def fmt(val, spec):
+    """Format a value or return '-' if None."""
+    if val is None:
+        return "-"
+    return spec.format(val)
 
 
 def get_complex_signal(capture, fs_hz):
@@ -159,7 +194,7 @@ def parse_streaming_datastruct(data, fs_hz):
     return sig_tot, t_tot, fs_hz
 
 
-def spectrogram(sig, fs_hz, window_size, overlap, title_suffix=""):
+def spectrogram(sig, fs_hz, window_size, overlap, title_suffix="", trigger_ms=None, save_path=None):
     # full fft for comparison
     sig_fft = np.fft.fftshift(np.fft.fft(sig))
     fft_freqs = np.linspace(-fs_hz/2, fs_hz/2, len(sig), endpoint=False)
@@ -189,23 +224,33 @@ def spectrogram(sig, fs_hz, window_size, overlap, title_suffix=""):
     freqs_mph = dopp_to_mph(freqs_hz)
     times_ms = np.arange(num_segments) * (hop_size / fs_hz) * 1000
 
-    plt.figure(figsize=(14, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-    plt.subplot(1, 2, 1)
-    plt.imshow(spec_db, aspect='auto', origin='lower',
+    im = ax1.imshow(spec_db, aspect='auto', origin='lower',
                extent=[times_ms[0], times_ms[-1], freqs_mph[0], freqs_mph[-1]])
-    plt.title(f"Spectrogram{title_suffix}")
-    plt.ylabel("Speed (mph)")
-    plt.xlabel("Time (ms)")
-    plt.colorbar(label="dB")
+    ax1.set_title(f"Spectrogram{title_suffix}")
+    ax1.set_ylabel("Speed (mph)")
+    ax1.set_xlabel("Time (ms)")
+    fig.colorbar(im, ax=ax1, label="dB")
 
-    plt.subplot(1, 2, 2)
-    plt.plot(fft_mph, db20_1d(sig_fft))
-    plt.title(f"Full FFT{title_suffix}")
-    plt.xlabel("Speed (mph)")
-    plt.ylabel("Magnitude (dB)")
-    plt.grid(True)
-    plt.tight_layout()
+    # Mark trigger point
+    if trigger_ms is not None:
+        ax1.axvline(x=trigger_ms, color='white', linestyle='--', linewidth=1.5, alpha=0.8)
+        ax1.text(trigger_ms + 1, freqs_mph[-1] * 0.9, 'trigger', color='white',
+                fontsize=9, fontweight='bold', va='top')
+
+    ax2.plot(fft_mph, db20(sig_fft))
+    ax2.set_title(f"Full FFT{title_suffix}")
+    ax2.set_xlabel("Speed (mph)")
+    ax2.set_ylabel("Magnitude (dB)")
+    ax2.grid(True)
+
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"    Saved: {save_path}")
+        plt.close(fig)
 
 
 def dopp_to_mph(freqs, fc=24.125e9):
@@ -216,10 +261,6 @@ def dopp_to_mph(freqs, fc=24.125e9):
 
 
 def db20(data):
-    return 20 * np.log10(np.abs(data) + 1e-10)
-
-
-def db20_1d(data):
     return 20 * np.log10(np.abs(data) + 1e-10)
 
 
@@ -242,21 +283,44 @@ if __name__=="__main__":
     parser.add_argument("--data-dir", default="data", help="Data directory (default: data)")
     parser.add_argument("--capture", "-c", type=int, default=None,
                        help="Analyze only capture N (1-indexed, rolling buffer mode only)")
+    parser.add_argument("--headless", action="store_true",
+                       help="Save plots as PNGs instead of displaying (no GUI required)")
+    parser.add_argument("--output-dir", "-o", default=None,
+                       help="Directory for saved plots (default: <input_file>_plots/)")
     args = parser.parse_args()
+
+    # Set matplotlib backend before any plotting
+    if args.headless:
+        matplotlib.use('Agg')
+    else:
+        matplotlib.use('TkAgg')
 
     boldify()
 
     if args.files:
         for fname in args.files:
+            fpath = None
             if os.path.exists(fname):
-                print(f"Analyzing: {fname}")
-                analyze(fname, capture_idx=args.capture)
+                fpath = fname
             elif os.path.exists(os.path.join(args.data_dir, fname)):
                 fpath = os.path.join(args.data_dir, fname)
-                print(f"Analyzing: {fpath}")
-                analyze(fpath, capture_idx=args.capture)
             else:
                 print(f"File not found: {fname}")
+                continue
+
+            print(f"Analyzing: {fpath}")
+
+            # Determine save directory for headless mode
+            save_dir = None
+            if args.headless:
+                if args.output_dir:
+                    save_dir = args.output_dir
+                else:
+                    save_dir = os.path.splitext(fpath)[0] + "_plots"
+                os.makedirs(save_dir, exist_ok=True)
+                print(f"  Saving plots to: {save_dir}")
+
+            analyze(fpath, capture_idx=args.capture, save_dir=save_dir)
     else:
         # Default: analyze standard datasets
         data_dir = args.data_dir
@@ -271,4 +335,5 @@ if __name__=="__main__":
             else:
                 print(f"Skipping (not found): {fpath}")
 
-    plt.show()
+    if not args.headless:
+        plt.show()

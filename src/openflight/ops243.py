@@ -1225,10 +1225,11 @@ class OPS243Radar:
         self.set_units(SpeedUnit.MPH)
         logger.info("Units: MPH")
 
-        # Max transmit power for best sensitivity on ball in flight.
-        # Level 0=max, 7=min.
-        self.set_transmit_power(0)
-        logger.info("Transmit power: max (P0)")
+        # Reduced transmit power to avoid ADC saturation on close targets.
+        # Level 0=max, 7=min. Rolling buffer captures raw I/Q at short range,
+        # so max power clips the 12-bit ADC.
+        self.set_transmit_power(3)
+        logger.info("Transmit power: level 3 (reduced to avoid clipping)")
 
         # Enter rolling buffer mode using the single source of truth
         self.enter_rolling_buffer_mode(pre_trigger_segments=pre_trigger_segments, sample_rate_ksps=sample_rate_ksps)
