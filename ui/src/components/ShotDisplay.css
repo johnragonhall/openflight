@@ -404,11 +404,17 @@
 /* Landscape 7" screen (800x480) */
 @media (max-height: 500px) {
   .shot-display {
-    padding: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
   }
 
   .shot-display__layout {
     gap: var(--space-sm);
+    min-height: 0;
+  }
+
+  .shot-display__metrics {
+    gap: var(--space-xs);
+    min-height: 0;
   }
 
   .speed-gauge {
@@ -428,19 +434,40 @@
   }
 
   .metric-card {
-    padding: var(--space-xs) var(--space-sm);
+    padding: 0.125rem var(--space-sm);
+    min-height: 0;
   }
 
   .metric-card__value {
-    font-size: 2.5rem;
+    font-size: 1.75rem;
   }
 
   .metric-card__unit {
-    font-size: 1rem;
+    font-size: 0.8rem;
   }
 
   .metric-card__label {
-    font-size: 0.625rem;
+    font-size: 0.5625rem;
+    margin-top: 2px;
+  }
+
+  .metric-card__subtext {
+    font-size: 0.5rem;
+    margin-top: 1px;
+  }
+
+  .metric-card__confidence {
+    margin-top: 1px;
+    gap: 4px;
+  }
+
+  .metric-card__confidence-dots .dot {
+    width: 4px;
+    height: 4px;
+  }
+
+  .metric-card__confidence-label {
+    font-size: 0.5rem;
   }
 
   .shot-display__waiting-text {
