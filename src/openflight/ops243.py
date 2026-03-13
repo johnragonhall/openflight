@@ -842,7 +842,7 @@ class OPS243Radar:
     # Rolling Buffer Mode (G1)
     # =========================================================================
 
-    def enter_rolling_buffer_mode(self, pre_trigger_segments: int = 12, sample_rate_ksps: int = 30):
+    def enter_rolling_buffer_mode(self, pre_trigger_segments: int = 16, sample_rate_ksps: int = 30):
         """
         Enter rolling buffer mode using the verified working sequence.
 
@@ -942,7 +942,7 @@ class OPS243Radar:
         time.sleep(0.1)
         logger.info("Rolling buffer mode disabled (returned to CW mode)")
 
-    def persist_rolling_buffer_mode(self, pre_trigger_segments: int = 12,
+    def persist_rolling_buffer_mode(self, pre_trigger_segments: int = 16,
                                      sample_rate_ksps: int = 30):
         """
         Save rolling buffer mode to persistent memory.
@@ -1162,7 +1162,7 @@ class OPS243Radar:
 
         return full_response
 
-    def rearm_rolling_buffer(self, pre_trigger_segments: int = 12):
+    def rearm_rolling_buffer(self, pre_trigger_segments: int = 16):
         """
         Re-arm rolling buffer for next capture.
 
@@ -1201,7 +1201,7 @@ class OPS243Radar:
         self.serial.reset_input_buffer()
         logger.debug("Rolling buffer re-armed (S#%d)", pre_trigger_segments)
 
-    def configure_for_rolling_buffer(self, pre_trigger_segments: int = 12, sample_rate_ksps: int = 30):
+    def configure_for_rolling_buffer(self, pre_trigger_segments: int = 16, sample_rate_ksps: int = 30):
         """
         Configure radar optimally for rolling buffer mode.
 
