@@ -23,6 +23,7 @@ OpenFlight is an open-source golf launch monitor that measures ball speed using 
 - **Smash Factor**: Ball speed / club speed ratio
 - **Estimated Carry Distance**: Based on ball speed (simplified model)
 - **Launch Angle** (optional): With Raspberry Pi camera module
+- **Horizontal Angle** (experimental): With K-LD7 angle radar module
 - **Spin Rate** (experimental): Via rolling buffer I/Q analysis (~50-60% detection rate)
 
 ### Hardware
@@ -34,12 +35,13 @@ OpenFlight is an open-source golf launch monitor that measures ball speed using 
 | USB Cable      | Micro USB to connect radar | ~$5       |
 | **Total**      |                            | **~$310** |
 
-**Optional for spin detection:**
+**Optional:**
 | Component      | Description                | Cost      |
 | -------------- | -------------------------- | --------- |
-| SparkFun SEN-14262 | Sound detector for rolling buffer trigger | ~$12 |
+| SparkFun SEN-14262 | Sound detector for rolling buffer trigger (spin detection) | ~$12 |
+| RFbeam K-LD7 + EVAL Board | 24 GHz angle/distance radar (experimental) | ~$200 |
 
-See [docs/PARTS.md](docs/PARTS.md) for the full parts list including optional camera module and sound trigger wiring.
+See [docs/PARTS.md](docs/PARTS.md) for the full parts list including camera module, sound trigger wiring, and angle radar setup.
 
 ## Quick Start
 
@@ -426,6 +428,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines. Quick summary:
 - [Parts List](docs/PARTS.md) - Full hardware requirements
 - [Rolling Buffer & Spin Detection](docs/rolling_buffer_spin_detection.md) - Spin rate measurement via I/Q analysis
 - [Sound Trigger Wiring](docs/sound-trigger-wiring.md) - MOSFET circuit for sound-triggered capture
+- [K-LD7 Angle Radar Design](docs/plans/2026-03-23-kld7-angle-radar-design.md) - Angle/distance measurement via K-LD7 (experimental)
 - [Observability & Log Shipping](docs/observability.md) - Ship session logs to Grafana Cloud with Alloy
 - [YOLO Performance Tuning](docs/yolo-performance-tuning.md) - Optimize YOLO ball detection FPS
 - [Contributing Guide](CONTRIBUTING.md) - How to contribute

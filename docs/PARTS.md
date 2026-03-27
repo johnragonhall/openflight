@@ -54,6 +54,27 @@ SEN-14262                    BREADBOARD                         OPS243-A
 
 See [sound-trigger-wiring.md](sound-trigger-wiring.md) for detailed step-by-step instructions.
 
+## Angle Radar (experimental)
+
+The K-LD7 provides horizontal angle and distance measurement to supplement the OPS243-A's speed/spin data. See [docs/plans/2026-03-23-kld7-angle-radar-design.md](plans/2026-03-23-kld7-angle-radar-design.md) for design details.
+
+| Part | Description | Link | ~Price |
+|------|-------------|------|--------|
+| **RFbeam K-LD7** | 24 GHz FMCW radar for angle + distance measurement | [RFbeam](https://rfbeam.ch/product/k-ld7-radar-transceiver/) | ~$80 |
+| **K-LD7 EVAL Board** | USB evaluation board for K-LD7 (FTDI serial) | [RFbeam](https://rfbeam.ch/product/k-ld7-eval-board/) | ~$120 |
+
+> **Note:** The K-LD7's max speed is 100 km/h (62 mph) — well below golf ball speeds. Speed data will alias at golf ball speeds. The OPS243-A handles speed; the K-LD7 is for **angle and distance only**. Detection of golf ball-sized targets (RCS ~0.0014 m²) at 5m range is plausible but unverified — this is in the data gathering phase.
+
+### K-LD7 Connection
+
+The EVAL board connects via USB (FTDI serial). It appears as `/dev/ttyUSB*` on Linux.
+
+```
+K-LD7 Module → K-LD7 EVAL Board → USB → Raspberry Pi
+```
+
+Test script: `python scripts/test_kld7.py`
+
 ## IR Illumination (for camera)
 
 | Part | Description | Link | ~Price |
