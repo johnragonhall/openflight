@@ -44,6 +44,8 @@ camera = [
     "picamera2>=0.3.0; sys_platform == 'linux'",
     "inference-sdk>=0.9.0",  # Roboflow inference API
 ]
+# K-LD7 radar support
+kld7 = ["kld7>=0.1.0"]
 # Analysis tools for I/Q capture data
 analysis = [
     "numpy>=1.20.0",
