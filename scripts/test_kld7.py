@@ -272,13 +272,27 @@ Examples:
     print(f"  {'#':>5s}  {'dist(m)':>8s}  {'speed(km/h)':>12s}  {'angle':>7s}  {'mag':>5s}  {'targets':>7s}")
     print(f"  {'-----':>5s}  {'--------':>8s}  {'------------':>12s}  {'-------':>7s}  {'-----':>5s}  {'-------':>7s}")
 
+    # Track which frame codes we expect per cycle to detect frame boundaries.
+    # A new TDAT after we've already seen one means new frame cycle.
     try:
         current_frame = {"timestamp": time.time()}
+        seen_in_frame = set()
 
         for code, payload in radar.stream_frames(
             frame_codes,
             max_count=args.max_frames if args.max_frames > 0 else -1,
         ):
+            # Detect frame boundary: if we see a code we already saw in this
+            # cycle, the previous frame is complete.
+            if code in seen_in_frame:
+                frames.append(current_frame)
+                if "pdat" not in current_frame:
+                    print()
+                current_frame = {"timestamp": time.time()}
+                seen_in_frame = set()
+
+            seen_in_frame.add(code)
+
             if code == "TDAT":
                 current_frame["tdat"] = target_to_dict(payload)
 
@@ -304,14 +318,9 @@ Examples:
             elif code == "RFFT":
                 current_frame["rfft"] = payload
 
-            elif code == "DONE":
-                # Frame set complete, save and start new frame
-                frames.append(current_frame)
-                current_frame = {"timestamp": time.time()}
-
-                # If no PDAT in this frame set, print newline
-                if "pdat" not in frames[-1]:
-                    print()
+        # Save final in-progress frame
+        if seen_in_frame:
+            frames.append(current_frame)
 
     except KeyboardInterrupt:
         print()
@@ -373,8 +382,15 @@ Examples:
 
         print("=" * 60)
 
+        # Close cleanly. The kld7 library's __del__ can error if the port
+        # is already gone, so we close explicitly and suppress the destructor.
         try:
             radar.close()
+        except Exception:
+            pass
+        # Prevent __del__ from erroring after we already closed
+        try:
+            radar._port = None
         except Exception:
             pass
 
