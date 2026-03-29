@@ -1,11 +1,14 @@
 """Tests for K-LD7 angle radar integration."""
 
 import time
+from datetime import datetime
 
 import pytest
 
 from openflight.kld7.types import KLD7Angle, KLD7Frame
 from openflight.kld7.tracker import KLD7Tracker
+from openflight.launch_monitor import Shot, ClubType
+from openflight.server import shot_to_dict
 
 
 class TestKLD7Types:
@@ -139,3 +142,80 @@ class TestKLD7TrackerRingBuffer:
         result = tracker.get_angle_for_shot()
         assert result is not None
         assert abs(result.vertical_deg - 20.0) < 1.0
+
+
+class TestKLD7Integration:
+    """Integration tests for K-LD7 angle data flowing through to Shot."""
+
+    def test_angle_attaches_to_shot_vertical(self):
+        """K-LD7 vertical angle should attach to Shot correctly."""
+        shot = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+            launch_angle_vertical=12.5,
+            launch_angle_confidence=0.8,
+            angle_source="radar",
+        )
+        result = shot_to_dict(shot)
+        assert result["launch_angle_vertical"] == 12.5
+        assert result["launch_angle_confidence"] == 0.8
+        assert result["angle_source"] == "radar"
+
+    def test_angle_attaches_to_shot_horizontal(self):
+        """K-LD7 horizontal angle should attach to Shot correctly."""
+        shot = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+            launch_angle_horizontal=-3.5,
+            launch_angle_confidence=0.7,
+            angle_source="radar",
+        )
+        result = shot_to_dict(shot)
+        assert result["launch_angle_horizontal"] == -3.5
+        assert result["angle_source"] == "radar"
+
+    def test_carry_adjusts_for_vertical_angle(self):
+        """Shot carry should adjust when vertical angle is provided."""
+        shot_no_angle = Shot(ball_speed_mph=150.0, timestamp=datetime.now())
+        shot_with_angle = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+            launch_angle_vertical=15.0,
+            launch_angle_confidence=0.8,
+            angle_source="radar",
+        )
+        assert shot_no_angle.estimated_carry_yards > 0
+        assert shot_with_angle.estimated_carry_yards > 0
+        assert shot_no_angle.estimated_carry_yards != shot_with_angle.estimated_carry_yards
+
+    def test_tracker_angle_to_shot_flow(self):
+        """Full flow: KLD7Tracker ring buffer -> get_angle -> attach to Shot."""
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = "vertical"
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+
+        now = time.time()
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.03,
+                tdat={"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000},
+                pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000}],
+            ))
+
+        angle = tracker.get_angle_for_shot()
+        assert angle is not None
+
+        shot = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+        )
+        shot.launch_angle_vertical = angle.vertical_deg
+        shot.launch_angle_confidence = angle.confidence
+        shot.angle_source = "radar"
+
+        result = shot_to_dict(shot)
+        assert result["launch_angle_vertical"] == 12.0
+        assert result["angle_source"] == "radar"
+        assert result["launch_angle_confidence"] > 0.0
