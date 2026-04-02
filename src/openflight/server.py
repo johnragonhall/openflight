@@ -793,7 +793,8 @@ def on_shot_detected(shot: Shot):
     # Try K-LD7 angle radar first (highest priority for angle data)
     try:
         if kld7_tracker and shot.mode != "mock":
-            shot_ts = time.time()
+            kld7_start = time.time()
+            shot_ts = kld7_start
             kld7_angle = kld7_tracker.get_angle_for_shot(
                 shot_timestamp=shot_ts
             )
@@ -826,6 +827,8 @@ def on_shot_detected(shot: Shot):
                     club_angle.vertical_deg, club_angle.confidence * 100,
                 )
             kld7_tracker.reset()
+            kld7_ms = (time.time() - kld7_start) * 1000
+            logger.info("[PERF] K-LD7 processing: %.1fms", kld7_ms)
     except Exception as e:
         logger.warning("K-LD7 processing error: %s", e)
 
