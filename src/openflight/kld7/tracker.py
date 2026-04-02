@@ -258,7 +258,11 @@ class KLD7Tracker:
                     ))
 
         if not detections:
+            logger.debug("K-LD7: no detections passed pre-filters (speed/mag/dist)")
             return None
+
+        logger.debug("K-LD7: %d detections passed pre-filters from %d buffer frames",
+                      len(detections), len(self._ring_buffer))
 
         if shot_timestamp is not None:
             # Score by temporal proximity to shot (0-1) * magnitude.
@@ -284,12 +288,16 @@ class KLD7Tracker:
         timestamps = [d[0] for d in event_detections]
         event_duration = max(timestamps) - min(timestamps)
         if event_duration > self.MAX_EVENT_DURATION_S:
+            logger.debug("K-LD7: rejected — event duration %.2fs > %.1fs",
+                          event_duration, self.MAX_EVENT_DURATION_S)
             return None
 
         # Angle spread filter: reject events with wide angle variation
         angles = [d[1] for d in event_detections]
         angle_spread = max(angles) - min(angles)
         if angle_spread > self.MAX_ANGLE_SPREAD_DEG:
+            logger.debug("K-LD7: rejected — angle spread %.1f° > %.1f°",
+                          angle_spread, self.MAX_ANGLE_SPREAD_DEG)
             return None
 
         total_mag = sum(d[3] for d in event_detections)
@@ -303,6 +311,8 @@ class KLD7Tracker:
 
         # Frame count filter: reject events with too few frames
         if num_frames < self.MIN_EVENT_FRAMES:
+            logger.debug("K-LD7: rejected — %d frames < min %d",
+                          num_frames, self.MIN_EVENT_FRAMES)
             return None
 
         frame_score = min(num_frames / 3.0, 1.0)
@@ -319,7 +329,13 @@ class KLD7Tracker:
         confidence = round(min(max(confidence, 0.0), 1.0), 2)
 
         if confidence < self.MIN_CONFIDENCE:
+            logger.debug("K-LD7: rejected — confidence %.2f < %.2f",
+                          confidence, self.MIN_CONFIDENCE)
             return None
+
+        logger.info("K-LD7: accepted event — angle=%.1f° dist=%.2fm mag=%d "
+                     "frames=%d conf=%.2f",
+                     avg_angle, avg_distance, max_magnitude, num_frames, confidence)
 
         if self.orientation == "vertical":
             return KLD7Angle(

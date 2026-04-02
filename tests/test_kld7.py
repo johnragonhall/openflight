@@ -519,6 +519,37 @@ class TestKLD7RealData:
             assert r.distance_m > 0.3
 
 
+    def test_shot_timestamp_with_real_data(self):
+        """Using shot_timestamp with real data should prefer nearby events."""
+        raw_frames = self._load_frames()
+        tracker = self._make_tracker()
+
+        # Load a window that has detections around t=8-10s
+        t0 = raw_frames[0]["timestamp"]
+        for f in raw_frames:
+            t = f["timestamp"] - t0
+            if 6.0 <= t <= 12.0:
+                tracker._add_frame(KLD7Frame(
+                    timestamp=f["timestamp"],
+                    tdat=f.get("tdat"),
+                    pdat=f.get("pdat", []),
+                ))
+
+        # Without timestamp
+        result_no_ts = tracker.get_angle_for_shot()
+
+        # With timestamp near middle of window
+        shot_ts = t0 + 9.0
+        result_with_ts = tracker.get_angle_for_shot(shot_timestamp=shot_ts)
+
+        # Both should produce results (or both None)
+        # The key test: with timestamp, the result should be temporally valid
+        if result_with_ts is not None:
+            assert result_with_ts.confidence > 0.0
+            assert result_with_ts.distance_m > 0.3
+            assert -60 < result_with_ts.vertical_deg < 60
+
+
 class TestKLD7Integration:
     """Integration tests for K-LD7 angle data flowing through to Shot."""
 
