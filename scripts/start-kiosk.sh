@@ -174,10 +174,6 @@ if [ "$NO_CAMERA" = true ]; then
     SERVER_CMD="$SERVER_CMD --no-camera"
 fi
 
-if [ -n "$MODE" ]; then
-    # Rolling buffer mode is the only mode (no --mode flag needed)
-fi
-
 if [ -n "$TRIGGER" ]; then
     SERVER_CMD="$SERVER_CMD --trigger $TRIGGER"
 fi
@@ -229,9 +225,6 @@ if [ "$MOCK_MODE" = true ]; then
     log "Starting OpenFlight server on port $PORT (MOCK MODE)..."
 else
     log "Starting OpenFlight server on port $PORT..."
-    if [ -n "$MODE" ]; then
-        log "Mode: $MODE"
-    fi
     if [ -n "$TRIGGER" ]; then
         log "Trigger: $TRIGGER"
     fi
@@ -241,7 +234,7 @@ else
 fi
 
 if [ "$DEBUG_MODE" = true ]; then
-    log "Debug mode enabled (verbose FFT/CFAR output)"
+    log "Debug mode enabled (verbose output)"
 fi
 
 if [ "$NO_CAMERA" = true ]; then
@@ -273,12 +266,7 @@ log "Server is running!"
 # Launch browser in kiosk mode
 log "Launching kiosk browser..."
 
-# Build the URL with optional mode parameter
 KIOSK_URL="http://$HOST:$PORT"
-if [ -n "$MODE" ]; then
-    KIOSK_URL="$KIOSK_URL?mode=$MODE"
-    log "Mode: $MODE"
-fi
 
 # Try different browsers in order of preference
 # DISPLAY=:0 allows running on Pi's display when SSHed in

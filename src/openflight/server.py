@@ -1318,18 +1318,6 @@ def main():
         help="Radar sample rate in ksps (default: 30). Lower = longer buffer but lower max speed. 25=174mph/164ms, 27=187mph/152ms",
     )
     parser.add_argument(
-        "--gpio-pin",
-        type=int,
-        default=17,
-        help="GPIO pin (BCM numbering) for sound-gpio trigger (default: 17, physical pin 11)",
-    )
-    parser.add_argument(
-        "--gpio-debounce",
-        type=int,
-        default=200,
-        help="Debounce time in ms for sound-gpio trigger (default: 200)",
-    )
-    parser.add_argument(
         "--kld7", action="store_true", help="Enable K-LD7 angle radar module"
     )
     parser.add_argument(
@@ -1388,9 +1376,6 @@ def main():
     # Start the monitor
     # Build trigger-specific kwargs (pre_trigger_segments always passed)
     trigger_kwargs = {"pre_trigger_segments": args.sound_pre_trigger}
-    if args.trigger == "sound-gpio":
-        trigger_kwargs["gpio_pin"] = args.gpio_pin
-        trigger_kwargs["debounce_ms"] = args.gpio_debounce
 
     # Initialize camera BEFORE starting monitor (so session log is accurate)
     if not args.no_camera:
