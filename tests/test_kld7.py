@@ -290,13 +290,63 @@ class TestKLD7NoiseFiltering:
         """Detections at <0.3m are likely antenna reflections, not real targets."""
         tracker = self._make_tracker()
         now = time.time()
-        tracker._add_frame(KLD7Frame(
-            timestamp=now,
-            tdat={"distance": 0.1, "speed": 50.0, "angle": 5.0, "magnitude": 5000},
-            pdat=[{"distance": 0.1, "speed": 50.0, "angle": 5.0, "magnitude": 5000}],
-        ))
+        for i in range(2):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.033,
+                tdat={"distance": 0.1, "speed": 50.0, "angle": 5.0, "magnitude": 5000},
+                pdat=[{"distance": 0.1, "speed": 50.0, "angle": 5.0, "magnitude": 5000}],
+            ))
         result = tracker.get_angle_for_shot()
         assert result is None, "Very close range (<0.3m) should be rejected as reflection"
+
+    def test_tdat_only_accepted_when_no_pdat(self):
+        """When only TDAT data is available (no PDAT), it should still work."""
+        tracker = self._make_tracker()
+        now = time.time()
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.033,
+                tdat={"distance": 2.0, "speed": 40.0, "angle": 8.0 + i * 0.5, "magnitude": 4500},
+                pdat=[],  # No PDAT targets
+            ))
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        assert 7.0 < result.vertical_deg < 10.0
+
+    def test_multiple_speed_detections_different_speeds(self):
+        """PDAT may report multiple targets at different speed bins.
+        Only targets above MIN_SPEED should contribute to the angle."""
+        tracker = self._make_tracker()
+        now = time.time()
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.033,
+                tdat=None,
+                pdat=[
+                    # Slow target (body) — should be filtered
+                    {"distance": 1.5, "speed": 1.6, "angle": -40.0, "magnitude": 4000},
+                    # Fast target (ball) — should be kept
+                    {"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000},
+                ],
+            ))
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        # Should be close to 12° (ball), not -40° (body)
+        assert 10.0 < result.vertical_deg < 14.0
+
+    def test_high_confidence_for_multi_frame_consistent_event(self):
+        """A 3+ frame event with consistent angle should have high confidence."""
+        tracker = self._make_tracker()
+        now = time.time()
+        for i in range(4):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.033,
+                tdat={"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5500},
+                pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5500}],
+            ))
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        assert result.confidence >= 0.7, f"Multi-frame consistent event should have high confidence, got {result.confidence}"
 
 
 class TestKLD7RealData:
