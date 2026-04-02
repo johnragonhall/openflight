@@ -213,6 +213,7 @@ def shot_to_dict(shot: Shot) -> dict:
         "launch_angle_horizontal": shot.launch_angle_horizontal,
         "launch_angle_confidence": shot.launch_angle_confidence,
         "angle_source": shot.angle_source,
+        "club_angle_deg": shot.club_angle_deg,
         # Spin data from rolling buffer mode
         "spin_rpm": round(shot.spin_rpm) if shot.spin_rpm else None,
         "spin_confidence": round(shot.spin_confidence, 2) if shot.spin_confidence else None,
@@ -792,8 +793,9 @@ def on_shot_detected(shot: Shot):
     # Try K-LD7 angle radar first (highest priority for angle data)
     try:
         if kld7_tracker and shot.mode != "mock":
+            shot_ts = time.time()
             kld7_angle = kld7_tracker.get_angle_for_shot(
-                shot_timestamp=time.time()
+                shot_timestamp=shot_ts
             )
             if kld7_angle:
                 if kld7_angle.vertical_deg is not None:
@@ -801,8 +803,10 @@ def on_shot_detected(shot: Shot):
                     shot.launch_angle_confidence = kld7_angle.confidence
                     shot.angle_source = "radar"
                     logger.info(
-                        "K-LD7 vertical angle: %.1f° (conf: %.0f%%, %d frames)",
-                        kld7_angle.vertical_deg, kld7_angle.confidence * 100, kld7_angle.num_frames,
+                        "K-LD7 %s angle: %.1f° (conf: %.0f%%, %d frames)",
+                        kld7_angle.detection_class or "vertical",
+                        kld7_angle.vertical_deg, kld7_angle.confidence * 100,
+                        kld7_angle.num_frames,
                     )
                 if kld7_angle.horizontal_deg is not None:
                     shot.launch_angle_horizontal = kld7_angle.horizontal_deg
@@ -813,6 +817,14 @@ def on_shot_detected(shot: Shot):
                         "K-LD7 horizontal angle: %.1f° (conf: %.0f%%)",
                         kld7_angle.horizontal_deg, kld7_angle.confidence * 100,
                     )
+            # Also get club angle of attack
+            club_angle = kld7_tracker.get_club_angle(shot_timestamp=shot_ts)
+            if club_angle and club_angle.vertical_deg is not None:
+                shot.club_angle_deg = club_angle.vertical_deg
+                logger.info(
+                    "K-LD7 club angle: %.1f° (conf: %.0f%%)",
+                    club_angle.vertical_deg, club_angle.confidence * 100,
+                )
             kld7_tracker.reset()
     except Exception as e:
         logger.warning("K-LD7 processing error: %s", e)

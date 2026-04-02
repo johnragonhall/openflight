@@ -257,6 +257,7 @@ class Shot:
     mode: str = "streaming"
     readings_data: Optional[list] = None
     angle_source: Optional[str] = None  # "radar", "camera", "estimated", or None
+    club_angle_deg: Optional[float] = None  # Club angle of attack from K-LD7
 
     @property
     def ball_speed_ms(self) -> float:

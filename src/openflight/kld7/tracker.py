@@ -210,23 +210,9 @@ class KLD7Tracker:
     # is too uncertain to be useful.
     MIN_CONFIDENCE = 0.4
 
-    def get_angle_for_shot(self, shot_timestamp: Optional[float] = None) -> Optional[KLD7Angle]:
-        """
-        Search the ring buffer for the ball pass and extract angle data.
-
-        Args:
-            shot_timestamp: When the OPS243 detected the shot. If provided,
-                events closer to this time are preferred over raw magnitude.
-
-        Applies signal processing filters to isolate ball/club events:
-        1. Speed filter: reject detections below MIN_SPEED_KMH
-        2. Event clustering: group detections within 0.5s window
-        3. Angle spread filter: reject clusters with wide angle variation
-        4. Duration filter: reject events lasting longer than MAX_EVENT_DURATION_S
-        5. Temporal proximity: prefer events near shot_timestamp when provided
-        """
+    def _collect_detections(self):
+        """Collect all detections from the ring buffer that pass pre-filters."""
         detections = []
-
         for frame in self._ring_buffer:
             if frame.pdat:
                 for target in frame.pdat:
@@ -256,35 +242,42 @@ class KLD7Tracker:
                         dist,
                         mag,
                     ))
+        return detections
 
-        if not detections:
-            logger.debug("K-LD7: no detections passed pre-filters (speed/mag/dist)")
+    def _extract_event(self, detections, shot_timestamp=None, exclude_times=None):
+        """Find the best event cluster from detections.
+
+        Args:
+            detections: list of (timestamp, angle, distance, magnitude) tuples
+            shot_timestamp: prefer events near this time
+            exclude_times: set of timestamps to skip (for finding secondary events)
+
+        Returns:
+            KLD7Angle or None
+        """
+        available = detections
+        if exclude_times:
+            available = [d for d in detections if d[0] not in exclude_times]
+
+        if not available:
             return None
 
-        logger.debug("K-LD7: %d detections passed pre-filters from %d buffer frames",
-                      len(detections), len(self._ring_buffer))
-
         if shot_timestamp is not None:
-            # Score by temporal proximity to shot (0-1) * magnitude.
-            # This prefers high-magnitude events near the shot time.
             def _score(d):
                 time_diff = abs(d[0] - shot_timestamp)
                 proximity = max(0.0, 1.0 - time_diff / 2.0)
                 return proximity * d[3]
-            peak = max(detections, key=_score)
+            peak = max(available, key=_score)
         else:
-            peak = max(detections, key=lambda d: d[3])
+            peak = max(available, key=lambda d: d[3])
 
         peak_time = peak[0]
-
-        event_detections = [
-            d for d in detections if abs(d[0] - peak_time) < 0.5
-        ]
+        event_detections = [d for d in available if abs(d[0] - peak_time) < 0.5]
 
         if not event_detections:
             return None
 
-        # Duration filter: reject events lasting too long
+        # Duration filter
         timestamps = [d[0] for d in event_detections]
         event_duration = max(timestamps) - min(timestamps)
         if event_duration > self.MAX_EVENT_DURATION_S:
@@ -292,7 +285,7 @@ class KLD7Tracker:
                           event_duration, self.MAX_EVENT_DURATION_S)
             return None
 
-        # Angle spread filter: reject events with wide angle variation
+        # Angle spread filter
         angles = [d[1] for d in event_detections]
         angle_spread = max(angles) - min(angles)
         if angle_spread > self.MAX_ANGLE_SPREAD_DEG:
@@ -309,7 +302,6 @@ class KLD7Tracker:
         max_magnitude = max(d[3] for d in event_detections)
         num_frames = len(set(d[0] for d in event_detections))
 
-        # Frame count filter: reject events with too few frames
         if num_frames < self.MIN_EVENT_FRAMES:
             logger.debug("K-LD7: rejected — %d frames < min %d",
                           num_frames, self.MIN_EVENT_FRAMES)
@@ -333,8 +325,17 @@ class KLD7Tracker:
                           confidence, self.MIN_CONFIDENCE)
             return None
 
-        logger.info("K-LD7: accepted event — angle=%.1f° dist=%.2fm mag=%d "
+        # Classify: vertical orientation uses angle sign to distinguish ball vs club.
+        # KNOWN LIMITATION: This fails for driver swings where angle of attack
+        # is positive. Needs temporal/magnitude-based classification with more
+        # test data (driver vs iron captures) to build a proper two-event detector.
+        detection_class = None
+        if self.orientation == "vertical":
+            detection_class = "ball" if avg_angle >= 0 else "club"
+
+        logger.info("K-LD7: accepted %s event — angle=%.1f° dist=%.2fm mag=%d "
                      "frames=%d conf=%.2f",
+                     detection_class or "unknown",
                      avg_angle, avg_distance, max_magnitude, num_frames, confidence)
 
         if self.orientation == "vertical":
@@ -345,6 +346,7 @@ class KLD7Tracker:
                 magnitude=max_magnitude,
                 confidence=confidence,
                 num_frames=num_frames,
+                detection_class=detection_class,
             )
         else:
             return KLD7Angle(
@@ -354,7 +356,86 @@ class KLD7Tracker:
                 magnitude=max_magnitude,
                 confidence=confidence,
                 num_frames=num_frames,
+                detection_class=detection_class,
             )
+
+    def get_angle_for_shot(self, shot_timestamp: Optional[float] = None) -> Optional[KLD7Angle]:
+        """
+        Search the ring buffer for the ball launch angle.
+
+        For vertical orientation, returns only ball events (angle >= 0°).
+        Use get_club_angle() to get the club angle of attack.
+
+        Args:
+            shot_timestamp: When the OPS243 detected the shot. If provided,
+                events closer to this time are preferred over raw magnitude.
+        """
+        detections = self._collect_detections()
+        if not detections:
+            logger.debug("K-LD7: no detections passed pre-filters (speed/mag/dist)")
+            return None
+
+        logger.debug("K-LD7: %d detections passed pre-filters from %d buffer frames",
+                      len(detections), len(self._ring_buffer))
+
+        result = self._extract_event(detections, shot_timestamp)
+        if result is None:
+            return None
+
+        # For vertical orientation, if this event is a club detection,
+        # try to find a ball event instead
+        if self.orientation == "vertical" and result.detection_class == "club":
+            # Exclude the club event timestamps and look for a ball event
+            club_time = None
+            for d in detections:
+                if abs(d[1] - result.vertical_deg) < 1.0:
+                    club_time = d[0]
+                    break
+            exclude = set(
+                d[0] for d in detections
+                if club_time and abs(d[0] - club_time) < 0.5
+            )
+            ball_result = self._extract_event(detections, shot_timestamp, exclude)
+            if ball_result is not None and ball_result.detection_class == "ball":
+                return ball_result
+            # No ball event found — return the club event anyway
+            # (caller can check detection_class)
+            return result
+
+        return result
+
+    def get_club_angle(self, shot_timestamp: Optional[float] = None) -> Optional[KLD7Angle]:
+        """
+        Search the ring buffer for the club angle of attack.
+
+        For vertical orientation, returns only club events (angle < 0°).
+
+        Args:
+            shot_timestamp: When the OPS243 detected the shot.
+        """
+        detections = self._collect_detections()
+        if not detections:
+            return None
+
+        # Find all events, looking for a club classification
+        result = self._extract_event(detections, shot_timestamp)
+        if result is None:
+            return None
+
+        if result.detection_class == "club":
+            return result
+
+        # First event was ball — exclude it and look for club
+        exclude = set(
+            d[0] for d in detections
+            if result.vertical_deg is not None
+            and abs(d[1] - result.vertical_deg) < 1.0
+        )
+        club_result = self._extract_event(detections, shot_timestamp, exclude)
+        if club_result is not None and club_result.detection_class == "club":
+            return club_result
+
+        return None
 
     def reset(self):
         """Clear the ring buffer after a shot is processed."""

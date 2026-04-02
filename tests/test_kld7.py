@@ -657,6 +657,102 @@ class TestKLD7Integration:
         assert result["angle_source"] == "radar"
         assert result["launch_angle_confidence"] > 0.0
 
+    def test_ball_classified_as_ball(self):
+        """Positive vertical angle should be classified as 'ball'."""
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = "vertical"
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+
+        now = time.time()
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.03,
+                tdat={"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000},
+                pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000}],
+            ))
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        assert result.detection_class == "ball"
+        assert result.vertical_deg >= 0
+
+    def test_club_classified_separately(self):
+        """Negative vertical angle should be classified as 'club'."""
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = "vertical"
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+
+        now = time.time()
+        # Only club event (negative angle)
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.03,
+                tdat={"distance": 1.5, "speed": 40.0, "angle": -6.0, "magnitude": 4500},
+                pdat=[{"distance": 1.5, "speed": 40.0, "angle": -6.0, "magnitude": 4500}],
+            ))
+        # get_angle_for_shot returns club when no ball found
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        assert result.detection_class == "club"
+
+        # get_club_angle should also find it
+        club = tracker.get_club_angle()
+        assert club is not None
+        assert club.detection_class == "club"
+        assert club.vertical_deg < 0
+
+    def test_ball_preferred_over_club_in_mixed_buffer(self):
+        """When buffer has both ball and club events, get_angle_for_shot returns ball."""
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = "vertical"
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+
+        now = time.time()
+        # Club event first (higher magnitude)
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.03,
+                tdat={"distance": 1.5, "speed": 40.0, "angle": -6.0, "magnitude": 6000},
+                pdat=[{"distance": 1.5, "speed": 40.0, "angle": -6.0, "magnitude": 6000}],
+            ))
+        # Gap
+        for i in range(15):
+            tracker._add_frame(KLD7Frame(timestamp=now + 0.5 + i * 0.03, tdat=None, pdat=[]))
+        # Ball event (lower magnitude)
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + 1.0 + i * 0.03,
+                tdat={"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 4500},
+                pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 4500}],
+            ))
+
+        ball = tracker.get_angle_for_shot()
+        assert ball is not None
+        assert ball.detection_class == "ball"
+        assert ball.vertical_deg > 0
+
+        club = tracker.get_club_angle()
+        assert club is not None
+        assert club.detection_class == "club"
+        assert club.vertical_deg < 0
+
+    def test_club_angle_in_shot_dict(self):
+        """Club angle should appear in shot_to_dict output."""
+        shot = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+            launch_angle_vertical=12.0,
+            angle_source="radar",
+            club_angle_deg=-5.5,
+        )
+        result = shot_to_dict(shot)
+        assert result["club_angle_deg"] == -5.5
+
     def test_get_angle_after_reset_returns_none(self):
         """Calling get_angle_for_shot after reset should return None."""
         tracker = KLD7Tracker.__new__(KLD7Tracker)

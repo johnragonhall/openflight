@@ -193,6 +193,18 @@ Examples:
         "-n", "--max-frames", type=int, default=0,
         help="Stop after N frames (default: 0 = unlimited)"
     )
+    parser.add_argument(
+        "--club", type=str, default=None,
+        help="Club used for this session (e.g. 'driver', '7iron', 'PW')"
+    )
+    parser.add_argument(
+        "--shots", type=int, default=None,
+        help="Expected number of shots (saved to metadata for ground truth)"
+    )
+    parser.add_argument(
+        "--notes", type=str, default=None,
+        help="Session notes (e.g. 'hitting into net at 3m')"
+    )
     args = parser.parse_args()
 
     # Find port
@@ -259,6 +271,9 @@ Examples:
         "speed_kmh": args.speed,
         "fft_enabled": not args.no_fft,
         "params": all_params,
+        "club": args.club,
+        "expected_shots": args.shots,
+        "notes": args.notes,
     }
 
     frames = []
