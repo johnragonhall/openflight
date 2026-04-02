@@ -519,6 +519,36 @@ class TestKLD7RealData:
             assert r.distance_m > 0.3
 
 
+    def test_real_data_filter_reduces_count_from_39_events(self):
+        """The 54s capture has 39 raw detection events. Filtering should
+        reduce this significantly, demonstrating noise rejection quality."""
+        raw_frames = self._load_frames()
+
+        # Count how many unique 2s windows produce results
+        t0 = raw_frames[0]["timestamp"]
+        t_end = raw_frames[-1]["timestamp"]
+        unique_results = set()
+        t = t0
+        while t < t_end:
+            tracker = self._make_tracker()
+            for f in raw_frames:
+                if t <= f["timestamp"] <= t + 2.0:
+                    tracker._add_frame(KLD7Frame(
+                        timestamp=f["timestamp"],
+                        tdat=f.get("tdat"),
+                        pdat=f.get("pdat", []),
+                    ))
+            result = tracker.get_angle_for_shot()
+            if result is not None:
+                # Deduplicate by rounding angle and time
+                unique_results.add((round(result.vertical_deg, 0), round(t - t0, 0)))
+            t += 1.0
+
+        # Should have significantly fewer unique results than raw event count (39)
+        assert len(unique_results) <= 10, (
+            f"Expected <=10 unique results (vs 39 raw events), got {len(unique_results)}"
+        )
+
     def test_shot_timestamp_with_real_data(self):
         """Using shot_timestamp with real data should prefer nearby events."""
         raw_frames = self._load_frames()
@@ -610,7 +640,8 @@ class TestKLD7Integration:
                 pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000}],
             ))
 
-        angle = tracker.get_angle_for_shot()
+        # Use shot_timestamp like the real server integration does
+        angle = tracker.get_angle_for_shot(shot_timestamp=now + 0.1)
         assert angle is not None
 
         shot = Shot(
@@ -625,3 +656,28 @@ class TestKLD7Integration:
         assert result["launch_angle_vertical"] == 12.0
         assert result["angle_source"] == "radar"
         assert result["launch_angle_confidence"] > 0.0
+
+    def test_get_angle_after_reset_returns_none(self):
+        """Calling get_angle_for_shot after reset should return None."""
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = "vertical"
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+
+        now = time.time()
+        for i in range(3):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.03,
+                tdat={"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000},
+                pdat=[{"distance": 2.0, "speed": 50.0, "angle": 12.0, "magnitude": 5000}],
+            ))
+
+        # Should have result before reset
+        assert tracker.get_angle_for_shot() is not None
+
+        tracker.reset()
+
+        # Should be None after reset
+        result = tracker.get_angle_for_shot(shot_timestamp=time.time())
+        assert result is None
