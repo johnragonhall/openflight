@@ -266,44 +266,27 @@ class RollingBufferMonitor:
         """
         Connect to radar and configure based on trigger type.
 
-        For "sound" trigger: The radar must already have rolling buffer mode
-        saved to flash (via test_rolling_buffer_persist.py --setup). We only
-        send settings (S=, S#, PA) without re-entering GC mode, because the
-        OPS243-A has a firmware bug where HOST_INT pin mode switches when
-        transitioning modes at runtime.
-
-        For "speed" trigger: Configuration is handled by the trigger strategy.
-        For other triggers: Full rolling buffer configuration.
+        For "speed" trigger: Configuration is handled by the trigger strategy
+        For other triggers: Configure for rolling buffer mode with appropriate
+        pre_trigger_segments from the trigger.
 
         Returns:
             True if successful
         """
         self.radar.connect()
 
-        if self.trigger_type == "speed":
-            logger.info("Using speed trigger - configuration deferred to trigger")
-        elif self.trigger_type == "sound":
-            # Sound trigger uses HOST_INT which requires rolling buffer mode
-            # to be persisted to flash. DO NOT send GC/PI commands — that
-            # triggers a firmware bug that breaks HOST_INT. Only send settings.
-            pre_trigger_segments = getattr(self.trigger, 'pre_trigger_segments', 12)
-            self.radar.configure_rolling_buffer_settings(
-                pre_trigger_segments=pre_trigger_segments,
-                sample_rate_ksps=self.sample_rate_ksps,
-            )
-            logger.info(
-                "Rolling buffer settings applied (S#%d, S=%d) — "
-                "GC mode from flash preserved for HOST_INT",
-                pre_trigger_segments, self.sample_rate_ksps,
-            )
-        else:
-            # Other triggers (polling, threshold): full mode transition is fine
+        # Speed trigger handles its own configuration (starts in speed mode)
+        # Other triggers need rolling buffer mode configured upfront
+        if self.trigger_type != "speed":
+            # Get pre_trigger_segments from the trigger if available
             pre_trigger_segments = getattr(self.trigger, 'pre_trigger_segments', 12)
             self.radar.configure_for_rolling_buffer(
                 pre_trigger_segments=pre_trigger_segments,
                 sample_rate_ksps=self.sample_rate_ksps,
             )
             logger.info("Rolling buffer mode configured with S#%d, S=%d", pre_trigger_segments, self.sample_rate_ksps)
+        else:
+            logger.info("Using speed trigger - configuration deferred to trigger")
 
         return True
 

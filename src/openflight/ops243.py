@@ -1201,56 +1201,6 @@ class OPS243Radar:
         self.serial.reset_input_buffer()
         logger.debug("Rolling buffer re-armed (S#%d)", pre_trigger_segments)
 
-    def configure_rolling_buffer_settings(self, pre_trigger_segments: int = 16, sample_rate_ksps: int = 30):
-        """
-        Apply rolling buffer settings WITHOUT re-entering GC mode.
-
-        Use this when rolling buffer mode is already persisted to flash
-        (via test_rolling_buffer_persist.py --setup) and HOST_INT hardware
-        trigger is in use. Re-entering GC mode at runtime triggers a firmware
-        bug that breaks HOST_INT pin behavior.
-
-        Only sends: units, transmit power, sample rate, trigger split, PA.
-        Does NOT send PI or GC commands.
-        """
-        if not self.serial or not self.serial.is_open:
-            raise ConnectionError("Not connected to radar")
-
-        print(f"[RADAR] Applying rolling buffer settings (S#{pre_trigger_segments}, S={sample_rate_ksps}) — preserving flash GC mode...")
-
-        # Set units to MPH
-        self.set_units(SpeedUnit.MPH)
-        logger.info("Units: MPH")
-
-        # Reduced transmit power to avoid ADC clipping
-        self.set_transmit_power(3)
-        logger.info("Transmit power: level 3")
-
-        # Set sample rate - requires \r
-        self.serial.write(f"S={sample_rate_ksps}\r".encode())
-        self.serial.flush()
-        time.sleep(0.15)
-        logger.info("S=%d: %dksps sample rate", sample_rate_ksps, sample_rate_ksps)
-
-        # Set trigger split - requires \r
-        pre_trigger_segments = max(0, min(32, pre_trigger_segments))
-        self.serial.write(f"S#{pre_trigger_segments}\r".encode())
-        self.serial.flush()
-        time.sleep(0.15)
-        logger.info("S#%d: pre-trigger segments", pre_trigger_segments)
-
-        # Activate sampling (safe to send even if already active)
-        self.serial.write(b"PA")
-        time.sleep(0.1)
-
-        # Clear any response data
-        self.serial.reset_input_buffer()
-
-        # Wait for buffer to fill
-        time.sleep(0.3)
-
-        print(f"[RADAR] Rolling buffer settings applied (S#{pre_trigger_segments}, {sample_rate_ksps}ksps) — HOST_INT preserved")
-
     def configure_for_rolling_buffer(self, pre_trigger_segments: int = 16, sample_rate_ksps: int = 30):
         """
         Configure radar optimally for rolling buffer mode.
