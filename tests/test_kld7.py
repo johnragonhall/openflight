@@ -462,9 +462,30 @@ class TestKLD7RealData:
             t += step
 
         # With 39 raw events, we should see far fewer after filtering.
-        # Even a generous threshold: less than 15 detections from 54 seconds.
-        assert len(results) < 15, (
-            f"Expected <15 filtered results from real data, got {len(results)}"
+        # Current algorithm produces ~10 from 54 seconds of data.
+        assert len(results) < 12, (
+            f"Expected <12 filtered results from real data, got {len(results)}"
+        )
+
+    def test_quiet_period_produces_no_results(self):
+        """A quiet period (no targets) in real data should produce no results."""
+        raw_frames = self._load_frames()
+        tracker = self._make_tracker()
+
+        # Load frames from 19-24s (quiet period in real data)
+        t0 = raw_frames[0]["timestamp"]
+        for f in raw_frames:
+            t = f["timestamp"] - t0
+            if 19.0 <= t <= 24.0:
+                tracker._add_frame(KLD7Frame(
+                    timestamp=f["timestamp"],
+                    tdat=f.get("tdat"),
+                    pdat=f.get("pdat", []),
+                ))
+
+        result = tracker.get_angle_for_shot()
+        assert result is None, (
+            f"Quiet period (19-24s) should produce no results, got {result}"
         )
 
     def test_real_data_results_have_reasonable_angles(self):
