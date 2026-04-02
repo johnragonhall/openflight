@@ -437,6 +437,21 @@ class KLD7Tracker:
 
         return None
 
+    def snapshot_buffer(self) -> list:
+        """Return a serializable snapshot of the current ring buffer.
+
+        Call this BEFORE get_angle_for_shot/reset to capture raw data
+        for offline analysis alongside OPS243 shot data.
+        """
+        frames = []
+        for frame in self._ring_buffer:
+            frames.append({
+                "timestamp": frame.timestamp,
+                "tdat": frame.tdat,
+                "pdat": frame.pdat,
+            })
+        return frames
+
     def reset(self):
         """Clear the ring buffer after a shot is processed."""
         self._ring_buffer.clear()

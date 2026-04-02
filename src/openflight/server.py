@@ -795,6 +795,10 @@ def on_shot_detected(shot: Shot):
         if kld7_tracker and shot.mode != "mock":
             kld7_start = time.time()
             shot_ts = kld7_start
+
+            # Snapshot raw buffer BEFORE processing (for correlation analysis)
+            raw_buffer = kld7_tracker.snapshot_buffer()
+
             kld7_angle = kld7_tracker.get_angle_for_shot(
                 shot_timestamp=shot_ts
             )
@@ -826,6 +830,30 @@ def on_shot_detected(shot: Shot):
                     "K-LD7 club angle: %.1f° (conf: %.0f%%)",
                     club_angle.vertical_deg, club_angle.confidence * 100,
                 )
+
+            # Log raw K-LD7 buffer alongside OPS shot for correlation analysis
+            session_log = get_session_logger()
+            if session_log and raw_buffer:
+                session_log.log_kld7_buffer(
+                    shot_number=session_log.stats.get("shots_detected", 0) + 1,
+                    shot_timestamp=shot_ts,
+                    orientation=kld7_tracker.orientation,
+                    buffer_frames=raw_buffer,
+                    ball_angle={
+                        "vertical_deg": kld7_angle.vertical_deg,
+                        "confidence": kld7_angle.confidence,
+                        "detection_class": kld7_angle.detection_class,
+                        "magnitude": kld7_angle.magnitude,
+                        "num_frames": kld7_angle.num_frames,
+                    } if kld7_angle else None,
+                    club_angle={
+                        "vertical_deg": club_angle.vertical_deg,
+                        "confidence": club_angle.confidence,
+                        "magnitude": club_angle.magnitude,
+                        "num_frames": club_angle.num_frames,
+                    } if club_angle and club_angle.vertical_deg is not None else None,
+                )
+
             kld7_tracker.reset()
             kld7_ms = (time.time() - kld7_start) * 1000
             logger.info("[PERF] K-LD7 processing: %.1fms", kld7_ms)

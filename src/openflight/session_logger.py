@@ -329,6 +329,29 @@ class SessionLogger:
             "launch_detected": launch_detected,
         })
 
+    def log_kld7_buffer(
+        self,
+        shot_number: int,
+        shot_timestamp: float,
+        orientation: str,
+        buffer_frames: list,
+        ball_angle: Optional[Dict] = None,
+        club_angle: Optional[Dict] = None,
+    ):
+        """Log raw K-LD7 ring buffer alongside OPS243 shot for correlation analysis."""
+        if not self.enabled:
+            return
+
+        self._write_entry("kld7_buffer", {
+            "shot_number": shot_number,
+            "shot_timestamp": shot_timestamp,
+            "orientation": orientation,
+            "frame_count": len(buffer_frames),
+            "frames": buffer_frames,
+            "ball_angle": ball_angle,
+            "club_angle": club_angle,
+        })
+
     def log_config_change(self, config: Dict[str, Any], source: str = "user"):
         """Log a radar configuration change."""
         if not self.enabled:
