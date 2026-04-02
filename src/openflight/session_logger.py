@@ -25,7 +25,7 @@ class SessionMetadata:
     camera_enabled: bool
     camera_model: Optional[str]
     config: Dict[str, Any]
-    mode: str  # "streaming" or "rolling-buffer"
+    mode: str  # "rolling-buffer" or "mock"
     trigger_type: Optional[str]  # For rolling-buffer mode: "polling", "threshold", etc.
 
 
@@ -91,7 +91,7 @@ class SessionLogger:
         camera_enabled: bool = False,
         camera_model: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
-        mode: str = "streaming",
+        mode: str = "rolling-buffer",
         trigger_type: Optional[str] = None
     ) -> str:
         """
@@ -103,7 +103,7 @@ class SessionLogger:
             camera_enabled: Whether camera is enabled
             camera_model: Camera/YOLO model being used
             config: Current radar configuration
-            mode: Radar mode ("streaming" or "rolling-buffer")
+            mode: Radar mode ("rolling-buffer" or "mock")
             trigger_type: Trigger strategy for rolling-buffer mode
 
         Returns:
@@ -259,7 +259,7 @@ class SessionLogger:
         spin_confidence: Optional[float] = None,
         spin_quality: Optional[str] = None,
         carry_spin_adjusted: Optional[float] = None,
-        mode: str = "streaming",
+        mode: str = "rolling-buffer",
         launch_angle_vertical: Optional[float] = None,
         launch_angle_horizontal: Optional[float] = None,
         launch_angle_confidence: Optional[float] = None,
@@ -280,7 +280,7 @@ class SessionLogger:
             spin_confidence: Confidence of spin detection (rolling buffer mode only)
             spin_quality: Quality assessment ("high", "medium", "low")
             carry_spin_adjusted: Carry distance adjusted for spin (rolling buffer mode only)
-            mode: Radar mode ("streaming" or "rolling-buffer")
+            mode: Radar mode ("rolling-buffer" or "mock")
         """
         if not self.enabled:
             return

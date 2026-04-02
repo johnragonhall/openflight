@@ -14,7 +14,7 @@ MOCK_MODE=false
 RADAR_LOG=false
 DEBUG_MODE=false
 NO_CAMERA=false  # Camera auto-enabled by default (uses Hough + ByteTrack)
-MODE="rolling-buffer"  # Default: rolling buffer mode (requires one-time radar setup)
+# Rolling buffer mode is the only mode (streaming mode removed)
 TRIGGER="sound"  # Default: hardware sound trigger (SEN-14262 → HOST_INT)
 SOUND_PRE_TRIGGER=""
 BUFFER_SPLIT=""
@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --mode)
-            MODE="$2"
+            echo "Warning: --mode is deprecated, rolling-buffer is the only mode"
             shift 2
             ;;
         --trigger)
@@ -175,7 +175,7 @@ if [ "$NO_CAMERA" = true ]; then
 fi
 
 if [ -n "$MODE" ]; then
-    SERVER_CMD="$SERVER_CMD --mode $MODE"
+    # Rolling buffer mode is the only mode (no --mode flag needed)
 fi
 
 if [ -n "$TRIGGER" ]; then

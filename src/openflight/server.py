@@ -19,7 +19,7 @@ from flask import Flask, Response, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
-from .launch_monitor import ClubType, LaunchMonitor, Shot
+from .launch_monitor import ClubType, Shot
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
 from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .session_logger import get_session_logger, init_session_logger
@@ -51,7 +51,7 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # Global state
-monitor: Optional["LaunchMonitor | MockLaunchMonitor"] = None
+monitor = None
 mock_mode: bool = False
 debug_mode: bool = False
 debug_log_file = None
@@ -587,7 +587,7 @@ def _get_trigger_status() -> dict:
     session_logger = get_session_logger()
     stats = session_logger.stats if session_logger else {}
 
-    mode = "mock" if mock_mode else ("rolling-buffer" if is_rolling_buffer else "streaming")
+    mode = "mock" if mock_mode else "rolling-buffer"
     trigger_type = None
     radar_port = None
 
@@ -957,21 +957,19 @@ def on_shot_detected(shot: Shot):
 def start_monitor(
     port: Optional[str] = None,
     mock: bool = False,
-    mode: str = "streaming",
     trigger_type: str = "polling",
     debug: bool = False,
     trigger_kwargs: Optional[dict] = None,
     sample_rate_ksps: int = 30,
 ):
     """
-    Start the launch monitor.
+    Start the launch monitor in rolling buffer mode.
 
     Args:
         port: Serial port for radar
         mock: Run in mock mode without radar
-        mode: "streaming" (default) or "rolling-buffer"
-        trigger_type: Trigger strategy for rolling-buffer mode
-        debug: Enable verbose FFT/CFAR debug output
+        trigger_type: Trigger strategy (sound, speed, polling)
+        debug: Enable verbose debug output
     """
     global monitor, mock_mode  # pylint: disable=global-statement
 
@@ -984,8 +982,7 @@ def start_monitor(
     if mock:
         # Mock mode for testing without radar
         monitor = MockLaunchMonitor()
-    elif mode == "rolling-buffer":
-        # Rolling buffer mode for spin detection
+    else:
         from .rolling_buffer import RollingBufferMonitor
 
         monitor = RollingBufferMonitor(
@@ -995,12 +992,8 @@ def start_monitor(
             **(trigger_kwargs or {}),
         )
         print(
-            f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)"
+            f"[MODE] Rolling buffer mode (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)"
         )
-    else:
-        # Default streaming mode
-        monitor = LaunchMonitor(port=port, debug=debug)
-        print(f"[MODE] Streaming mode enabled (debug={debug})")
 
     monitor.connect()
 
@@ -1014,11 +1007,11 @@ def start_monitor(
             camera_enabled=camera is not None,
             camera_model="hough" if (camera_tracker and camera_tracker.use_hough) else None,
             config=radar_config.copy(),
-            mode="mock" if mock else mode,
-            trigger_type=trigger_type if mode == "rolling-buffer" else None,
+            mode="mock" if mock else "rolling-buffer",
+            trigger_type=trigger_type if not mock else None,
         )
 
-    if mode == "rolling-buffer":
+    if not mock:
 
         def on_trigger_diagnostic(data: dict):
             """Forward trigger diagnostics to connected UI clients."""
@@ -1307,17 +1300,10 @@ def main():
     )
     parser.add_argument("--no-logging", action="store_true", help="Disable session logging")
     parser.add_argument(
-        "--mode",
-        "-M",
-        choices=["streaming", "rolling-buffer"],
-        default="streaming",
-        help="Radar mode: streaming (default, real-time) or rolling-buffer (higher resolution, spin detection)",
-    )
-    parser.add_argument(
         "--trigger",
-        choices=["polling", "threshold", "speed", "sound", "sound-gpio"],
+        choices=["polling", "threshold", "speed", "sound"],
         default="polling",
-        help="Trigger strategy for rolling-buffer mode (default: polling)",
+        help="Trigger strategy (default: polling)",
     )
     parser.add_argument(
         "--sound-pre-trigger",
@@ -1439,7 +1425,6 @@ def main():
     start_monitor(
         port=args.port,
         mock=args.mock,
-        mode=args.mode,
         trigger_type=args.trigger,
         debug=args.debug,
         trigger_kwargs=trigger_kwargs,
