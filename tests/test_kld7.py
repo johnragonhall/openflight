@@ -1,7 +1,9 @@
 """Tests for K-LD7 angle radar integration."""
 
+import pickle
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +11,9 @@ from openflight.kld7.types import KLD7Angle, KLD7Frame
 from openflight.kld7.tracker import KLD7Tracker
 from openflight.launch_monitor import Shot, ClubType
 from openflight.server import shot_to_dict
+
+# Path to real captured K-LD7 data (golf swings + body movement)
+CAPTURE_PATH = Path(__file__).parent.parent / "session_logs" / "kld7_capture_20260329_095614.pkl"
 
 
 class TestKLD7Types:
@@ -292,6 +297,123 @@ class TestKLD7NoiseFiltering:
         ))
         result = tracker.get_angle_for_shot()
         assert result is None, "Very close range (<0.3m) should be rejected as reflection"
+
+
+class TestKLD7RealData:
+    """Tests against real captured K-LD7 data from golf session."""
+
+    def _make_tracker(self, orientation="vertical"):
+        tracker = KLD7Tracker.__new__(KLD7Tracker)
+        tracker.orientation = orientation
+        tracker.buffer_seconds = 2.0
+        tracker.max_buffer_frames = 70
+        tracker._init_ring_buffer()
+        return tracker
+
+    def _load_frames(self):
+        """Load real capture data and convert to KLD7Frame objects."""
+        if not CAPTURE_PATH.exists():
+            pytest.skip(f"Capture file not found: {CAPTURE_PATH}")
+        with open(CAPTURE_PATH, "rb") as f:
+            data = pickle.load(f)
+        return data["frames"]
+
+    def test_rejects_body_movement_from_real_data(self):
+        """Long noisy events from real data should be rejected.
+
+        The capture has events like E2 (3.6s, 102 frames, angle spread 131°)
+        and E14 (7.2s, 187 frames). These are body movement and should produce
+        no angle result.
+        """
+        raw_frames = self._load_frames()
+        tracker = self._make_tracker()
+
+        # Load frames from ~0.4s to ~4.0s (event E2 — body movement)
+        t0 = raw_frames[0]["timestamp"]
+        for f in raw_frames:
+            t = f["timestamp"] - t0
+            if 0.4 <= t <= 4.0:
+                tracker._add_frame(KLD7Frame(
+                    timestamp=f["timestamp"],
+                    tdat=f.get("tdat"),
+                    pdat=f.get("pdat", []),
+                ))
+
+        result = tracker.get_angle_for_shot()
+        # This entire window is body movement — should be rejected
+        assert result is None, (
+            f"Body movement window (0.4-4.0s) should be rejected, "
+            f"got angle={result}"
+        )
+
+    def test_filters_reduce_false_positives_from_real_data(self):
+        """Running the algorithm on the full capture should produce far fewer
+        results than the number of raw detection events.
+
+        The capture has 39 raw events but most are noise. The filtering
+        should dramatically reduce this count.
+        """
+        raw_frames = self._load_frames()
+
+        # Simulate running get_angle_for_shot on overlapping 2-second windows
+        # across the full capture, counting how many produce a result
+        results = []
+        t0 = raw_frames[0]["timestamp"]
+        t_end = raw_frames[-1]["timestamp"]
+
+        window = 2.0
+        step = 1.0
+        t = t0
+
+        while t < t_end:
+            tracker = self._make_tracker()
+            for f in raw_frames:
+                if t <= f["timestamp"] <= t + window:
+                    tracker._add_frame(KLD7Frame(
+                        timestamp=f["timestamp"],
+                        tdat=f.get("tdat"),
+                        pdat=f.get("pdat", []),
+                    ))
+            result = tracker.get_angle_for_shot()
+            if result is not None:
+                results.append(result)
+            t += step
+
+        # With 39 raw events, we should see far fewer after filtering.
+        # Even a generous threshold: less than 15 detections from 54 seconds.
+        assert len(results) < 15, (
+            f"Expected <15 filtered results from real data, got {len(results)}"
+        )
+
+    def test_real_data_results_have_reasonable_angles(self):
+        """Any results from real data should have physically reasonable angles."""
+        raw_frames = self._load_frames()
+
+        t0 = raw_frames[0]["timestamp"]
+        t_end = raw_frames[-1]["timestamp"]
+        results = []
+        t = t0
+        while t < t_end:
+            tracker = self._make_tracker()
+            for f in raw_frames:
+                if t <= f["timestamp"] <= t + 2.0:
+                    tracker._add_frame(KLD7Frame(
+                        timestamp=f["timestamp"],
+                        tdat=f.get("tdat"),
+                        pdat=f.get("pdat", []),
+                    ))
+            result = tracker.get_angle_for_shot()
+            if result is not None:
+                results.append(result)
+            t += 1.0
+
+        for r in results:
+            angle = r.vertical_deg
+            assert angle is not None
+            # Golf launch angles are typically -5° to 45°
+            assert -60 < angle < 60, f"Angle {angle}° is outside reasonable range"
+            assert r.confidence > 0.0
+            assert r.distance_m > 0.3
 
 
 class TestKLD7Integration:
