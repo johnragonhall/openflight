@@ -134,10 +134,11 @@ class TestKLD7TrackerRingBuffer:
         tracker = self._make_tracker(orientation="vertical")
         now = time.time()
         # Frame with TDAT at 10° but PDAT at 20° (higher magnitude)
+        # Both speeds above MIN_SPEED_KMH (10 km/h) to pass speed filter
         tracker._add_frame(KLD7Frame(
             timestamp=now,
-            tdat={"distance": 1.0, "speed": 5.0, "angle": 10.0, "magnitude": 3000},
-            pdat=[{"distance": 1.5, "speed": 8.0, "angle": 20.0, "magnitude": 5000}],
+            tdat={"distance": 1.0, "speed": 30.0, "angle": 10.0, "magnitude": 3000},
+            pdat=[{"distance": 1.5, "speed": 40.0, "angle": 20.0, "magnitude": 5000}],
         ))
         result = tracker.get_angle_for_shot()
         assert result is not None
