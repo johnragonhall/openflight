@@ -13,8 +13,8 @@ HOST="localhost"
 MOCK_MODE=false
 RADAR_LOG=false
 DEBUG_MODE=false
-NO_CAMERA=false  # Camera auto-enabled by default (uses Hough + ByteTrack)
-MODE="rolling-buffer"  # Default: rolling buffer mode (requires one-time radar setup)
+NO_CAMERA=true  # Camera disabled by default (K-LD7 radar handles angle)
+# Rolling buffer mode is the only mode (streaming mode removed)
 TRIGGER="sound"  # Default: hardware sound trigger (SEN-14262 → HOST_INT)
 SOUND_PRE_TRIGGER=""
 BUFFER_SPLIT=""
@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --mode)
-            MODE="$2"
+            echo "Warning: --mode is deprecated, rolling-buffer is the only mode"
             shift 2
             ;;
         --trigger)
@@ -174,10 +174,6 @@ if [ "$NO_CAMERA" = true ]; then
     SERVER_CMD="$SERVER_CMD --no-camera"
 fi
 
-if [ -n "$MODE" ]; then
-    SERVER_CMD="$SERVER_CMD --mode $MODE"
-fi
-
 if [ -n "$TRIGGER" ]; then
     SERVER_CMD="$SERVER_CMD --trigger $TRIGGER"
 fi
@@ -229,9 +225,6 @@ if [ "$MOCK_MODE" = true ]; then
     log "Starting OpenFlight server on port $PORT (MOCK MODE)..."
 else
     log "Starting OpenFlight server on port $PORT..."
-    if [ -n "$MODE" ]; then
-        log "Mode: $MODE"
-    fi
     if [ -n "$TRIGGER" ]; then
         log "Trigger: $TRIGGER"
     fi
@@ -241,7 +234,7 @@ else
 fi
 
 if [ "$DEBUG_MODE" = true ]; then
-    log "Debug mode enabled (verbose FFT/CFAR output)"
+    log "Debug mode enabled (verbose output)"
 fi
 
 if [ "$NO_CAMERA" = true ]; then
@@ -273,12 +266,7 @@ log "Server is running!"
 # Launch browser in kiosk mode
 log "Launching kiosk browser..."
 
-# Build the URL with optional mode parameter
 KIOSK_URL="http://$HOST:$PORT"
-if [ -n "$MODE" ]; then
-    KIOSK_URL="$KIOSK_URL?mode=$MODE"
-    log "Mode: $MODE"
-fi
 
 # Try different browsers in order of preference
 # DISPLAY=:0 allows running on Pi's display when SSHed in

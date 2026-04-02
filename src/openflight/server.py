@@ -19,7 +19,7 @@ from flask import Flask, Response, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
-from .launch_monitor import ClubType, LaunchMonitor, Shot
+from .launch_monitor import ClubType, Shot
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
 from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
 from .session_logger import get_session_logger, init_session_logger
@@ -51,7 +51,7 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # Global state
-monitor: Optional["LaunchMonitor | MockLaunchMonitor"] = None
+monitor = None
 mock_mode: bool = False
 debug_mode: bool = False
 debug_log_file = None
@@ -213,6 +213,7 @@ def shot_to_dict(shot: Shot) -> dict:
         "launch_angle_horizontal": shot.launch_angle_horizontal,
         "launch_angle_confidence": shot.launch_angle_confidence,
         "angle_source": shot.angle_source,
+        "club_angle_deg": shot.club_angle_deg,
         # Spin data from rolling buffer mode
         "spin_rpm": round(shot.spin_rpm) if shot.spin_rpm else None,
         "spin_confidence": round(shot.spin_confidence, 2) if shot.spin_confidence else None,
@@ -586,7 +587,7 @@ def _get_trigger_status() -> dict:
     session_logger = get_session_logger()
     stats = session_logger.stats if session_logger else {}
 
-    mode = "mock" if mock_mode else ("rolling-buffer" if is_rolling_buffer else "streaming")
+    mode = "mock" if mock_mode else "rolling-buffer"
     trigger_type = None
     radar_port = None
 
@@ -792,15 +793,21 @@ def on_shot_detected(shot: Shot):
     # Try K-LD7 angle radar first (highest priority for angle data)
     try:
         if kld7_tracker and shot.mode != "mock":
-            kld7_angle = kld7_tracker.get_angle_for_shot()
+            kld7_start = time.time()
+            shot_ts = kld7_start
+            kld7_angle = kld7_tracker.get_angle_for_shot(
+                shot_timestamp=shot_ts
+            )
             if kld7_angle:
                 if kld7_angle.vertical_deg is not None:
                     shot.launch_angle_vertical = kld7_angle.vertical_deg
                     shot.launch_angle_confidence = kld7_angle.confidence
                     shot.angle_source = "radar"
                     logger.info(
-                        "K-LD7 vertical angle: %.1f° (conf: %.0f%%, %d frames)",
-                        kld7_angle.vertical_deg, kld7_angle.confidence * 100, kld7_angle.num_frames,
+                        "K-LD7 %s angle: %.1f° (conf: %.0f%%, %d frames)",
+                        kld7_angle.detection_class or "vertical",
+                        kld7_angle.vertical_deg, kld7_angle.confidence * 100,
+                        kld7_angle.num_frames,
                     )
                 if kld7_angle.horizontal_deg is not None:
                     shot.launch_angle_horizontal = kld7_angle.horizontal_deg
@@ -811,7 +818,17 @@ def on_shot_detected(shot: Shot):
                         "K-LD7 horizontal angle: %.1f° (conf: %.0f%%)",
                         kld7_angle.horizontal_deg, kld7_angle.confidence * 100,
                     )
+            # Also get club angle of attack
+            club_angle = kld7_tracker.get_club_angle(shot_timestamp=shot_ts)
+            if club_angle and club_angle.vertical_deg is not None:
+                shot.club_angle_deg = club_angle.vertical_deg
+                logger.info(
+                    "K-LD7 club angle: %.1f° (conf: %.0f%%)",
+                    club_angle.vertical_deg, club_angle.confidence * 100,
+                )
             kld7_tracker.reset()
+            kld7_ms = (time.time() - kld7_start) * 1000
+            logger.info("[PERF] K-LD7 processing: %.1fms", kld7_ms)
     except Exception as e:
         logger.warning("K-LD7 processing error: %s", e)
 
@@ -940,21 +957,19 @@ def on_shot_detected(shot: Shot):
 def start_monitor(
     port: Optional[str] = None,
     mock: bool = False,
-    mode: str = "streaming",
     trigger_type: str = "polling",
     debug: bool = False,
     trigger_kwargs: Optional[dict] = None,
     sample_rate_ksps: int = 30,
 ):
     """
-    Start the launch monitor.
+    Start the launch monitor in rolling buffer mode.
 
     Args:
         port: Serial port for radar
         mock: Run in mock mode without radar
-        mode: "streaming" (default) or "rolling-buffer"
-        trigger_type: Trigger strategy for rolling-buffer mode
-        debug: Enable verbose FFT/CFAR debug output
+        trigger_type: Trigger strategy (sound, speed, polling)
+        debug: Enable verbose debug output
     """
     global monitor, mock_mode  # pylint: disable=global-statement
 
@@ -967,8 +982,7 @@ def start_monitor(
     if mock:
         # Mock mode for testing without radar
         monitor = MockLaunchMonitor()
-    elif mode == "rolling-buffer":
-        # Rolling buffer mode for spin detection
+    else:
         from .rolling_buffer import RollingBufferMonitor
 
         monitor = RollingBufferMonitor(
@@ -978,12 +992,8 @@ def start_monitor(
             **(trigger_kwargs or {}),
         )
         print(
-            f"[MODE] Rolling buffer mode enabled (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)"
+            f"[MODE] Rolling buffer mode (trigger: {trigger_type}, sample_rate: {sample_rate_ksps}ksps)"
         )
-    else:
-        # Default streaming mode
-        monitor = LaunchMonitor(port=port, debug=debug)
-        print(f"[MODE] Streaming mode enabled (debug={debug})")
 
     monitor.connect()
 
@@ -997,11 +1007,11 @@ def start_monitor(
             camera_enabled=camera is not None,
             camera_model="hough" if (camera_tracker and camera_tracker.use_hough) else None,
             config=radar_config.copy(),
-            mode="mock" if mock else mode,
-            trigger_type=trigger_type if mode == "rolling-buffer" else None,
+            mode="mock" if mock else "rolling-buffer",
+            trigger_type=trigger_type if not mock else None,
         )
 
-    if mode == "rolling-buffer":
+    if not mock:
 
         def on_trigger_diagnostic(data: dict):
             """Forward trigger diagnostics to connected UI clients."""
@@ -1290,17 +1300,10 @@ def main():
     )
     parser.add_argument("--no-logging", action="store_true", help="Disable session logging")
     parser.add_argument(
-        "--mode",
-        "-M",
-        choices=["streaming", "rolling-buffer"],
-        default="streaming",
-        help="Radar mode: streaming (default, real-time) or rolling-buffer (higher resolution, spin detection)",
-    )
-    parser.add_argument(
         "--trigger",
-        choices=["polling", "threshold", "speed", "sound", "sound-gpio"],
+        choices=["polling", "threshold", "speed", "sound"],
         default="polling",
-        help="Trigger strategy for rolling-buffer mode (default: polling)",
+        help="Trigger strategy (default: polling)",
     )
     parser.add_argument(
         "--sound-pre-trigger",
@@ -1313,18 +1316,6 @@ def main():
         type=int,
         default=30,
         help="Radar sample rate in ksps (default: 30). Lower = longer buffer but lower max speed. 25=174mph/164ms, 27=187mph/152ms",
-    )
-    parser.add_argument(
-        "--gpio-pin",
-        type=int,
-        default=17,
-        help="GPIO pin (BCM numbering) for sound-gpio trigger (default: 17, physical pin 11)",
-    )
-    parser.add_argument(
-        "--gpio-debounce",
-        type=int,
-        default=200,
-        help="Debounce time in ms for sound-gpio trigger (default: 200)",
     )
     parser.add_argument(
         "--kld7", action="store_true", help="Enable K-LD7 angle radar module"
@@ -1385,9 +1376,6 @@ def main():
     # Start the monitor
     # Build trigger-specific kwargs (pre_trigger_segments always passed)
     trigger_kwargs = {"pre_trigger_segments": args.sound_pre_trigger}
-    if args.trigger == "sound-gpio":
-        trigger_kwargs["gpio_pin"] = args.gpio_pin
-        trigger_kwargs["debounce_ms"] = args.gpio_debounce
 
     # Initialize camera BEFORE starting monitor (so session log is accurate)
     if not args.no_camera:
@@ -1422,7 +1410,6 @@ def main():
     start_monitor(
         port=args.port,
         mock=args.mock,
-        mode=args.mode,
         trigger_type=args.trigger,
         debug=args.debug,
         trigger_kwargs=trigger_kwargs,

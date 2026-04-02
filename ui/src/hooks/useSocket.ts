@@ -84,7 +84,7 @@ export function useSocket() {
   // Trigger diagnostics state
   const [triggerDiagnostics, setTriggerDiagnostics] = useState<TriggerDiagnostic[]>([]);
   const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>({
-    mode: 'streaming',
+    mode: 'rolling-buffer',
     trigger_type: null,
     radar_connected: false,
     radar_port: null,

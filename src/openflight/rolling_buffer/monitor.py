@@ -391,8 +391,11 @@ class RollingBufferMonitor:
                 if capture is None:
                     continue
 
-                # Process capture
+                # Process capture (FFT + speed/spin extraction)
+                process_start = time.time()
                 processed = self.processor.process_capture(capture)
+                process_ms = (time.time() - process_start) * 1000
+                logger.info("[PERF] process_capture: %.1fms", process_ms)
 
                 if processed is None:
                     logger.warning("Failed to process capture")
@@ -525,7 +528,16 @@ class RollingBufferMonitor:
                         })
 
                     if self._shot_callback:
+                        callback_start = time.time()
                         self._shot_callback(shot)
+                        callback_ms = (time.time() - callback_start) * 1000
+                        total_ms = (time.time() - trigger_start) * 1000
+                        logger.info(
+                            "[PERF] shot_callback: %.1fms | total trigger-to-emit: %.1fms "
+                            "(trigger: %.1fms, process: %.1fms, callback: %.1fms)",
+                            callback_ms, total_ms,
+                            trigger_latency_ms, process_ms, callback_ms,
+                        )
                 else:
                     logger.info(
                         "Shot validation failed: ball=%.1f mph (min 15 mph)",

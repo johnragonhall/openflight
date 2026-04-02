@@ -14,7 +14,6 @@ from typing import Callable, List, Optional
 
 from .ops243 import Direction, OPS243Radar, SpeedReading
 from .session_logger import get_session_logger
-from .streaming import StreamingSpeedDetector
 
 
 class ClubType(Enum):
@@ -254,9 +253,10 @@ class Shot:
     spin_rpm: Optional[float] = None
     spin_confidence: Optional[float] = None
     carry_spin_adjusted: Optional[float] = None
-    mode: str = "streaming"
+    mode: str = "rolling-buffer"
     readings_data: Optional[list] = None
     angle_source: Optional[str] = None  # "radar", "camera", "estimated", or None
+    club_angle_deg: Optional[float] = None  # Club angle of attack from K-LD7
 
     @property
     def ball_speed_ms(self) -> float:
@@ -395,7 +395,6 @@ class LaunchMonitor:
         self,
         port: Optional[str] = None,
         detect_club_speed: bool = True,
-        use_iq_streaming: bool = True,
         debug: bool = False,
     ):
         """
@@ -405,15 +404,11 @@ class LaunchMonitor:
             port: Serial port for radar. Auto-detect if None.
             detect_club_speed: If True, attempt to detect club head speed
                               before ball speed. Requires radar to see club.
-            use_iq_streaming: If True (default), use continuous I/Q streaming
-                             with local FFT processing. If False, use radar's
-                             internal speed processing.
-            debug: If True, print verbose FFT/CFAR debug output.
+            debug: If True, print verbose debug output.
         """
         self.radar = OPS243Radar(port=port)
         self._running = False
         self._detect_club_speed = detect_club_speed
-        self._use_iq_streaming = use_iq_streaming
         self._debug = debug
         self._current_readings: List[SpeedReading] = []
         self._last_reading_time: float = 0
@@ -422,7 +417,6 @@ class LaunchMonitor:
         self._shot_callback: Optional[Callable[[Shot], None]] = None
         self._live_callback: Optional[Callable[[SpeedReading], None]] = None
         self._current_club: ClubType = ClubType.DRIVER
-        self._iq_detector: Optional[StreamingSpeedDetector] = None
 
     def connect(self) -> bool:
         """
@@ -432,10 +426,7 @@ class LaunchMonitor:
             True if successful
         """
         self.radar.connect()
-        if self._use_iq_streaming:
-            self.radar.configure_for_iq_streaming()
-        else:
-            self.radar.configure_for_golf()
+        self.radar.configure_for_golf()
         return True
 
     def disconnect(self):
@@ -467,26 +458,7 @@ class LaunchMonitor:
         self._live_callback = live_callback
         self._running = True
 
-        if self._use_iq_streaming:
-            # Use continuous I/Q streaming with local FFT + CFAR processing
-            # Use default StreamingConfig which has CFAR-tuned thresholds
-            # (min_speed=35 mph, threshold_factor=15, dc_mask=150 bins)
-            # Additional filtering happens in _on_reading based on shot context
-            self._iq_detector = StreamingSpeedDetector(
-                callback=self._on_reading,
-                config=None,  # Use CFAR-tuned defaults
-                debug=self._debug,
-            )
-            self.radar.start_iq_streaming(
-                callback=self._iq_detector.on_block, error_callback=self._on_iq_error
-            )
-        else:
-            # Use radar's internal speed processing
-            self.radar.start_streaming(self._on_reading)
-
-    def _on_iq_error(self, error: str):
-        """Handle errors from I/Q streaming."""
-        print(f"[IQ ERROR] {error}")
+        self.radar.start_streaming(self._on_reading)
 
     def stop(self):
         """Stop monitoring."""
@@ -495,8 +467,6 @@ class LaunchMonitor:
         # Process any pending readings
         if self._current_readings:
             self._process_shot()
-        # Clean up I/Q detector
-        self._iq_detector = None
 
     def _on_reading(self, reading: SpeedReading):
         """Process incoming speed readings."""
@@ -507,33 +477,27 @@ class LaunchMonitor:
         if self._live_callback:
             self._live_callback(reading)
 
-        # In I/Q streaming mode, CFAR already filters by speed, SNR, and signal quality
-        # We only need to filter by direction here (outbound = moving away from radar)
-        if self._use_iq_streaming:
-            if reading.direction != Direction.OUTBOUND:
-                return
+        # Filter by direction and speed
+        if self._detect_club_speed:
+            min_speed = self.MIN_CLUB_SPEED_MPH
         else:
-            # Legacy mode: apply old filters for radar's internal processing
-            if self._detect_club_speed:
-                min_speed = self.MIN_CLUB_SPEED_MPH
-            else:
-                min_speed = self.MIN_BALL_SPEED_MPH
+            min_speed = self.MIN_BALL_SPEED_MPH
 
-            if not min_speed <= reading.speed <= self.MAX_BALL_SPEED_MPH:
-                print(
-                    f"[FILTER] Speed {reading.speed:.1f} outside range {min_speed}-{self.MAX_BALL_SPEED_MPH}"
-                )
-                return
+        if not min_speed <= reading.speed <= self.MAX_BALL_SPEED_MPH:
+            print(
+                f"[FILTER] Speed {reading.speed:.1f} outside range {min_speed}-{self.MAX_BALL_SPEED_MPH}"
+            )
+            return
 
-            if reading.direction != Direction.OUTBOUND:
-                print(f"[FILTER] Direction {reading.direction.value} is not outbound")
-                return
+        if reading.direction != Direction.OUTBOUND:
+            print(f"[FILTER] Direction {reading.direction.value} is not outbound")
+            return
 
-            if reading.magnitude is not None and reading.magnitude < self.MIN_MAGNITUDE:
-                print(
-                    f"[FILTER] Magnitude {reading.magnitude:.1f} below minimum {self.MIN_MAGNITUDE}"
-                )
-                return
+        if reading.magnitude is not None and reading.magnitude < self.MIN_MAGNITUDE:
+            print(
+                f"[FILTER] Magnitude {reading.magnitude:.1f} below minimum {self.MIN_MAGNITUDE}"
+            )
+            return
 
         # Show timing info for debugging
         time_gap = (now - self._last_reading_time) if self._last_reading_time else 0
@@ -684,18 +648,16 @@ class LaunchMonitor:
         magnitudes = [r.magnitude for r in sorted_readings if r.magnitude]
         peak_mag = max(magnitudes) if magnitudes else None
 
-        # In I/Q streaming mode, CFAR already validated signal quality - skip magnitude check
-        # In legacy mode, validate peak magnitude for strong radar returns
-        if not self._use_iq_streaming:
-            if peak_mag is not None and peak_mag < self.MIN_SHOT_MAGNITUDE:
-                print(
-                    f"[REJECTED] Peak magnitude {peak_mag:.0f} below minimum "
-                    f"{self.MIN_SHOT_MAGNITUDE} (weak signal, likely not a golf shot)"
-                )
-                self._current_readings = []
-                return
+        # Validate peak magnitude for strong radar returns
+        if peak_mag is not None and peak_mag < self.MIN_SHOT_MAGNITUDE:
+            print(
+                f"[REJECTED] Peak magnitude {peak_mag:.0f} below minimum "
+                f"{self.MIN_SHOT_MAGNITUDE} (weak signal, likely not a golf shot)"
+            )
+            self._current_readings = []
+            return
 
-            # Validate ball speed - must be a real golf shot speed
+        # Validate ball speed - must be a real golf shot speed
             if ball_speed < self.MIN_BALL_SPEED_MPH:
                 print(
                     f"[REJECTED] Ball speed {ball_speed:.1f} mph below minimum "
@@ -745,12 +707,6 @@ class LaunchMonitor:
             }
             for r in self._current_readings
         ]
-
-        # Log I/Q blocks for this shot (for post-session analysis)
-        logger = get_session_logger()
-        if logger and self._use_iq_streaming and self._iq_detector:
-            shot_number = logger.stats.get("shots_detected", len(self._shots))
-            self._iq_detector.log_iq_for_shot(shot_number)
 
         # Callback (server.py will log the shot with camera data included)
         if self._shot_callback:
@@ -849,14 +805,7 @@ def main():
     parser.add_argument("--port", "-p", help="Serial port (auto-detect if not specified)")
     parser.add_argument("--live", "-l", action="store_true", help="Show live readings")
     parser.add_argument("--info", "-i", action="store_true", help="Show radar info and exit")
-    parser.add_argument(
-        "--no-iq-streaming",
-        action="store_true",
-        help="Disable I/Q streaming mode (use radar's internal processing)",
-    )
     args = parser.parse_args()
-
-    use_iq = not args.no_iq_streaming
 
     print("=" * 50)
     print("  OpenFlight - Golf Launch Monitor")
@@ -864,14 +813,8 @@ def main():
     print("=" * 50)
     print()
 
-    if use_iq:
-        print("Mode: Continuous I/Q streaming with local FFT")
-    else:
-        print("Mode: Radar internal processing")
-    print()
-
     try:
-        with LaunchMonitor(port=args.port, use_iq_streaming=use_iq) as monitor:
+        with LaunchMonitor(port=args.port) as monitor:
             info = monitor.get_radar_info()
             print(f"Connected to: {info.get('Product', 'OPS243')}")
             print(f"Firmware: {info.get('Version', 'unknown')}")

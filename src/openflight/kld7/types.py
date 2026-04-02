@@ -23,3 +23,5 @@ class KLD7Angle:
     magnitude: float = 0.0
     confidence: float = 0.0
     num_frames: int = 0
+    # "ball", "club", or None (unclassified / horizontal orientation)
+    detection_class: Optional[str] = None

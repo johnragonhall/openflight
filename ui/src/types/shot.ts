@@ -31,7 +31,7 @@ export interface SessionStats {
   // Rolling buffer mode spin stats
   avg_spin_rpm?: number | null;
   spin_detection_rate?: number;
-  mode?: 'streaming' | 'rolling-buffer';
+  mode?: 'rolling-buffer';
 }
 
 export interface SessionState {
@@ -63,7 +63,7 @@ export interface TriggerDiagnostic {
 }
 
 export interface TriggerStatus {
-  mode: 'streaming' | 'rolling-buffer' | 'mock';
+  mode: 'rolling-buffer' | 'mock';
   trigger_type: string | null;
   radar_connected: boolean;
   radar_port: string | null;
