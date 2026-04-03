@@ -660,13 +660,13 @@ class LaunchMonitor:
             return
 
         # Validate ball speed - must be a real golf shot speed
-            if ball_speed < self.MIN_BALL_SPEED_MPH:
-                print(
-                    f"[REJECTED] Ball speed {ball_speed:.1f} mph below minimum "
-                    f"{self.MIN_BALL_SPEED_MPH} mph (too slow for golf shot)"
-                )
-                self._current_readings = []
-                return
+        if ball_speed < self.MIN_BALL_SPEED_MPH:
+            print(
+                f"[REJECTED] Ball speed {ball_speed:.1f} mph below minimum "
+                f"{self.MIN_BALL_SPEED_MPH} mph (too slow for golf shot)"
+            )
+            self._current_readings = []
+            return
 
         # Find club speed
         club_speed = None

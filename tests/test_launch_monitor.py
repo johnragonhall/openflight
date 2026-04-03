@@ -375,6 +375,19 @@ class TestShotDetection:
 
         assert self.monitor._shots[0].impact_timestamp == pytest.approx(base_time + 0.05)
 
+    def test_rejects_low_ball_speed_even_without_magnitude(self):
+        """Shots below MIN_BALL_SPEED_MPH must be rejected regardless of magnitude."""
+        from openflight.ops243 import SpeedReading, Direction
+        import time
+
+        self.monitor._current_readings = [
+            SpeedReading(speed=17.1, direction=Direction.OUTBOUND, magnitude=None, timestamp=time.time()),
+        ]
+
+        self.monitor._process_shot()
+
+        assert len(self.monitor._shots) == 0
+
 
 class TestClubBallSeparation:
     """Tests for temporal + magnitude based club/ball separation."""
