@@ -1191,6 +1191,9 @@ class MockLaunchMonitor:
         launch_v = max(5.0, random.gauss(avg_launch, launch_std))
         launch_h = random.gauss(0, 2.0)
 
+        # Generate club angle of attack (negative for irons, near-zero for driver)
+        club_aoa = round(random.gauss(-4.0, 2.5), 1)
+
         shot = Shot(
             ball_speed_mph=ball_speed,
             club_speed_mph=club_speed,
@@ -1201,6 +1204,7 @@ class MockLaunchMonitor:
             launch_angle_vertical=round(launch_v, 1),
             launch_angle_horizontal=round(launch_h, 1),
             launch_angle_confidence=round(random.uniform(0.5, 0.95), 2),
+            club_angle_deg=club_aoa,
             mode="mock",
         )
 

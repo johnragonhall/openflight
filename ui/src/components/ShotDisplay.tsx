@@ -177,11 +177,20 @@ export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
           <MetricCard
             value={hasLaunchAngle ? shot.launch_angle_vertical!.toFixed(1) : '—'}
             unit={hasLaunchAngle ? '°' : undefined}
-            label="Vertical"
+            label="Launch Angle"
             subtext={hasLaunchAngle ? (shot.angle_source ?? undefined) : undefined}
             variant="secondary"
             confidence={hasLaunchAngle ? getLaunchAngleQuality(shot.launch_angle_confidence) : null}
           />
+          {shot.club_angle_deg !== null && (
+            <MetricCard
+              value={shot.club_angle_deg.toFixed(1)}
+              unit="°"
+              label="Club AoA"
+              subtext="radar"
+              variant="secondary"
+            />
+          )}
           {shot.launch_angle_horizontal !== null && (
             <MetricCard
               value={shot.launch_angle_horizontal.toFixed(1)}
