@@ -1,3 +1,5 @@
+![](images/openflight_case_main_image.png)
+
 M5 Bolts needed: 18
 Front piece of glass size: 166mm width x 115mm length x 2mm thick
 Back piece of glass size: 166mm width x 225mm length x 2mm thick
