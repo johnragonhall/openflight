@@ -56,12 +56,14 @@ class KLD7Tracker:
         speed_kmh: int = 100,
         orientation: str = "vertical",
         buffer_seconds: float = 2.0,
+        angle_offset_deg: float = 0.0,
     ):
         self.port = port
         self.range_m = range_m
         self.speed_kmh = speed_kmh
         self.orientation = orientation
         self.buffer_seconds = buffer_seconds
+        self.angle_offset_deg = angle_offset_deg
         self.max_buffer_frames = int(34 * buffer_seconds)
 
         self._radar = None
@@ -470,14 +472,16 @@ class KLD7Tracker:
         logger.info("K-LD7 ball: angle=%.1f° dist=%.2fm mag=%d frames=%d conf=%.2f",
                      avg_angle, avg_distance, max_magnitude, num_frames, confidence)
 
+        corrected_angle = round(avg_angle + getattr(self, "angle_offset_deg", 0.0), 1)
+
         if self.orientation == "vertical":
             return KLD7Angle(
-                vertical_deg=round(avg_angle, 1), horizontal_deg=None,
+                vertical_deg=corrected_angle, horizontal_deg=None,
                 distance_m=round(avg_distance, 2), magnitude=max_magnitude,
                 confidence=confidence, num_frames=num_frames, detection_class="ball",
             )
         return KLD7Angle(
-            vertical_deg=None, horizontal_deg=round(avg_angle, 1),
+            vertical_deg=None, horizontal_deg=corrected_angle,
             distance_m=round(avg_distance, 2), magnitude=max_magnitude,
             confidence=confidence, num_frames=num_frames, detection_class="ball",
         )
@@ -510,14 +514,16 @@ class KLD7Tracker:
         logger.info("K-LD7 club: angle=%.1f° dist=%.2fm mag=%d targets=%d conf=%.2f",
                      avg_angle, avg_dist, max_magnitude, n_targets, confidence)
 
+        corrected_angle = round(avg_angle + getattr(self, "angle_offset_deg", 0.0), 1)
+
         if self.orientation == "vertical":
             return KLD7Angle(
-                vertical_deg=round(avg_angle, 1), horizontal_deg=None,
+                vertical_deg=corrected_angle, horizontal_deg=None,
                 distance_m=round(avg_dist, 2), magnitude=max_magnitude,
                 confidence=confidence, num_frames=1, detection_class="club",
             )
         return KLD7Angle(
-            vertical_deg=None, horizontal_deg=round(avg_angle, 1),
+            vertical_deg=None, horizontal_deg=corrected_angle,
             distance_m=round(avg_dist, 2), magnitude=max_magnitude,
             confidence=confidence, num_frames=1, detection_class="club",
         )

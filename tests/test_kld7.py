@@ -109,6 +109,20 @@ class TestBallDetection:
         """Create a target dict matching body noise (close, slow)."""
         return {"distance": dist, "speed": speed, "angle": angle, "magnitude": mag}
 
+    def test_angle_offset_applied_to_ball(self):
+        """Angle offset should shift the reported ball angle."""
+        tracker = self._make_tracker()
+        tracker.angle_offset_deg = 12.0
+        now = time.time()
+        for i in range(2):
+            tracker._add_frame(KLD7Frame(
+                timestamp=now + i * 0.033, tdat=None,
+                pdat=[self._ball_target(angle=5.0)],
+            ))
+        result = tracker.get_angle_for_shot()
+        assert result is not None
+        assert result.vertical_deg == pytest.approx(17.0, abs=0.2)
+
     def test_detects_ball_at_far_range(self):
         """Ball burst: fast targets at >3.8m should be detected."""
         tracker = self._make_tracker()

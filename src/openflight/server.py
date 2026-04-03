@@ -21,7 +21,7 @@ from flask_socketio import SocketIO
 
 from .launch_monitor import ClubType, Shot
 from .ops243 import Direction, SpeedReading, set_show_raw_readings
-from .rolling_buffer.monitor import get_optimal_spin_for_ball_speed
+from .rolling_buffer.monitor import estimate_carry_with_spin, get_optimal_spin_for_ball_speed
 from .session_logger import get_session_logger, init_session_logger
 
 # Configure logging
@@ -360,13 +360,13 @@ def init_camera(
         return False
 
 
-def init_kld7(port=None, orientation="vertical") -> bool:
+def init_kld7(port=None, orientation="vertical", angle_offset_deg=0.0) -> bool:
     """Initialize K-LD7 angle radar tracker."""
     global kld7_tracker  # pylint: disable=global-statement
     try:
         from openflight.kld7 import KLD7Tracker
 
-        kld7_tracker = KLD7Tracker(port=port, orientation=orientation)
+        kld7_tracker = KLD7Tracker(port=port, orientation=orientation, angle_offset_deg=angle_offset_deg)
         if kld7_tracker.connect():
             kld7_tracker.start()
             return True
@@ -988,6 +988,19 @@ def on_shot_detected(shot: Shot):
             "Estimated launch angle: %.1f° (conf: %.0f%%)", estimated[0], estimated[1] * 100
         )
 
+    # Compute spin-adjusted carry if spin data is available but carry wasn't pre-computed
+    if shot.carry_spin_adjusted is None and shot.spin_rpm and shot.spin_rpm > 0:
+        shot.carry_spin_adjusted = estimate_carry_with_spin(
+            shot.ball_speed_mph,
+            shot.spin_rpm,
+            shot.club,
+            club_speed_mph=shot.club_speed_mph,
+        )
+        logger.info(
+            "Spin-adjusted carry: %.0f yds (spin: %.0f rpm)",
+            shot.carry_spin_adjusted, shot.spin_rpm,
+        )
+
     # Log shot with all data (radar + spin + camera) in one entry
     try:
         session_log = get_session_logger()
@@ -1437,6 +1450,12 @@ def main():
         default="vertical",
         help="K-LD7 mount orientation — which angle plane it measures (default: vertical)",
     )
+    parser.add_argument(
+        "--kld7-angle-offset",
+        type=float,
+        default=0.0,
+        help="K-LD7 angle offset in degrees to correct for mounting tilt (default: 0.0)",
+    )
     args = parser.parse_args()
 
     # Configure logging - always show INFO and above for openflight modules
@@ -1510,8 +1529,9 @@ def main():
 
     # Initialize K-LD7 angle radar (if enabled)
     if args.kld7:
-        if init_kld7(port=args.kld7_port, orientation=args.kld7_orientation):
-            print(f"K-LD7 angle radar enabled (orientation: {args.kld7_orientation})")
+        if init_kld7(port=args.kld7_port, orientation=args.kld7_orientation, angle_offset_deg=args.kld7_angle_offset):
+            offset_str = f", offset: {args.kld7_angle_offset:+.1f}°" if args.kld7_angle_offset else ""
+            print(f"K-LD7 angle radar enabled (orientation: {args.kld7_orientation}{offset_str})")
         else:
             print("K-LD7 not available - running without angle radar")
 
