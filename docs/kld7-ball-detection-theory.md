@@ -229,3 +229,50 @@ Examples from the current captures include:
 Those detections are useful because they point to the next filter to add:
 keep the sequence logic, then penalize far-burst paths whose launch angle is
 incompatible with the expected club window or with a camera-derived reference.
+
+## Live False-Positive Guard
+
+The live path now applies a wide club-and-speed sanity check before trusting a
+K-LD7 vertical launch angle.
+
+The logic is intentionally conservative:
+
+- compute the expected launch angle from the selected club and OPS243 ball speed
+- allow a wide club-family-specific error window
+- reject only radar angles that are far outside that window
+- fall back to the existing club-and-speed estimate when the radar angle is not plausible
+
+This is not a precision tuning mechanism. It is a guardrail against obvious
+false positives.
+
+## Why This Guard Is Defensible
+
+The repo already contains a real backyard session log with shot speed and launch
+data:
+
+- `session_logs/session_20260402_121507_range.jsonl`
+
+Auditing the `11` driver shots in that log against the club-and-speed launch
+model shows:
+
+- `8` shots are already within the expected guardrail
+- `3` shots are clear outliers: shots `3`, `9`, and `11`
+
+Those outliers are not minor disagreements. Their launch angles are roughly
+`23-30°` away from what the selected club and ball speed predict.
+
+That is exactly the kind of error this guard is meant to catch.
+
+## What The Guard Catches In The Current Captures
+
+Using broad club-family priors on the provided K-LD7 captures:
+
+- `kld7_capture_20260402_135117-wedge.pkl` flags the two `~63°` wedge candidates as suspect
+- `kld7_capture_20260402_135412-7i.pkl` flags the `79.4°` 7-iron candidate as suspect
+- moderate but still plausible shots such as `40.3°` on one 7-iron capture remain accepted
+
+That is the desired behavior for this stage:
+
+- reject the obvious false positives
+- keep the plausible-but-imperfect shots
+- avoid overfitting to these four files
