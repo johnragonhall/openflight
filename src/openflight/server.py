@@ -794,7 +794,7 @@ def on_shot_detected(shot: Shot):
     try:
         if kld7_tracker and shot.mode != "mock":
             kld7_start = time.time()
-            shot_ts = kld7_start
+            shot_ts = shot.impact_timestamp or kld7_start
 
             # Snapshot raw buffer BEFORE processing (for correlation analysis)
             raw_buffer = kld7_tracker.snapshot_buffer()

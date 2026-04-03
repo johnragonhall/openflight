@@ -359,6 +359,22 @@ class TestShotDetection:
 
         assert self.monitor._shots[0].peak_magnitude == 1800
 
+    def test_process_shot_records_impact_timestamp(self):
+        """Impact timestamp should preserve the OPS243 ball-reading timestamp."""
+        from openflight.ops243 import SpeedReading, Direction
+        import time
+
+        base_time = time.time()
+        self.monitor._current_readings = [
+            SpeedReading(speed=98.0, direction=Direction.OUTBOUND, magnitude=300, timestamp=base_time),
+            SpeedReading(speed=145.0, direction=Direction.OUTBOUND, magnitude=200, timestamp=base_time + 0.05),
+            SpeedReading(speed=143.2, direction=Direction.OUTBOUND, magnitude=150, timestamp=base_time + 0.07),
+        ]
+
+        self.monitor._process_shot()
+
+        assert self.monitor._shots[0].impact_timestamp == pytest.approx(base_time + 0.05)
+
 
 class TestClubBallSeparation:
     """Tests for temporal + magnitude based club/ball separation."""

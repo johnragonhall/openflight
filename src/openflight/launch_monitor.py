@@ -228,6 +228,7 @@ class Shot:
         club_speed_mph: Peak club head speed detected (mph), if available
         smash_factor: Ratio of ball speed to club speed (typically 1.4-1.5 for driver)
         timestamp: When the shot was detected
+        impact_timestamp: Epoch timestamp of the peak ball reading from OPS243
         peak_magnitude: Signal strength of strongest reading
         readings: All raw speed readings for this shot
         club: Club type for distance estimation
@@ -243,6 +244,7 @@ class Shot:
 
     ball_speed_mph: float
     timestamp: datetime
+    impact_timestamp: Optional[float] = None
     club_speed_mph: Optional[float] = None
     peak_magnitude: Optional[float] = None
     readings: List[SpeedReading] = field(default_factory=list)
@@ -681,6 +683,7 @@ class LaunchMonitor:
         shot = Shot(
             ball_speed_mph=ball_speed,
             timestamp=datetime.now(),
+            impact_timestamp=ball_time,
             club_speed_mph=club_speed,
             peak_magnitude=peak_mag,
             readings=self._current_readings.copy(),

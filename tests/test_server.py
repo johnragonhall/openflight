@@ -4,7 +4,9 @@ import pytest
 from datetime import datetime
 
 from openflight.launch_monitor import Shot, ClubType
-from openflight.server import MockLaunchMonitor, shot_to_dict, estimate_launch_angle
+from openflight.kld7.types import KLD7Angle
+from openflight import server as server_module
+from openflight.server import MockLaunchMonitor, on_shot_detected, shot_to_dict, estimate_launch_angle
 
 
 class TestShotToDict:
@@ -301,3 +303,50 @@ class TestMockLaunchMonitor:
 
         assert monitor._shots == []
         assert monitor.get_session_stats()["shot_count"] == 0
+
+
+class TestOnShotDetected:
+    """Tests for live shot processing in the server."""
+
+    def test_kld7_uses_shot_impact_timestamp(self, monkeypatch):
+        """K-LD7 selection should be anchored to the OPS243 impact timestamp."""
+        calls = []
+
+        class StubTracker:
+            orientation = "vertical"
+
+            def snapshot_buffer(self):
+                return []
+
+            def get_angle_for_shot(self, shot_timestamp=None):
+                calls.append(("ball", shot_timestamp))
+                return KLD7Angle(vertical_deg=12.0, confidence=0.8, num_frames=2)
+
+            def get_club_angle(self, shot_timestamp=None):
+                calls.append(("club", shot_timestamp))
+                return None
+
+            def reset(self):
+                calls.append(("reset", None))
+
+        emitted = []
+        monkeypatch.setattr(server_module, "kld7_tracker", StubTracker())
+        monkeypatch.setattr(server_module, "camera_tracker", None)
+        monkeypatch.setattr(server_module, "camera_enabled", False)
+        monkeypatch.setattr(server_module, "monitor", None)
+        monkeypatch.setattr(server_module, "debug_mode", False)
+        monkeypatch.setattr(server_module, "get_session_logger", lambda: None)
+        monkeypatch.setattr(server_module.socketio, "emit", lambda *args, **kwargs: emitted.append((args, kwargs)))
+
+        shot = Shot(
+            ball_speed_mph=150.0,
+            timestamp=datetime.now(),
+            impact_timestamp=1234.5,
+            club=ClubType.DRIVER,
+        )
+
+        on_shot_detected(shot)
+
+        assert ("ball", 1234.5) in calls
+        assert ("club", 1234.5) in calls
+        assert emitted
