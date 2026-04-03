@@ -314,6 +314,48 @@ class TestBallDetection:
         assert result is not None
         assert 6.5 < result.vertical_deg < 8.5
 
+    def test_coherent_track_uses_all_frames_in_3_frame_burst(self):
+        """DP backtracking must traverse the full burst, not stop at best-scoring frame.
+
+        When the last frame only has a target with a large angle jump from the
+        coherent path, the cumulative score at the last frame can be lower than
+        the score at the middle frame.  The DP must still select the best path
+        ending at the last frame so all frames are represented.
+        """
+        tracker = self._make_tracker()
+        now = time.time()
+
+        # Frames 0-1: strong coherent path at ~10°
+        tracker._add_frame(KLD7Frame(
+            timestamp=now,
+            tdat=None,
+            pdat=[
+                self._ball_target(angle=10.0, dist=4.2, speed=20.0, mag=5000),
+            ],
+        ))
+        tracker._add_frame(KLD7Frame(
+            timestamp=now + 0.033,
+            tdat=None,
+            pdat=[
+                self._ball_target(angle=11.0, dist=4.25, speed=19.0, mag=5000),
+            ],
+        ))
+        # Frame 2: only a weak target at a very different angle — big
+        # continuity penalty makes its cumulative score lower than frame 1's.
+        tracker._add_frame(KLD7Frame(
+            timestamp=now + 0.066,
+            tdat=None,
+            pdat=[
+                self._ball_target(angle=70.0, dist=4.8, speed=18.0, mag=600),
+            ],
+        ))
+
+        result = tracker.get_angle_for_shot()
+
+        assert result is not None
+        # The path must include all 3 frames
+        assert result.num_frames == 3
+
 
 class TestClubDetection:
     """Tests for club angle of attack extraction (speed-transition based)."""

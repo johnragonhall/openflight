@@ -262,18 +262,18 @@ class KLD7Tracker:
             paths.append(current_scores)
             prev_scores = current_scores
 
-        best_frame_idx = 0
+        # Select the best endpoint from the *last* frame only, so backtracking
+        # produces a full-length path through every frame in the burst.
+        last_scores = paths[-1]
         best_target_idx = 0
         best_score = float("-inf")
-        for frame_idx, frame_scores in enumerate(paths):
-            for target_idx, (score, _) in enumerate(frame_scores):
-                if score > best_score:
-                    best_score = score
-                    best_frame_idx = frame_idx
-                    best_target_idx = target_idx
+        for target_idx, (score, _) in enumerate(last_scores):
+            if score > best_score:
+                best_score = score
+                best_target_idx = target_idx
 
         track = []
-        frame_idx = best_frame_idx
+        frame_idx = len(paths) - 1
         target_idx = best_target_idx
         while frame_idx >= 0 and target_idx is not None:
             track.append(per_frame_targets[frame_idx][target_idx])
