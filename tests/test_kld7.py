@@ -516,6 +516,71 @@ class TestProbableShotPairing:
         assert probable_shots[0]["dt_ms"] == pytest.approx(200.0, abs=40.0)
         assert probable_shots[0]["ball_angle_deg"] == pytest.approx(18.0, abs=1.0)
 
+    def test_suppresses_double_counted_shots_within_min_gap(self):
+        """Two club transitions from the same swing should not produce two shots.
+
+        In real captures, a single swing often produces multiple close-range
+        speed transitions (club approach + follow-through rebound). Frames
+        are in temporal order with slow frames between transitions, so both
+        trigger as valid club candidates. The pairing logic must suppress
+        the second one.
+        """
+        tracker = self._make_tracker()
+        tracker.max_buffer_frames = 500
+        tracker._init_ring_buffer()
+        now = time.time()
+
+        def _add_swing(t_start):
+            """Add frames in temporal order: body → club → ball → slow → second club → second burst."""
+            # Slow body movement
+            for i in range(5):
+                tracker._add_frame(KLD7Frame(
+                    timestamp=t_start + i * 0.033,
+                    tdat=None,
+                    pdat=[{"distance": 1.5, "speed": 3.0, "angle": -8.0, "magnitude": 3500}],
+                ))
+            # First club transition (real)
+            tracker._add_frame(KLD7Frame(
+                timestamp=t_start + 0.2,
+                tdat=None,
+                pdat=[{"distance": 1.3, "speed": 12.0, "angle": -6.0, "magnitude": 4000}],
+            ))
+            # Ball burst
+            for i in range(2):
+                tracker._add_frame(KLD7Frame(
+                    timestamp=t_start + 0.4 + i * 0.033,
+                    tdat=None,
+                    pdat=[{"distance": 4.2, "speed": 25.0, "angle": 18.0, "magnitude": 2500}],
+                ))
+            # Slow frames (follow-through settling)
+            for i in range(5):
+                tracker._add_frame(KLD7Frame(
+                    timestamp=t_start + 0.6 + i * 0.033,
+                    tdat=None,
+                    pdat=[{"distance": 1.6, "speed": 2.0, "angle": 5.0, "magnitude": 3000}],
+                ))
+            # Second club transition (follow-through / rebound — false)
+            tracker._add_frame(KLD7Frame(
+                timestamp=t_start + 1.0,
+                tdat=None,
+                pdat=[{"distance": 1.4, "speed": 15.0, "angle": 10.0, "magnitude": 3800}],
+            ))
+            # A second far burst (net reflection / noise)
+            tracker._add_frame(KLD7Frame(
+                timestamp=t_start + 1.2,
+                tdat=None,
+                pdat=[{"distance": 4.5, "speed": 20.0, "angle": 55.0, "magnitude": 2100}],
+            ))
+
+        _add_swing(now)
+        _add_swing(now + 10.0)  # second swing well-separated
+
+        probable_shots = tracker.find_probable_shots()
+
+        # Should find 2 shots (one per swing), not 4
+        assert len(probable_shots) == 2
+        assert probable_shots[1]["club_time"] - probable_shots[0]["club_time"] > 5.0
+
 
 class TestKLD7RealData:
     """Tests against real captured K-LD7 data."""

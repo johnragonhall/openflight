@@ -191,6 +191,7 @@ class KLD7Tracker:
     BALL_MAX_BURST_GAP_S = 0.1  # Max gap between frames in a burst
     BALL_AFTER_CLUB_MIN_S = 0.08
     BALL_AFTER_CLUB_MAX_S = 0.35
+    MIN_SHOT_GAP_S = 3.0  # Minimum time between probable shots (suppresses double-counts)
 
     # --- Club detection thresholds ---
     # Club detected by speed transition (slow→fast) at arm's length distance
@@ -546,8 +547,11 @@ class KLD7Tracker:
         ball_bursts = self._collect_ball_bursts()
         probable_shots = []
         used_ball_indices = set()
+        last_shot_time = float("-inf")
 
         for club in club_candidates:
+            if club["timestamp"] - last_shot_time < self.MIN_SHOT_GAP_S:
+                continue
             viable_balls = []
             for idx, burst in enumerate(ball_bursts):
                 dt = burst["start_time"] - club["timestamp"]
@@ -570,6 +574,7 @@ class KLD7Tracker:
                 ),
             )
             used_ball_indices.add(best_idx)
+            last_shot_time = club["timestamp"]
 
             probable_shots.append({
                 "club_time": club["timestamp"],
