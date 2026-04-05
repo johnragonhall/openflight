@@ -10,7 +10,6 @@ from typing import Any
 
 import numpy as np
 
-
 DISTANCE_MIN_M = 0.6
 DISTANCE_MAX_M = 5.2
 POST_IMPACT_WINDOW_MS = 260.0
@@ -92,6 +91,67 @@ def detection_value(detection: dict[str, Any] | None, key: str) -> float:
     return float(value)
 
 
+def _coerce_int(value: Any, description: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{description} must be an integer, got {value!r}") from error
+
+
+def _coerce_float(value: Any, description: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{description} must be numeric, got {value!r}") from error
+
+
+def _validate_frames(shot_number: int, buffer_entry: dict[str, Any]) -> list[dict[str, Any]]:
+    frames = buffer_entry.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"shot {shot_number} is missing a usable kld7_buffer.frames list")
+
+    normalized_frames: list[dict[str, Any]] = []
+    for frame_index, frame in enumerate(frames):
+        if not isinstance(frame, dict):
+            raise ValueError(f"shot {shot_number} frame {frame_index} is not an object")
+        if "timestamp" not in frame:
+            raise ValueError(f"shot {shot_number} frame {frame_index} is missing timestamp")
+
+        try:
+            timestamp = _coerce_float(
+                frame["timestamp"],
+                f"shot {shot_number} frame {frame_index} timestamp",
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"shot {shot_number} frame {frame_index} has non-numeric timestamp"
+            ) from error
+
+        pdat = frame.get("pdat")
+        if pdat is None:
+            hits: list[dict[str, Any]] = []
+        elif not isinstance(pdat, list):
+            raise ValueError(f"shot {shot_number} frame {frame_index} has non-list pdat data")
+        else:
+            hits = []
+            for hit_index, hit in enumerate(pdat):
+                if not isinstance(hit, dict):
+                    raise ValueError(
+                        f"shot {shot_number} frame {frame_index} hit {hit_index} is not an object"
+                    )
+                for field in ("distance", "angle", "magnitude", "speed"):
+                    if field in hit and hit[field] is not None:
+                        _coerce_float(
+                            hit[field],
+                            f"shot {shot_number} frame {frame_index} hit {hit_index} field {field}",
+                        )
+                hits.append(hit)
+
+        normalized_frames.append({"timestamp": timestamp, "pdat": hits})
+
+    return normalized_frames
+
+
 def group_records(
     records: list[dict[str, Any]],
     gap_seconds: float,
@@ -152,25 +212,45 @@ def load_session(
 ) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
     session_meta: dict[str, Any] = {}
     shots: dict[int, dict[str, Any]] = defaultdict(dict)
+    if not session_path.exists():
+        raise ValueError(f"Session file not found: {session_path}")
+    if not session_path.is_file():
+        raise ValueError(f"Session path is not a file: {session_path}")
     with session_path.open(encoding="utf-8") as handle:
-        for line in handle:
+        for line_number, line in enumerate(handle, start=1):
             line = line.strip()
             if not line:
                 continue
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"Invalid JSON on line {line_number} of {session_path}: {error.msg}"
+                ) from error
+            if not isinstance(entry, dict):
+                raise ValueError(f"Line {line_number} of {session_path} must be a JSON object.")
             entry_type = entry.get("type")
             if entry_type == "session_start":
                 session_meta = entry
                 continue
             shot_number = entry.get("shot_number")
+            if entry_type in {"rolling_buffer_capture", "kld7_buffer", "shot_detected"}:
+                if shot_number is None:
+                    raise ValueError(
+                        f"{session_path} line {line_number} is missing shot_number for {entry_type}"
+                    )
+                shot_number = _coerce_int(
+                    shot_number,
+                    f"{session_path} line {line_number} shot_number",
+                )
             if shot_number is None:
                 continue
             if entry_type == "rolling_buffer_capture":
-                shots[int(shot_number)]["capture"] = entry
+                shots[shot_number]["capture"] = entry
             elif entry_type == "kld7_buffer":
-                shots[int(shot_number)]["buffer"] = entry
+                shots[shot_number]["buffer"] = entry
             elif entry_type == "shot_detected":
-                shots[int(shot_number)]["shot"] = entry
+                shots[shot_number]["shot"] = entry
     return session_meta, dict(sorted(shots.items()))
 
 
@@ -191,9 +271,7 @@ def collect_tracking_inputs(
             speed_raw = detection_value(hit, "speed")
 
             if -PRE_IMPACT_WINDOW_MS <= time_ms < 0.0:
-                pre_event_hits.append(
-                    {"distance_m": distance_m, "angle_deg": angle_deg}
-                )
+                pre_event_hits.append({"distance_m": distance_m, "angle_deg": angle_deg})
 
             if 0.0 <= time_ms <= POST_IMPACT_WINDOW_MS:
                 if not DISTANCE_MIN_M <= distance_m <= DISTANCE_MAX_M:
@@ -392,9 +470,7 @@ def extract_anchor_candidate(
         path=path,
         all_post_hits=all_post_hits,
         track_score=track_score,
-        selection_score=selection_score(
-            track_score, metrics, lingering_hits, rolling_ball_dt_ms
-        ),
+        selection_score=selection_score(track_score, metrics, lingering_hits, rolling_ball_dt_ms),
         lingering_hits=lingering_hits,
         metrics=metrics,
     )
@@ -416,11 +492,7 @@ def classify_quality(metrics: PathMetrics, lingering_hits: int) -> str:
         and lingering_hits <= 4
     ):
         return "strong"
-    if (
-        metrics.point_count >= 2
-        and metrics.distance_gain_m >= 0.4
-        and metrics.monotonicity >= 0.5
-    ):
+    if metrics.point_count >= 2 and metrics.distance_gain_m >= 0.4 and metrics.monotonicity >= 0.5:
         return "partial"
     return "weak"
 
@@ -447,7 +519,10 @@ def analyze_shot(shot_number: int, shot_bundle: dict[str, Any]) -> ShotReview:
     buffer_entry = shot_bundle["buffer"]
     capture_entry = shot_bundle.get("capture", {})
     detected_entry = shot_bundle.get("shot", {})
-    frames = sorted(buffer_entry["frames"], key=lambda frame: float(frame["timestamp"]))
+    frames = sorted(
+        _validate_frames(shot_number, buffer_entry),
+        key=lambda frame: frame["timestamp"],
+    )
 
     rolling_ball_dt_ms: float | None = None
     if "ball_timestamp_ms" in capture_entry and "club_timestamp_ms" in capture_entry:
@@ -472,12 +547,8 @@ def analyze_shot(shot_number: int, shot_bundle: dict[str, Any]) -> ShotReview:
         club_label=str(detected_entry.get("club") or "unknown"),
         logged_ball_speed_mph=_optional_float(detected_entry.get("ball_speed_mph")),
         logged_club_speed_mph=_optional_float(detected_entry.get("club_speed_mph")),
-        logged_launch_angle_deg=_optional_float(
-            detected_entry.get("launch_angle_vertical")
-        ),
-        logged_launch_confidence=_optional_float(
-            detected_entry.get("launch_angle_confidence")
-        ),
+        logged_launch_angle_deg=_optional_float(detected_entry.get("launch_angle_vertical")),
+        logged_launch_confidence=_optional_float(detected_entry.get("launch_angle_confidence")),
         logged_ball_angle_frames=_optional_int(ball_angle.get("num_frames")),
         logged_ball_angle_accepted=_optional_bool(ball_angle.get("accepted")),
         expected_launch_deg=_optional_float(sanity_check.get("expected_launch_deg")),
@@ -508,9 +579,7 @@ def analyze_session(
                 f"{session_path} has shots but no kld7_buffer entries. "
                 "This review workflow only works on session logs that include K-LD7 frame buffers."
             )
-        raise ValueError(
-            f"{session_path} contains no reviewable shots."
-        )
+        raise ValueError(f"{session_path} contains no reviewable shots.")
 
     if missing_buffer_shots:
         session_meta["_review_warnings"] = [
@@ -521,7 +590,6 @@ def analyze_session(
         ]
 
     results = [
-        analyze_shot(shot_number, shot_bundle)
-        for shot_number, shot_bundle in reviewable_shots
+        analyze_shot(shot_number, shot_bundle) for shot_number, shot_bundle in reviewable_shots
     ]
     return session_meta, results

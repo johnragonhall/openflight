@@ -20,22 +20,30 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from kld7_session_review_lib import ShotReview, analyze_session  # noqa: E402
 
-
 PROFILE_GRID_MS = np.arange(0.0, 261.0, 10.0)
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def session_output_dir(session_path: Path) -> Path:
     """Default output directory for generated review artifacts."""
-    return Path("shots") / f"session_review_{session_path.stem}"
+    return REPO_ROOT / "shots" / f"session_review_{session_path.stem}"
 
 
 def _is_safe_review_output_dir(path: Path) -> bool:
     """Allow cleanup only for session review directories under shots/."""
-    return path.name.startswith("session_review_") and path.parent.name == "shots"
+    try:
+        resolved = path.resolve()
+        shots_root = (REPO_ROOT / "shots").resolve()
+        resolved.relative_to(shots_root)
+    except ValueError:
+        return False
+    return resolved.name.startswith("session_review_") and resolved.parent == shots_root
 
 
 def ensure_output_dir(path: Path, *, clean: bool) -> None:
     """Create the output directory and optionally remove prior generated files."""
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"Output path is not a directory: {path}")
     path.mkdir(parents=True, exist_ok=True)
     if not clean:
         return
@@ -45,8 +53,11 @@ def ensure_output_dir(path: Path, *, clean: bool) -> None:
             "Use a directory under shots/session_review_* or omit --clean."
         )
     for child in path.iterdir():
-        if child.is_file():
-            child.unlink()
+        if child.is_dir():
+            raise ValueError(
+                f"Output directory contains nested paths and cannot be cleaned safely: {child}"
+            )
+        child.unlink()
 
 
 def plot_shot_profile(result: ShotReview, session_name: str, output_path: Path) -> None:
@@ -275,9 +286,7 @@ def plot_launch_angle_review(results: list[ShotReview], output_path: Path) -> No
     shots = np.array([result.shot_number for result in results], dtype=float)
     logged = np.array(
         [
-            np.nan
-            if result.logged_launch_angle_deg is None
-            else result.logged_launch_angle_deg
+            np.nan if result.logged_launch_angle_deg is None else result.logged_launch_angle_deg
             for result in results
         ],
         dtype=float,
@@ -465,6 +474,7 @@ def write_summary(
             "",
             "## Interpretation",
             "",
+            "The `strong`, `partial`, and `weak` labels are review grades for profile recoverability and coherence, not grades of swing quality or ball quality.",
             "The strongest profiles show the expected outward progression over roughly `50-225 ms` with about `1-2.5 m` of range gain.",
             "The weaker profiles either stay in a far clutter band or expose only a short segment of the shot.",
             "Use this report as an empirical review aid for K-LD7 tuning, not as ground-truth validation of launch angle by itself.",
@@ -497,18 +507,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    output_dir = args.output_dir or session_output_dir(args.session_file)
     try:
+        output_dir = args.output_dir or session_output_dir(args.session_file)
         session_meta, results = analyze_session(args.session_file)
+        ensure_output_dir(output_dir, clean=args.clean)
     except ValueError as error:
         raise SystemExit(str(error)) from error
 
     if not results:
-        raise SystemExit(
-            f"No reviewable K-LD7 shots found in {args.session_file}."
-        )
-
-    ensure_output_dir(output_dir, clean=args.clean)
+        raise SystemExit(f"No reviewable K-LD7 shots found in {args.session_file}.")
 
     for warning in session_meta.get("_review_warnings", []):
         print(f"Warning: {warning}")

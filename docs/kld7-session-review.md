@@ -21,32 +21,44 @@ For each shot in a session log, the review script:
 
 The result is a quick way to see whether a session contains real-looking ball-flight distance profiles or mostly clutter.
 
+## How The Grades Are Used
+
+The exported `strong`, `partial`, and `weak` labels are **review grades for signal recoverability**:
+
+- `strong`: the session produced a coherent outward path that is good evidence for a real tracked shot
+- `partial`: the session exposed part of the shot pattern, but the path is short or noisy
+- `weak`: the reviewed path is mostly clutter or too incomplete to trust
+
+These grades are for K-LD7 review and tuning. They are **not** grades of player performance, shot outcome, or launch-angle correctness by themselves.
+
 ## Usage
 
-Install analysis dependencies if needed:
+For a one-off review on any machine, run the script in an isolated `uv`
+environment with only the analysis dependencies it needs:
 
 ```bash
-uv pip install -e ".[analysis]"
+uv run --no-project --with numpy --with matplotlib python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl
 ```
 
-Run the session review:
+If you already have the repo environment synced with the analysis extras, the
+regular project command also works:
 
 ```bash
-PYTHONPATH=src python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl
+uv run python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl
 ```
 
 If you want to remove previously generated files in the output directory first,
 use `--clean`. Cleanup is intentionally restricted to directories that look like
-`shots/session_review_*`.
+`<repo>/shots/session_review_*`.
 
 ```bash
-PYTHONPATH=src python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl --clean
+uv run --no-project --with numpy --with matplotlib python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl --clean
 ```
 
 Default output location:
 
 ```text
-shots/session_review_session_20260403_133805_range/
+<repo>/shots/session_review_session_20260403_133805_range/
 ```
 
 That directory is ignored by git.
