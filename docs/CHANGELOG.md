@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - K-LD7 shot-correlation analysis workflow and theory writeup
   - `scripts/analyze_kld7.py --pair-shots` for offline club-to-ball pairing on `.pkl` captures
   - `docs/kld7-ball-detection-theory.md` with capture findings and detection rationale
+- K-LD7 session-review workflow for full JSONL logs
+  - `scripts/review_kld7_session.py` for per-shot profile review on `session_logs/session_*.jsonl`
+  - `docs/kld7-session-review.md` documenting the empirical review method and outputs
 - Persistent rolling buffer mode workaround for OPS243-A HOST_INT pin bug (per OmniPreSense)
   - `persist_rolling_buffer_mode()` method saves settings to flash memory
   - `test_rolling_buffer_persist.py` script for one-time radar setup and verification
