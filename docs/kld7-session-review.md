@@ -35,6 +35,14 @@ Run the session review:
 PYTHONPATH=src python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl
 ```
 
+If you want to remove previously generated files in the output directory first,
+use `--clean`. Cleanup is intentionally restricted to directories that look like
+`shots/session_review_*`.
+
+```bash
+PYTHONPATH=src python scripts/review_kld7_session.py session_logs/session_20260403_133805_range.jsonl --clean
+```
+
 Default output location:
 
 ```text

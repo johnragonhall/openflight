@@ -29,9 +29,21 @@ def session_output_dir(session_path: Path) -> Path:
     return Path("shots") / f"session_review_{session_path.stem}"
 
 
-def ensure_output_dir(path: Path) -> None:
-    """Create the output directory and remove previous generated files."""
+def _is_safe_review_output_dir(path: Path) -> bool:
+    """Allow cleanup only for session review directories under shots/."""
+    return path.name.startswith("session_review_") and path.parent.name == "shots"
+
+
+def ensure_output_dir(path: Path, *, clean: bool) -> None:
+    """Create the output directory and optionally remove prior generated files."""
     path.mkdir(parents=True, exist_ok=True)
+    if not clean:
+        return
+    if not _is_safe_review_output_dir(path):
+        raise ValueError(
+            f"Refusing to clean unsafe output directory: {path}. "
+            "Use a directory under shots/session_review_* or omit --clean."
+        )
     for child in path.iterdir():
         if child.is_file():
             child.unlink()
@@ -478,6 +490,11 @@ def main() -> None:
         default=None,
         help="Directory for generated review files (default: shots/session_review_<session>).",
     )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete existing generated files in the output directory before writing new ones.",
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir or session_output_dir(args.session_file)
@@ -491,7 +508,7 @@ def main() -> None:
             f"No reviewable K-LD7 shots found in {args.session_file}."
         )
 
-    ensure_output_dir(output_dir)
+    ensure_output_dir(output_dir, clean=args.clean)
 
     for warning in session_meta.get("_review_warnings", []):
         print(f"Warning: {warning}")
