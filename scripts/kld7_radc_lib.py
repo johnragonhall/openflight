@@ -204,11 +204,46 @@ def _velocity_to_bin(velocity_kmh: float, fft_size: int = 2048, max_speed_kmh: f
 
 
 def ball_bin_range(fft_size: int = 2048, max_speed_kmh: float = 100.0) -> tuple[int, int]:
-    """Return (lo, hi) FFT bin range for aliased ball velocities."""
+    """Return (lo, hi) FFT bin range for aliased ball velocities (broad default)."""
     return (
         _velocity_to_bin(BALL_VELOCITY_ALIASED_MIN_KMH, fft_size, max_speed_kmh),
         _velocity_to_bin(BALL_VELOCITY_ALIASED_MAX_KMH, fft_size, max_speed_kmh),
     )
+
+
+def ball_bin_range_from_speed(
+    ball_speed_mph: float,
+    tolerance_mph: float = 10.0,
+    fft_size: int = 2048,
+    max_speed_kmh: float = 100.0,
+) -> tuple[int, int]:
+    """Return (lo, hi) FFT bin range for a specific ball speed.
+
+    Uses the OPS243-measured ball speed to compute exactly where in the
+    aliased spectrum the ball return should appear. Much more precise
+    than the broad default range — eliminates club/multipath contamination.
+
+    Args:
+        ball_speed_mph: Measured ball speed from OPS243
+        tolerance_mph: Search window around the expected velocity (±)
+    """
+    ball_speed_kmh = ball_speed_mph * 1.609
+    unambiguous_range = max_speed_kmh * 2.0
+    aliased_kmh = ball_speed_kmh % unambiguous_range
+    if aliased_kmh > max_speed_kmh:
+        aliased_kmh -= unambiguous_range  # wrap to negative
+
+    lo_vel = aliased_kmh - tolerance_mph * 1.609
+    hi_vel = aliased_kmh + tolerance_mph * 1.609
+
+    lo_bin = _velocity_to_bin(lo_vel, fft_size, max_speed_kmh)
+    hi_bin = _velocity_to_bin(hi_vel, fft_size, max_speed_kmh)
+
+    # Ensure lo < hi
+    if lo_bin > hi_bin:
+        lo_bin, hi_bin = hi_bin, lo_bin
+
+    return (lo_bin, hi_bin)
 
 
 def club_bin_range(fft_size: int = 2048, max_speed_kmh: float = 100.0) -> tuple[int, int]:
@@ -409,16 +444,25 @@ def extract_launch_angle(
     cfar_threshold: float = 2.5,
     impact_energy_threshold: float = 3.0,
     angle_offset_deg: float = 0.0,
+    ops243_ball_speed_mph: float | None = None,
+    speed_tolerance_mph: float = 10.0,
 ) -> list[dict]:
     """Extract vertical launch angle per shot from RADC frames.
 
     Pipeline:
     1. Find impact frames (high-velocity energy spikes)
     2. Group consecutive impacts into shot events
-    3. For each shot, run band-limited CFAR in the aliased ball velocity range
+    3. For each shot, run band-limited CFAR in the ball velocity range
     4. Per-bin interferometric angle estimation on ball detections
     5. SNR²-weighted average angle (heavily favors strongest returns)
     6. Apply angle offset
+
+    Args:
+        ops243_ball_speed_mph: If provided (live path), narrows the velocity
+            search to a tight band around this speed. This eliminates
+            club/multipath contamination and works for any club/player.
+            If None (offline analysis), uses the broad default ball range.
+        speed_tolerance_mph: Search window ± around ops243_ball_speed_mph.
 
     Returns a list of shot dicts, one per detected shot. Each contains
     launch_angle_deg, ball_speed_mph, confidence, and supporting data.
@@ -441,7 +485,13 @@ def extract_launch_angle(
         else:
             shot_groups[-1].append(idx)
 
-    b_lo, b_hi = ball_bin_range(fft_size, max_speed_kmh)
+    # Velocity band: narrow (OPS243-anchored) or broad (offline default)
+    if ops243_ball_speed_mph is not None:
+        b_lo, b_hi = ball_bin_range_from_speed(
+            ops243_ball_speed_mph, speed_tolerance_mph, fft_size, max_speed_kmh,
+        )
+    else:
+        b_lo, b_hi = ball_bin_range(fft_size, max_speed_kmh)
 
     results = []
     for shot_idx, impact_group in enumerate(shot_groups):
