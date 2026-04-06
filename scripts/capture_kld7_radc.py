@@ -214,6 +214,10 @@ def main():
             radar.close()
         except Exception:
             pass
+        try:
+            radar._port = None
+        except Exception:
+            pass
 
     metadata["capture_end"] = datetime.now().isoformat()
     metadata["total_frames"] = len(frames)
