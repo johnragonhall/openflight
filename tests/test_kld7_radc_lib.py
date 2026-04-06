@@ -52,23 +52,20 @@ class TestParseRadcPayload:
             parse_radc_payload(b"\x00" * 1024)
 
     def test_to_complex_iq(self):
-        """Should convert uint16 I/Q pairs to complex float centered at zero."""
-        payload = b"\x00" * 3072
-        # Put known values in F1A I and Q
-        i_vals = np.full(256, 32768, dtype=np.uint16)  # midpoint
-        q_vals = np.full(256, 32768 + 1000, dtype=np.uint16)  # slightly above mid
-        payload_arr = bytearray(payload)
-        payload_arr[0:512] = i_vals.tobytes()
-        payload_arr[512:1024] = q_vals.tobytes()
+        """Should convert uint16 I/Q pairs to complex float with mean removal."""
+        # Create I channel with a signal: ramp from 32768 to 32768+255
+        i_vals = np.arange(32768, 32768 + 256, dtype=np.uint16)
+        # Q channel constant
+        q_vals = np.full(256, 33000, dtype=np.uint16)
 
-        result = parse_radc_payload(bytes(payload_arr))
-        f1a = to_complex_iq(result["f1a_i"], result["f1a_q"])
+        f1a = to_complex_iq(i_vals, q_vals)
 
         assert f1a.dtype == np.complex128
         assert f1a.shape == (256,)
-        # I centered near 0, Q centered near +1000
-        assert np.abs(f1a[0].real) < 100
-        assert np.abs(f1a[0].imag - 1000) < 100
+        # Mean-removed: I should center around 0 with spread ~±128
+        assert np.abs(np.mean(f1a.real)) < 1.0  # mean is ~0 after removal
+        # Q is constant, so mean removal makes all values ~0
+        assert np.abs(f1a[0].imag) < 1.0
 
 
 class TestComputeSpectrum:
