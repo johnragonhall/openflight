@@ -11,6 +11,7 @@ class KLD7Frame:
     timestamp: float
     tdat: Optional[dict] = None  # {"distance", "speed", "angle", "magnitude"}
     pdat: list = field(default_factory=list)  # list of target dicts
+    radc: Optional[bytes] = None  # raw 3072-byte ADC payload
 
 
 @dataclass

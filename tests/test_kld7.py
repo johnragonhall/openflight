@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from openflight.kld7.types import KLD7Angle, KLD7Frame
@@ -25,6 +26,12 @@ class TestKLD7Types:
         assert frame.timestamp == 1000.0
         assert frame.tdat is None
         assert frame.pdat == []
+
+    def test_kld7_frame_radc_field(self):
+        frame = KLD7Frame(timestamp=1000.0)
+        assert frame.radc is None
+        frame_with_radc = KLD7Frame(timestamp=1000.0, radc=b"\x00" * 3072)
+        assert len(frame_with_radc.radc) == 3072
 
     def test_kld7_angle_vertical(self):
         angle = KLD7Angle(vertical_deg=12.5, distance_m=2.0, magnitude=5000, confidence=0.8, num_frames=3)
