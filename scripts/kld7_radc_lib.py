@@ -340,11 +340,19 @@ def find_impact_frames(
     fft_size: int = 2048,
     min_velocity_bin: int = 150,
     energy_threshold: float = 3.0,
+    ball_bin_lo: int | None = None,
+    ball_bin_hi: int | None = None,
 ) -> list[int]:
     """Find frames with sudden high-velocity energy (impact events).
 
     Looks for frames where the high-velocity portion of the spectrum
     has significantly more energy than the surrounding frames.
+
+    Checks both positive-velocity bins (min_velocity_bin to N/2, for club)
+    and the ball velocity band (ball_bin_lo:ball_bin_hi if provided,
+    otherwise the full negative-velocity half N/2 to N). Golf ball speeds
+    alias into the negative velocity range at RSPI=100 km/h, so checking
+    only positive bins misses ball impacts.
     """
     energies = []
     for frame in frames:
@@ -355,9 +363,14 @@ def find_impact_frames(
         channels = parse_radc_payload(radc) if isinstance(radc, bytes) else radc
         iq = to_complex_iq(channels["f1a_i"], channels["f1a_q"])
         spec = compute_spectrum(iq, fft_size=fft_size)
-        # Energy in high-velocity bins only
-        high_vel_energy = float(np.sum(spec[min_velocity_bin: fft_size // 2] ** 2))
-        energies.append(high_vel_energy)
+        # Energy in positive high-velocity bins (club swing)
+        pos_energy = float(np.sum(spec[min_velocity_bin: fft_size // 2] ** 2))
+        # Energy in aliased negative-velocity bins (ball)
+        if ball_bin_lo is not None and ball_bin_hi is not None:
+            neg_energy = float(np.sum(spec[ball_bin_lo:ball_bin_hi] ** 2))
+        else:
+            neg_energy = float(np.sum(spec[fft_size // 2 + min_velocity_bin:] ** 2))
+        energies.append(pos_energy + neg_energy)
 
     energies = np.array(energies)
     if np.median(energies) <= 0:
@@ -468,11 +481,21 @@ def extract_launch_angle(
     launch_angle_deg, ball_speed_mph, confidence, and supporting data.
     Returns empty list if no shots found.
     """
+    # Velocity band: narrow (OPS243-anchored) or broad (offline default)
+    if ops243_ball_speed_mph is not None:
+        b_lo, b_hi = ball_bin_range_from_speed(
+            ops243_ball_speed_mph, speed_tolerance_mph, fft_size, max_speed_kmh,
+        )
+    else:
+        b_lo, b_hi = ball_bin_range(fft_size, max_speed_kmh)
+
     min_velocity_bin = 150  # skip low-velocity body/clutter
     impact_indices = find_impact_frames(
         frames, fft_size=fft_size,
         min_velocity_bin=min_velocity_bin,
         energy_threshold=impact_energy_threshold,
+        ball_bin_lo=b_lo,
+        ball_bin_hi=b_hi,
     )
     if not impact_indices:
         return []
@@ -484,14 +507,6 @@ def extract_launch_angle(
             shot_groups.append([idx])
         else:
             shot_groups[-1].append(idx)
-
-    # Velocity band: narrow (OPS243-anchored) or broad (offline default)
-    if ops243_ball_speed_mph is not None:
-        b_lo, b_hi = ball_bin_range_from_speed(
-            ops243_ball_speed_mph, speed_tolerance_mph, fft_size, max_speed_kmh,
-        )
-    else:
-        b_lo, b_hi = ball_bin_range(fft_size, max_speed_kmh)
 
     results = []
     for shot_idx, impact_group in enumerate(shot_groups):
@@ -543,21 +558,29 @@ def extract_launch_angle(
             vel = bin_to_velocity_kmh(peak_bin, fft_size, max_speed_kmh)
             peak_speeds_mph.append((200.0 + vel) / 1.609)
 
-        if len(peak_angles) < 2:
+        if not peak_angles:
             continue
 
         angs = np.array(peak_angles)
         snrs = np.array(peak_snrs)
 
-        # Outlier rejection: drop the point furthest from median
-        clean_mask = np.ones(len(angs), dtype=bool)
-        if len(angs) >= 3:
-            med = float(np.median(angs))
-            worst = int(np.argmax(np.abs(angs - med)))
-            clean_mask[worst] = False
-
-        clean_angs = angs[clean_mask]
-        clean_snrs = snrs[clean_mask]
+        if len(angs) == 1:
+            # Single-frame detection — accept if SNR is strong.
+            # Golf balls transit the K-LD7 beam in ~1 frame at 18 FPS,
+            # so a single high-SNR frame is the expected case.
+            if snrs[0] < 5.0:
+                continue
+            clean_angs = angs
+            clean_snrs = snrs
+        else:
+            # Multi-frame: outlier rejection — drop the point furthest from median
+            clean_mask = np.ones(len(angs), dtype=bool)
+            if len(angs) >= 3:
+                med = float(np.median(angs))
+                worst = int(np.argmax(np.abs(angs - med)))
+                clean_mask[worst] = False
+            clean_angs = angs[clean_mask]
+            clean_snrs = snrs[clean_mask]
 
         # SNR²-weighted average of surviving peaks
         w = clean_snrs ** 2
@@ -572,8 +595,8 @@ def extract_launch_angle(
         avg_snr = float(np.mean(clean_snrs))
 
         # Confidence: tight angle spread + high SNR + multiple frames
-        frame_count = int(clean_mask.sum())
-        std_score = max(0.0, 1.0 - angle_std / 15.0)
+        frame_count = len(clean_angs)
+        std_score = max(0.0, 1.0 - angle_std / 15.0) if len(clean_angs) > 1 else 0.5
         snr_score = min(avg_snr / 10.0, 1.0)
         frame_score = min(frame_count / 3.0, 1.0)
         confidence = round(std_score * 0.4 + snr_score * 0.3 + frame_score * 0.3, 2)
@@ -602,10 +625,15 @@ def analyze_capture(
 ) -> list[dict]:
     """Analyze a full RADC capture with OPS243 shot anchoring.
 
-    Reads the pkl data dict (frames + ops243_shots) and returns one
-    result per shot. If OPS243 shots are present, each shot's ball speed
-    is used to narrow the K-LD7 velocity search. Otherwise falls back
+    Reads the pkl data dict (frames + ops243_shots/ops243_captures) and
+    returns one result per shot. If OPS243 data is present, each shot's
+    ball speed narrows the K-LD7 velocity search. Otherwise falls back
     to the broad default ball velocity range.
+
+    Pairing: K-LD7 impact events are paired with OPS243 shots by
+    sequence order (1st K-LD7 impact = 1st OPS shot), NOT by timestamp.
+    The OPS243 timestamp has ~1s latency from I/Q read time, making
+    direct timestamp matching unreliable.
 
     Args:
         data: Dict from pickle.load() with keys: frames, ops243_shots (optional)
@@ -618,54 +646,51 @@ def analyze_capture(
     """
     frames = data["frames"]
     ops243_shots = data.get("ops243_shots", [])
+    ops243_captures = data.get("ops243_captures", [])
 
-    if not ops243_shots:
+    # Use shots if available, fall back to captures
+    ops_data = ops243_shots or ops243_captures
+
+    if not ops_data:
         # No OPS243 — use broad velocity range
         return extract_launch_angle(
             frames, angle_offset_deg=angle_offset_deg,
             speed_tolerance_mph=speed_tolerance_mph,
         )
 
-    # Match OPS243 shots to K-LD7 impact frames by timestamp proximity.
-    # For each OPS243 shot, run extract_launch_angle with that speed as anchor.
-    impact_indices = find_impact_frames(frames, min_velocity_bin=150, energy_threshold=3.0)
-    if not impact_indices:
-        return []
+    # Run extract_launch_angle on the full capture, using the first
+    # OPS243 ball speed to anchor the velocity search. This lets
+    # find_impact_frames detect energy spikes across the whole timeline
+    # and group them into shots, then we pair by sequence.
+    #
+    # For multi-shot captures with varying ball speeds, we'd need to
+    # run per-shot with different speeds. For now use the first shot's
+    # speed as the anchor (all shots in a session are typically similar).
+    first_ball_speed = None
+    for s in ops_data:
+        speed = s.get("ball_speed_mph")
+        if speed and speed > 0:
+            first_ball_speed = speed
+            break
 
-    # Get frame timestamps for matching
-    frame_timestamps = [f["timestamp"] for f in frames]
+    all_shots = extract_launch_angle(
+        frames,
+        ops243_ball_speed_mph=first_ball_speed,
+        angle_offset_deg=angle_offset_deg,
+        speed_tolerance_mph=speed_tolerance_mph,
+    )
 
-    results = []
-    for ops_shot in ops243_shots:
-        impact_ts = ops_shot["impact_timestamp"]
-        ball_speed = ops_shot["ball_speed_mph"]
+    # Pair K-LD7 shots with OPS243 by sequence
+    for i, shot in enumerate(all_shots):
+        if i < len(ops_data):
+            ops = ops_data[i]
+            shot["ops243_ball_speed_mph"] = ops.get("ball_speed_mph")
+            shot["ops243_club_speed_mph"] = ops.get("club_speed_mph")
+            shot["ops243_impact_timestamp"] = ops.get(
+                "impact_timestamp", ops.get("timestamp")
+            )
 
-        # Find K-LD7 frames around this OPS243 impact (±0.5s window)
-        window_start = impact_ts - 0.5
-        window_end = impact_ts + 0.5
-        window_frames = []
-        for i, f in enumerate(frames):
-            if window_start <= f["timestamp"] <= window_end:
-                window_frames.append(f)
-
-        if not window_frames:
-            continue
-
-        # Run extract_launch_angle on just this window
-        shots = extract_launch_angle(
-            window_frames,
-            ops243_ball_speed_mph=ball_speed,
-            angle_offset_deg=angle_offset_deg,
-            speed_tolerance_mph=speed_tolerance_mph,
-        )
-
-        for shot in shots:
-            shot["ops243_ball_speed_mph"] = ball_speed
-            shot["ops243_club_speed_mph"] = ops_shot.get("club_speed_mph")
-            shot["ops243_impact_timestamp"] = impact_ts
-            results.append(shot)
-
-    return results
+    return all_shots
 
 
 def process_radc_frame(
