@@ -90,33 +90,38 @@ def configure_for_golf(radar, range_m=5, speed_kmh=100):
 class OPS243RollingBufferReader:
     """Background OPS243 rolling buffer reader with hardware sound trigger.
 
-    Uses the persisted rolling buffer mode with hardware sound trigger
-    (SEN-14262 GATE → HOST_INT). After each trigger dumps I/Q data,
-    re-arms the buffer for the next shot.
+    Mirrors the production stack: SoundTrigger + RollingBufferProcessor.
+    SEN-14262 GATE → HOST_INT triggers I/Q dump, re-arms for next shot.
     """
 
-    PRE_TRIGGER_SEGMENTS = 16  # ~51ms pre-trigger at 30ksps
+    PRE_TRIGGER_SEGMENTS = 12  # Match SoundTrigger default
 
     def __init__(self, port: str):
         self.port = port
         self.radar = None
         self.processor = None
+        self.trigger = None
         self._running = False
         self._thread = None
         self._lock = threading.Lock()
         self.captures = []  # Raw I/Q captures with timestamps
-        self.shots = []     # Processed shots with speed
+        self.shots = []     # Captures where processing found a valid shot
 
     def connect(self) -> bool:
         try:
             from openflight.ops243 import OPS243Radar
-            from openflight.rolling_buffer.processor import StreamingSpeedDetector
+            from openflight.rolling_buffer.processor import RollingBufferProcessor
+            from openflight.rolling_buffer.trigger import SoundTrigger
+
             self.radar = OPS243Radar(port=self.port)
             self.radar.connect()
             self.radar.configure_for_rolling_buffer(
                 pre_trigger_segments=self.PRE_TRIGGER_SEGMENTS,
             )
-            self.processor = StreamingSpeedDetector()
+            self.processor = RollingBufferProcessor()
+            self.trigger = SoundTrigger(
+                pre_trigger_segments=self.PRE_TRIGGER_SEGMENTS,
+            )
             return True
         except Exception as e:
             print(f"OPS243 connection failed: {e}")
@@ -138,28 +143,24 @@ class OPS243RollingBufferReader:
                 pass
 
     def _read_loop(self):
-        """Wait for hardware triggers, capture I/Q, re-arm."""
+        """Mirror production _capture_loop: trigger → process → re-arm."""
         while self._running:
             try:
-                # Wait for sound trigger to fire (short timeout so we can
-                # check _running flag periodically)
-                response = self.radar.wait_for_hardware_trigger(timeout=3.0)
-                if not response:
+                # SoundTrigger.wait_for_trigger handles:
+                #   wait_for_hardware_trigger → rearm → parse → validate
+                capture = self.trigger.wait_for_trigger(
+                    radar=self.radar,
+                    processor=self.processor,
+                    timeout=3.0,  # Short so we can check _running flag
+                )
+                self.trigger.reset()
+
+                if capture is None:
                     continue
 
                 now = time.time()
 
-                # Parse I/Q capture
-                capture = self.processor.parse_capture(response)
-
-                # Re-arm immediately for next shot
-                self.radar.rearm_rolling_buffer(self.PRE_TRIGGER_SEGMENTS)
-
-                if capture is None:
-                    print("\n  [OPS243] Trigger fired but capture parse failed")
-                    continue
-
-                # Store raw capture
+                # Store raw I/Q
                 capture_entry = {
                     "timestamp": now,
                     "sample_time": capture.sample_time,
@@ -168,25 +169,30 @@ class OPS243RollingBufferReader:
                     "q_samples": capture.q_samples,
                 }
 
-                # Try to extract speed from I/Q
-                result = self.processor.process_capture(capture)
+                # Full processing (FFT + speed/spin), same as monitor
+                processed = self.processor.process_capture(capture)
                 ball_speed = None
                 club_speed = None
-                if result:
-                    ball_speed = result.ball_speed_mph
-                    club_speed = result.club_speed_mph
+                spin_rpm = None
+                if processed:
+                    ball_speed = processed.ball_speed_mph
+                    club_speed = processed.club_speed_mph
+                    if processed.spin:
+                        spin_rpm = processed.spin.spin_rpm
 
                 capture_entry["ball_speed_mph"] = ball_speed
                 capture_entry["club_speed_mph"] = club_speed
+                capture_entry["spin_rpm"] = spin_rpm
 
                 with self._lock:
                     self.captures.append(capture_entry)
-                    if ball_speed:
+                    if ball_speed and ball_speed >= 15:
                         self.shots.append(capture_entry)
 
                 speed_str = f"{ball_speed:.1f} mph" if ball_speed else "no speed"
                 club_str = f", club: {club_speed:.1f} mph" if club_speed else ""
-                print(f"\n  [OPS243] Trigger #{len(self.captures)}: {speed_str}{club_str}")
+                spin_str = f", spin: {spin_rpm:.0f} rpm" if spin_rpm else ""
+                print(f"\n  [OPS243] Trigger #{len(self.captures)}: {speed_str}{club_str}{spin_str}")
 
             except Exception as e:
                 print(f"\n  [OPS243] Error: {e}")
