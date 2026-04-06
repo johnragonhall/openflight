@@ -6,20 +6,35 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# Functions available in the package — prefer importing from there
+try:
+    from openflight.kld7.radc import (
+        CFARDetection,
+        bin_to_velocity_kmh,
+        cfar_detect,
+        compute_spectrum,
+        parse_radc_payload,
+        to_complex_iq,
+    )
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    from kld7_radc_lib import (
+        CFARDetection,
+        bin_to_velocity_kmh,
+        cfar_detect,
+        compute_spectrum,
+        parse_radc_payload,
+        to_complex_iq,
+    )
 
+# Functions that remain in scripts only
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from kld7_radc_lib import (
     ADC_MIDPOINT,
-    CFARDetection,
     RADCDetection,
-    bin_to_velocity_kmh,
-    cfar_detect,
     compare_radc_vs_pdat,
-    compute_spectrum,
     estimate_angle_from_phase,
-    parse_radc_payload,
     process_radc_frame,
-    to_complex_iq,
 )
 
 
