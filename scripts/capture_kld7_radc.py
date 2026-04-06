@@ -3,7 +3,8 @@
 
 Runs both radars simultaneously:
 - K-LD7: streams RADC + PDAT + TDAT at 3 Mbaud (main thread)
-- OPS243: reads speed in a background thread, detects shots by speed gap
+- OPS243: rolling buffer mode with hardware sound trigger (background thread),
+  captures I/Q data on each trigger and re-arms for the next shot
 
 The OPS243 ball speed anchors the K-LD7 velocity search for offline analysis.
 
@@ -86,27 +87,36 @@ def configure_for_golf(radar, range_m=5, speed_kmh=100):
     params.VISU = 0    # No vibration suppression
 
 
-class OPS243SpeedReader:
-    """Background OPS243 speed reader with shot detection."""
+class OPS243RollingBufferReader:
+    """Background OPS243 rolling buffer reader with hardware sound trigger.
 
-    SHOT_GAP_S = 0.5  # Gap between readings that signals shot complete
-    MIN_BALL_SPEED_MPH = 30.0
+    Uses the persisted rolling buffer mode with hardware sound trigger
+    (SEN-14262 GATE → HOST_INT). After each trigger dumps I/Q data,
+    re-arms the buffer for the next shot.
+    """
+
+    PRE_TRIGGER_SEGMENTS = 16  # ~51ms pre-trigger at 30ksps
 
     def __init__(self, port: str):
         self.port = port
         self.radar = None
+        self.processor = None
         self._running = False
         self._thread = None
         self._lock = threading.Lock()
-        self.readings = []  # All readings with timestamps
-        self.shots = []  # Detected shots: {ball_speed_mph, timestamp, readings}
+        self.captures = []  # Raw I/Q captures with timestamps
+        self.shots = []     # Processed shots with speed
 
     def connect(self) -> bool:
         try:
             from openflight.ops243 import OPS243Radar
+            from openflight.rolling_buffer.processor import StreamingSpeedDetector
             self.radar = OPS243Radar(port=self.port)
             self.radar.connect()
-            self.radar.configure_for_golf()
+            self.radar.configure_for_rolling_buffer(
+                pre_trigger_segments=self.PRE_TRIGGER_SEGMENTS,
+            )
+            self.processor = StreamingSpeedDetector()
             return True
         except Exception as e:
             print(f"OPS243 connection failed: {e}")
@@ -120,7 +130,7 @@ class OPS243SpeedReader:
     def stop(self):
         self._running = False
         if self._thread:
-            self._thread.join(timeout=3.0)
+            self._thread.join(timeout=5.0)
         if self.radar:
             try:
                 self.radar.disconnect()
@@ -128,83 +138,67 @@ class OPS243SpeedReader:
                 pass
 
     def _read_loop(self):
-        """Read speed continuously, detect shots by gap."""
-        current_readings = []
-        last_reading_time = 0
-
+        """Wait for hardware triggers, capture I/Q, re-arm."""
         while self._running:
             try:
-                reading = self.radar.read_speed()
-                if reading is None:
-                    # Check for shot gap
-                    if current_readings and time.time() - last_reading_time > self.SHOT_GAP_S:
-                        self._finalize_shot(current_readings)
-                        current_readings = []
-                    time.sleep(0.01)
+                # Wait for sound trigger to fire (short timeout so we can
+                # check _running flag periodically)
+                response = self.radar.wait_for_hardware_trigger(timeout=3.0)
+                if not response:
                     continue
 
                 now = time.time()
-                entry = {
-                    "speed_mph": reading.speed,
-                    "direction": reading.direction.value,
-                    "magnitude": reading.magnitude,
+
+                # Parse I/Q capture
+                capture = self.processor.parse_capture(response)
+
+                # Re-arm immediately for next shot
+                self.radar.rearm_rolling_buffer(self.PRE_TRIGGER_SEGMENTS)
+
+                if capture is None:
+                    print("\n  [OPS243] Trigger fired but capture parse failed")
+                    continue
+
+                # Store raw capture
+                capture_entry = {
                     "timestamp": now,
+                    "sample_time": capture.sample_time,
+                    "trigger_time": capture.trigger_time,
+                    "i_samples": capture.i_samples,
+                    "q_samples": capture.q_samples,
                 }
 
+                # Try to extract speed from I/Q
+                result = self.processor.process_capture(capture)
+                ball_speed = None
+                club_speed = None
+                if result:
+                    ball_speed = result.ball_speed_mph
+                    club_speed = result.club_speed_mph
+
+                capture_entry["ball_speed_mph"] = ball_speed
+                capture_entry["club_speed_mph"] = club_speed
+
                 with self._lock:
-                    self.readings.append(entry)
+                    self.captures.append(capture_entry)
+                    if ball_speed:
+                        self.shots.append(capture_entry)
 
-                current_readings.append(entry)
-                last_reading_time = now
+                speed_str = f"{ball_speed:.1f} mph" if ball_speed else "no speed"
+                club_str = f", club: {club_speed:.1f} mph" if club_speed else ""
+                print(f"\n  [OPS243] Trigger #{len(self.captures)}: {speed_str}{club_str}")
 
-            except Exception:
-                time.sleep(0.05)
-
-        # Finalize any remaining readings
-        if current_readings:
-            self._finalize_shot(current_readings)
-
-    def _finalize_shot(self, readings):
-        """Process accumulated readings into a shot."""
-        if not readings:
-            return
-
-        # Find ball: peak outbound speed
-        outbound = [r for r in readings if r["direction"] == "outbound"]
-        if not outbound:
-            return
-
-        ball_reading = max(outbound, key=lambda r: r["speed_mph"])
-        ball_speed = ball_reading["speed_mph"]
-
-        if ball_speed < self.MIN_BALL_SPEED_MPH:
-            return
-
-        # Find club: fastest reading before ball
-        ball_time = ball_reading["timestamp"]
-        club_readings = [r for r in outbound if r["timestamp"] < ball_time]
-        club_speed = max((r["speed_mph"] for r in club_readings), default=None)
-
-        shot = {
-            "ball_speed_mph": ball_speed,
-            "club_speed_mph": club_speed,
-            "impact_timestamp": ball_reading["timestamp"],
-            "readings": readings,
-        }
-
-        with self._lock:
-            self.shots.append(shot)
-
-        print(f"\n  [OPS243] Shot: {ball_speed:.1f} mph"
-              f"{f', club: {club_speed:.1f} mph' if club_speed else ''}")
+            except Exception as e:
+                print(f"\n  [OPS243] Error: {e}")
+                time.sleep(0.1)
 
     def get_shots(self):
         with self._lock:
             return list(self.shots)
 
-    def get_readings(self):
+    def get_captures(self):
         with self._lock:
-            return list(self.readings)
+            return list(self.captures)
 
 
 def main():
@@ -257,7 +251,7 @@ def main():
     # Connect OPS243 if requested
     ops243 = None
     if args.ops243_port:
-        ops243 = OPS243SpeedReader(args.ops243_port)
+        ops243 = OPS243RollingBufferReader(args.ops243_port)
         if not ops243.connect():
             print("Continuing without OPS243.")
             ops243 = None
@@ -319,7 +313,7 @@ def main():
     print("-" * 60)
     print(f"Streaming RADC + PDAT + TDAT for {args.duration}s (Ctrl+C to stop)")
     if ops243:
-        print("OPS243 listening for shots in background")
+        print("OPS243 rolling buffer armed, waiting for sound triggers")
     print("-" * 60)
 
     try:
@@ -346,12 +340,13 @@ def main():
                 frame_count += 1
                 elapsed = time.time() - start_time
                 fps = frame_count / elapsed if elapsed > 0 else 0
+                n_captures = len(ops243.get_captures()) if ops243 else 0
                 n_shots = len(ops243.get_shots()) if ops243 else 0
                 print(
                     f"\r  Frames: {frame_count}  RADC: {radc_count}  "
                     f"PDAT: {pdat_detection_count}  "
                     f"FPS: {fps:.1f}  "
-                    f"{'Shots: ' + str(n_shots) + '  ' if ops243 else ''}"
+                    f"{'OPS: ' + str(n_captures) + ' cap/' + str(n_shots) + ' shots  ' if ops243 else ''}"
                     f"Elapsed: {elapsed:.0f}s",
                     end="",
                     flush=True,
@@ -382,14 +377,14 @@ def main():
 
     # Gather OPS243 data
     ops243_shots = ops243.get_shots() if ops243 else []
-    ops243_readings = ops243.get_readings() if ops243 else []
+    ops243_captures = ops243.get_captures() if ops243 else []
 
     metadata["capture_end"] = datetime.now().isoformat()
     metadata["total_frames"] = len(frames)
     metadata["radc_frames"] = radc_count
     metadata["pdat_detection_count"] = pdat_detection_count
     metadata["ops243_shot_count"] = len(ops243_shots)
-    metadata["ops243_reading_count"] = len(ops243_readings)
+    metadata["ops243_capture_count"] = len(ops243_captures)
 
     print()
     print()
@@ -397,17 +392,18 @@ def main():
     print(f"  K-LD7: {len(frames)} frames ({radc_count} with RADC)")
     print(f"  PDAT detections: {pdat_detection_count}")
     if ops243:
-        print(f"  OPS243: {len(ops243_shots)} shots, {len(ops243_readings)} readings")
+        print(f"  OPS243: {len(ops243_captures)} captures, {len(ops243_shots)} shots")
         for i, shot in enumerate(ops243_shots):
             club = f", club: {shot['club_speed_mph']:.1f} mph" if shot['club_speed_mph'] else ""
-            print(f"    Shot {i+1}: {shot['ball_speed_mph']:.1f} mph{club}")
+            ball = f"{shot['ball_speed_mph']:.1f} mph" if shot['ball_speed_mph'] else "no speed"
+            print(f"    Shot {i+1}: {ball}{club}")
     print(f"  Saving to {output_path}")
 
     data = {
         "metadata": metadata,
         "frames": frames,
         "ops243_shots": ops243_shots,
-        "ops243_readings": ops243_readings,
+        "ops243_captures": ops243_captures,
     }
     with open(output_path, "wb") as f:
         pickle.dump(data, f)
