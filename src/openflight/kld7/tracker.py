@@ -89,7 +89,7 @@ class KLD7Tracker:
             return False
 
         try:
-            self._radar = KLD7(port, baudrate=115200)
+            self._radar = KLD7(port, baudrate=3000000)
             logger.info("K-LD7 connected on %s", port)
         except Exception as e:
             logger.error("K-LD7 connection failed: %s", e)
@@ -153,7 +153,7 @@ class KLD7Tracker:
         """Background thread: stream TDAT+PDAT into ring buffer."""
         from kld7 import FrameCode
 
-        frame_codes = FrameCode.TDAT | FrameCode.PDAT
+        frame_codes = FrameCode.RADC | FrameCode.TDAT | FrameCode.PDAT
         current_frame = KLD7Frame(timestamp=time.time())
         seen_in_frame = set()
 
@@ -169,7 +169,9 @@ class KLD7Tracker:
 
                 seen_in_frame.add(code)
 
-                if code == "TDAT":
+                if code == "RADC":
+                    current_frame.radc = payload
+                elif code == "TDAT":
                     current_frame.tdat = _target_to_dict(payload)
                 elif code == "PDAT":
                     current_frame.pdat = [_target_to_dict(t) for t in payload] if payload else []
