@@ -572,6 +572,44 @@ class RollingBufferProcessor:
 
         return club_reading.speed_mph, club_reading.timestamp_ms
 
+    @staticmethod
+    def _find_consistent_ball_speed(outbound_readings: list) -> float:
+        """Find the ball speed that appears most consistently across FFT windows.
+
+        Bins outbound readings to 1-mph buckets and returns the peak of the
+        densest cluster. This is robust against single-window outliers (noise
+        spikes, harmonics) that would fool a raw max().
+
+        The ball produces a consistent Doppler return across many windows,
+        while noise spikes appear in only 1-2 windows.
+        """
+        if not outbound_readings:
+            return 0.0
+
+        speeds = [r.speed_mph for r in outbound_readings]
+
+        # Bin to 1-mph buckets, find the mode
+        from collections import Counter
+        binned = Counter(round(s) for s in speeds)
+
+        # The ball is the highest-speed cluster with significant repetition.
+        # Sort bins by count descending, then by speed descending to break ties.
+        # Require at least 2 occurrences to be considered a real signal.
+        frequent = [(spd, cnt) for spd, cnt in binned.items() if cnt >= 2]
+        if not frequent:
+            # No repeated speeds — fall back to max
+            return max(speeds)
+
+        # Among bins with meaningful repetition, pick the fastest.
+        # The ball is always the fastest real signal; club is slower.
+        frequent.sort(key=lambda x: x[0], reverse=True)
+        ball_bin = frequent[0][0]
+
+        # Return the actual max speed within ±2 mph of the mode bin
+        # for sub-mph precision
+        nearby = [s for s in speeds if abs(s - ball_bin) <= 2.0]
+        return max(nearby) if nearby else float(ball_bin)
+
     def process_capture(self, capture: IQCapture) -> Optional[ProcessedCapture]:
         """
         Full processing pipeline: I/Q -> speeds -> spin -> shot data.
@@ -583,18 +621,17 @@ class RollingBufferProcessor:
             ProcessedCapture with all extracted data, or None if processing fails
         """
         # Use non-overlapping (standard) processing to find ball speed.
-        # Standard processing is more robust because each 128-sample window
-        # is independent — overlapping windows can share a transient that
-        # produces spurious high-frequency peaks in 1-2 windows, and a raw
-        # max() over all windows would pick those outliers as ball speed.
+        # Ball speed = the most-repeated speed across independent windows,
+        # NOT the maximum. A single FFT window with a noise spike at 200 mph
+        # would poison max(), but mode-based detection ignores it because
+        # the real ball signal appears consistently in many windows.
         standard = self.process_standard(capture)
         std_outbound = [r for r in standard.readings if r.is_outbound]
         if not std_outbound:
             logger.warning("No outbound readings found")
             return None
 
-        ball_reading_std = max(std_outbound, key=lambda r: r.speed_mph)
-        ball_speed_mph = ball_reading_std.speed_mph
+        ball_speed_mph = self._find_consistent_ball_speed(std_outbound)
 
         # Process with overlapping FFT for high-resolution timeline (needed for spin)
         timeline = self.process_overlapping(capture)
