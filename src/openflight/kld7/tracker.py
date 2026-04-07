@@ -90,7 +90,9 @@ class KLD7Tracker:
 
         try:
             self._radar = KLD7(port, baudrate=3000000)
-            logger.info("K-LD7 connected on %s", port)
+            # Log actual serial baud rate for debugging RADC issues
+            actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
+            logger.info("K-LD7 connected on %s (requested 3Mbaud, actual: %s)", port, actual_baud)
         except Exception as e:
             logger.error("K-LD7 connection failed: %s", e)
             return False
@@ -150,12 +152,14 @@ class KLD7Tracker:
         logger.info("K-LD7 stopped")
 
     def _stream_loop(self):
-        """Background thread: stream TDAT+PDAT into ring buffer."""
+        """Background thread: stream RADC+TDAT+PDAT into ring buffer."""
         from kld7 import FrameCode
 
         frame_codes = FrameCode.RADC | FrameCode.TDAT | FrameCode.PDAT
         current_frame = KLD7Frame(timestamp=time.time())
         seen_in_frame = set()
+        frame_count = 0
+        radc_count = 0
 
         try:
             for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
@@ -164,6 +168,13 @@ class KLD7Tracker:
 
                 if code in seen_in_frame:
                     self._add_frame(current_frame)
+                    frame_count += 1
+                    if frame_count == 50:
+                        logger.info(
+                            "K-LD7 stream: %d frames, %d with RADC (%s)",
+                            frame_count, radc_count,
+                            "RADC active" if radc_count > 0 else "NO RADC - check baud rate",
+                        )
                     current_frame = KLD7Frame(timestamp=time.time())
                     seen_in_frame = set()
 
@@ -171,6 +182,7 @@ class KLD7Tracker:
 
                 if code == "RADC":
                     current_frame.radc = payload
+                    radc_count += 1
                 elif code == "TDAT":
                     current_frame.tdat = _target_to_dict(payload)
                 elif code == "PDAT":
@@ -670,11 +682,14 @@ class KLD7Tracker:
         """
         frames = []
         for frame in self._ring_buffer:
-            frames.append({
+            entry = {
                 "timestamp": frame.timestamp,
                 "tdat": frame.tdat,
                 "pdat": frame.pdat,
-            })
+            }
+            if frame.radc is not None:
+                entry["has_radc"] = True
+            frames.append(entry)
         return frames
 
     def reset(self):
