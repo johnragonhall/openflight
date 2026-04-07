@@ -88,11 +88,26 @@ class KLD7Tracker:
             logger.error("No K-LD7 EVAL board detected")
             return False
 
+        # Flush the serial port before the kld7 library handshake.
+        # A prior crash can leave stale data in the K-LD7 UART buffer,
+        # causing "Wrong length reply" on the next connect.
+        try:
+            import serial
+            with serial.Serial(port, 3000000, timeout=0.1) as ser:
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+                # Send GBYE to reset the K-LD7 to idle state, then INIT
+                ser.write(b"GBYE\r\n")
+                time.sleep(0.2)
+                ser.reset_input_buffer()
+            logger.debug("K-LD7 serial port flushed on %s", port)
+        except Exception as e:
+            logger.debug("K-LD7 pre-flush failed (not critical): %s", e)
+
         try:
             self._radar = KLD7(port, baudrate=3000000)
-            # Log actual serial baud rate for debugging RADC issues
             actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
-            logger.info("K-LD7 connected on %s (requested 3Mbaud, actual: %s)", port, actual_baud)
+            logger.info("K-LD7 connected on %s at %s baud", port, actual_baud)
         except Exception as e:
             logger.error("K-LD7 connection failed: %s", e)
             return False
