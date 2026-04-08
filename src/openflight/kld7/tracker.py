@@ -169,54 +169,34 @@ class KLD7Tracker:
         logger.info("[KLD7] Stopped")
 
     def _stream_loop(self):
-        """Background thread: stream RADC+TDAT+PDAT into ring buffer."""
+        """Background thread: stream RADC into ring buffer."""
         from kld7 import FrameCode
 
-        frame_codes = FrameCode.RADC | FrameCode.TDAT | FrameCode.PDAT
+        frame_codes = FrameCode.RADC
         current_frame = KLD7Frame(timestamp=time.time())
-        seen_in_frame = set()
         frame_count = 0
-        radc_count = 0
 
-        logger.info("[KLD7] Stream started: requesting RADC+TDAT+PDAT")
+        logger.info("[KLD7] Stream started: RADC only (3Mbaud)")
 
         try:
             for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
                 if not self._running:
                     break
 
-                if frame_count == 0:
-                    logger.info("[KLD7] First frame received: %s", code)
-
-                if code in seen_in_frame:
-                    self._add_frame(current_frame)
-                    frame_count += 1
-                    if frame_count == 50:
-                        logger.info(
-                            "[KLD7] Stream health: %d frames, %d RADC (%s)",
-                            frame_count, radc_count,
-                            "RADC active" if radc_count > 0 else "NO RADC",
-                        )
-                    current_frame = KLD7Frame(timestamp=time.time())
-                    seen_in_frame = set()
-
-                seen_in_frame.add(code)
-
                 if code == "RADC":
                     current_frame.radc = payload
-                    radc_count += 1
-                    if radc_count == 1:
-                        logger.info("[KLD7] First RADC frame received (%d bytes)", len(payload) if payload else 0)
-                elif code == "TDAT":
-                    current_frame.tdat = _target_to_dict(payload)
-                elif code == "PDAT":
-                    current_frame.pdat = [_target_to_dict(t) for t in payload] if payload else []
+                    self._add_frame(current_frame)
+                    frame_count += 1
+                    current_frame = KLD7Frame(timestamp=time.time())
 
-            if seen_in_frame:
-                self._add_frame(current_frame)
+                    if frame_count == 1:
+                        logger.info("[KLD7] First RADC frame received (%d bytes)",
+                                    len(payload) if payload else 0)
+                    elif frame_count == 50:
+                        logger.info("[KLD7] Stream health: %d RADC frames", frame_count)
 
-            logger.warning("[KLD7] Stream ended (frames=%d, radc=%d, running=%s)",
-                          frame_count, radc_count, self._running)
+            logger.warning("[KLD7] Stream ended (frames=%d, running=%s)",
+                          frame_count, self._running)
 
         except Exception as e:
             logger.error("[KLD7] Stream crashed after %d frames: %s", frame_count, e, exc_info=True)
@@ -583,9 +563,11 @@ class KLD7Tracker:
         ]
 
         if not frames:
+            logger.info("[KLD7] RADC: no frames with RADC data in buffer (%d total frames)",
+                         len(self._ring_buffer))
             return None
 
-        logger.info("[KLD7] RADC: examining %d frames with RADC data, ball_speed=%.1f mph",
+        logger.info("[KLD7] RADC: examining %d frames, ball_speed=%.1f mph",
                      len(frames), ball_speed_mph)
 
         results = extract_launch_angle(
@@ -625,30 +607,27 @@ class KLD7Tracker:
         )
 
     def get_angle_for_shot(self, shot_timestamp: Optional[float] = None, ball_speed_mph: Optional[float] = None) -> Optional[KLD7Angle]:
-        """Search the ring buffer for the ball launch angle.
+        """Search the ring buffer for the ball launch angle using RADC phase interferometry.
 
-        Tries RADC phase interferometry first (if ball_speed_mph is provided),
-        then falls back to PDAT distance-based detection.
+        Requires ball_speed_mph from OPS243 to narrow the FFT velocity search.
+        Returns None if RADC extraction fails or ball_speed_mph not provided.
         """
         logger.info("[KLD7] Angle extraction: ball_speed=%s mph, buffer=%d frames",
                      "%.1f" % ball_speed_mph if ball_speed_mph else "None", len(self._ring_buffer))
 
-        if ball_speed_mph is not None:
-            try:
-                radc_result = self._extract_ball_radc(ball_speed_mph)
-                if radc_result is not None:
-                    return radc_result
-                logger.info("[KLD7] RADC extraction returned None, falling back to PDAT")
-            except Exception as e:
-                logger.warning("[KLD7] RADC extraction failed, falling back to PDAT: %s", e, exc_info=True)
+        if ball_speed_mph is None:
+            logger.info("[KLD7] No ball speed provided, cannot extract RADC angle")
+            return None
 
-        result = self._extract_ball(shot_timestamp)
-        if result:
-            logger.info("[KLD7] PDAT angle: %.1f° (conf=%.2f, %d frames)",
-                         result.vertical_deg or result.horizontal_deg, result.confidence, result.num_frames)
-        else:
-            logger.info("[KLD7] No angle detected (RADC and PDAT both failed)")
-        return result
+        try:
+            result = self._extract_ball_radc(ball_speed_mph)
+            if result is not None:
+                return result
+            logger.info("[KLD7] RADC extraction returned None (no detections at %.1f mph)", ball_speed_mph)
+        except Exception as e:
+            logger.warning("[KLD7] RADC extraction failed: %s", e, exc_info=True)
+
+        return None
 
     def get_club_angle(self, shot_timestamp: Optional[float] = None) -> Optional[KLD7Angle]:
         """Search the ring buffer for the club angle of attack.
