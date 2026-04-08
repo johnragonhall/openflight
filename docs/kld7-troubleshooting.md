@@ -2,6 +2,13 @@
 
 Common issues with the K-LD7 angle radar and how to resolve them.
 
+## Dual Radar Setup
+
+When running two K-LD7s (vertical + horizontal), each needs:
+- **Its own FTDI adapter and USB port**
+- **A different base frequency** to avoid RF interference (set via `base_freq` parameter: 0=Low, 2=High)
+- **A stable device name** via udev rules (see [setup guide](raspberry-pi-setup.md#stable-device-names-udev-rules)) — USB enumeration order can swap `/dev/ttyUSB0` and `/dev/ttyUSB1` after reboot
+
 ## Connection Issues
 
 ### "Wrong length reply" on startup

@@ -57,6 +57,7 @@ class KLD7Tracker:
         orientation: str = "vertical",
         buffer_seconds: float = 2.0,
         angle_offset_deg: float = 0.0,
+        base_freq: int = 0,
     ):
         self.port = port
         self.range_m = range_m
@@ -64,6 +65,7 @@ class KLD7Tracker:
         self.orientation = orientation
         self.buffer_seconds = buffer_seconds
         self.angle_offset_deg = angle_offset_deg
+        self.base_freq = base_freq
         self.max_buffer_frames = int(34 * buffer_seconds)
 
         self._radar = None
@@ -149,6 +151,7 @@ class KLD7Tracker:
         params = self._radar.params
         params.RRAI = range_settings.get(self.range_m, 0)
         params.RSPI = speed_settings.get(self.speed_kmh, 3)
+        params.RBFR = self.base_freq
         params.DEDI = 2
         params.THOF = 10
         params.TRFT = 1
@@ -160,9 +163,11 @@ class KLD7Tracker:
         params.MASP = 100
         params.VISU = 0
 
+        freq_labels = {0: "Low/24.05GHz", 1: "Mid/24.15GHz", 2: "High/24.25GHz"}
         logger.info(
-            "[KLD7] Configured: range=%dm, speed=%dkm/h, orientation=%s",
+            "[KLD7] Configured: range=%dm, speed=%dkm/h, orientation=%s, RBFR=%d (%s)",
             self.range_m, self.speed_kmh, self.orientation,
+            self.base_freq, freq_labels.get(self.base_freq, "unknown"),
         )
 
     def start(self):
