@@ -44,10 +44,15 @@ class KLD7Tracker:
     """
     K-LD7 angle radar tracker.
 
-    Streams TDAT+PDAT frames in a background thread into a ring buffer.
+    Streams RADC frames in a background thread into a ring buffer.
     When the OPS243 detects a shot, call get_angle_for_shot() to search
-    the buffer for the ball pass and extract angle data.
+    the buffer for the ball pass and extract angle data via phase interferometry.
     """
+
+    # Class-level defaults so __new__-constructed instances (tests) don't
+    # fail with AttributeError when code accesses these.
+    angle_offset_deg = 0.0
+    base_freq = 0
 
     def __init__(
         self,
