@@ -88,30 +88,16 @@ class KLD7Tracker:
             logger.error("[KLD7] No K-LD7 EVAL board detected")
             return False
 
-        # Flush the serial port before the kld7 library handshake.
-        # A prior crash can leave stale data in the K-LD7 UART buffer,
-        # causing "Wrong length reply" on the INIT handshake.
-        # The K-LD7 could be stuck at either the default baud (115200)
-        # or the target baud (3Mbaud) from a prior session, so drain both.
-        try:
-            import serial
-            for flush_baud in (3000000, 115200):
-                try:
-                    with serial.Serial(port, flush_baud, timeout=0.1) as ser:
-                        # Drain until silent
-                        while True:
-                            ser.reset_input_buffer()
-                            time.sleep(0.1)
-                            if ser.in_waiting == 0:
-                                break
-                except Exception:
-                    pass
-            logger.debug("[KLD7] Serial port flushed on %s", port)
-        except Exception as e:
-            logger.debug("[KLD7] Pre-flush failed (not critical): %s", e)
+        # The kld7 library opens at 115200, sends INIT to negotiate up
+        # to 3Mbaud, then switches. If a prior session left the K-LD7 at
+        # 3Mbaud (crashed before GBYE), the 115200-baud INIT is garbled.
+        #
+        # Recovery: if the first connect fails, try to cleanly close the
+        # prior session by creating a temporary KLD7 at 115200 (which the
+        # library speaks natively) — if the K-LD7 is at 3Mbaud this will
+        # also fail, but we send a serial break to force a UART reset.
+        import serial as pyserial
 
-        # Connect with retries — the K-LD7 may need multiple attempts
-        # to recover from a prior crash (stale UART data, mid-stream state).
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
             try:
@@ -123,21 +109,24 @@ class KLD7Tracker:
             except Exception as e:
                 logger.warning("[KLD7] Connect attempt %d/%d failed: %s",
                                 attempt, max_attempts, e)
-                if attempt < max_attempts:
-                    # Flush again between retries
-                    try:
-                        import serial
-                        with serial.Serial(port, 3000000, timeout=0.1) as ser:
-                            ser.reset_input_buffer()
-                            time.sleep(0.2)
-                            ser.reset_input_buffer()
-                    except Exception:
-                        pass
-                    time.sleep(0.5)
-                else:
+                if attempt >= max_attempts:
                     logger.error("[KLD7] Connection failed after %d attempts — giving up",
                                   max_attempts, exc_info=True)
                     return False
+
+                # Reset: send serial break + drain at both baud rates.
+                # A break forces the K-LD7 UART to reset regardless of
+                # its current baud rate.
+                for reset_baud in (3000000, 115200):
+                    try:
+                        with pyserial.Serial(port, reset_baud, timeout=0.1) as ser:
+                            ser.send_break(duration=0.1)
+                            time.sleep(0.1)
+                            ser.reset_input_buffer()
+                            ser.reset_output_buffer()
+                    except Exception:
+                        pass
+                time.sleep(0.5)
 
         self._configure_for_golf()
         logger.info("[KLD7] Ready: port=%s, baud=%s, range=%dm, speed=%dkm/h, orientation=%s",
