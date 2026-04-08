@@ -1567,7 +1567,8 @@ def main():
             offset_str = f", offset: {args.kld7_angle_offset:+.1f}°" if args.kld7_angle_offset else ""
             print(f"K-LD7 angle radar enabled (orientation: {args.kld7_orientation}{offset_str})")
         else:
-            print("K-LD7 not available - running without angle radar")
+            print("ERROR: K-LD7 requested but failed to connect. Exiting.")
+            sys.exit(1)
 
     start_monitor(
         port=args.port,

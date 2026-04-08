@@ -90,27 +90,54 @@ class KLD7Tracker:
 
         # Flush the serial port before the kld7 library handshake.
         # A prior crash can leave stale data in the K-LD7 UART buffer,
-        # causing "Wrong length reply" on the next connect.
+        # causing "Wrong length reply" on the INIT handshake.
+        # The K-LD7 could be stuck at either the default baud (115200)
+        # or the target baud (3Mbaud) from a prior session, so drain both.
         try:
             import serial
-            with serial.Serial(port, 3000000, timeout=0.1) as ser:
-                ser.reset_input_buffer()
-                ser.reset_output_buffer()
-                # Send GBYE to reset the K-LD7 to idle state, then INIT
-                ser.write(b"GBYE\r\n")
-                time.sleep(0.2)
-                ser.reset_input_buffer()
+            for flush_baud in (3000000, 115200):
+                try:
+                    with serial.Serial(port, flush_baud, timeout=0.1) as ser:
+                        # Drain until silent
+                        while True:
+                            ser.reset_input_buffer()
+                            time.sleep(0.1)
+                            if ser.in_waiting == 0:
+                                break
+                except Exception:
+                    pass
             logger.debug("[KLD7] Serial port flushed on %s", port)
         except Exception as e:
             logger.debug("[KLD7] Pre-flush failed (not critical): %s", e)
 
-        try:
-            self._radar = KLD7(port, baudrate=3000000)
-            actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
-            logger.info("[KLD7] Connected on %s at %s baud", port, actual_baud)
-        except Exception as e:
-            logger.error("[KLD7] Connection failed: %s", e, exc_info=True)
-            return False
+        # Connect with retries — the K-LD7 may need multiple attempts
+        # to recover from a prior crash (stale UART data, mid-stream state).
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self._radar = KLD7(port, baudrate=3000000)
+                actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
+                logger.info("[KLD7] Connected on %s at %s baud (attempt %d/%d)",
+                             port, actual_baud, attempt, max_attempts)
+                break
+            except Exception as e:
+                logger.warning("[KLD7] Connect attempt %d/%d failed: %s",
+                                attempt, max_attempts, e)
+                if attempt < max_attempts:
+                    # Flush again between retries
+                    try:
+                        import serial
+                        with serial.Serial(port, 3000000, timeout=0.1) as ser:
+                            ser.reset_input_buffer()
+                            time.sleep(0.2)
+                            ser.reset_input_buffer()
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                else:
+                    logger.error("[KLD7] Connection failed after %d attempts — giving up",
+                                  max_attempts, exc_info=True)
+                    return False
 
         self._configure_for_golf()
         logger.info("[KLD7] Ready: port=%s, baud=%s, range=%dm, speed=%dkm/h, orientation=%s",
