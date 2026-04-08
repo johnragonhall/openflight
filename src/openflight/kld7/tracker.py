@@ -88,15 +88,18 @@ class KLD7Tracker:
             logger.error("[KLD7] No K-LD7 EVAL board detected")
             return False
 
-        # The kld7 library opens at 115200, sends INIT to negotiate up
-        # to 3Mbaud, then switches. If a prior session left the K-LD7 at
+        # The kld7 library always opens at 115200, sends INIT to negotiate
+        # up to 3Mbaud, then switches. If a prior session left the K-LD7 at
         # 3Mbaud (crashed before GBYE), the 115200-baud INIT is garbled.
         #
-        # Recovery: if the first connect fails, try to cleanly close the
-        # prior session by creating a temporary KLD7 at 115200 (which the
-        # library speaks natively) — if the K-LD7 is at 3Mbaud this will
-        # also fail, but we send a serial break to force a UART reset.
+        # Recovery: send a binary GBYE packet at 3Mbaud to cleanly close
+        # the prior session, returning the K-LD7 to its idle state where
+        # it accepts INIT at 115200 again.
+        import struct
         import serial as pyserial
+
+        # Binary GBYE packet: 4-byte command + 4-byte length (0)
+        gbye_packet = struct.pack("<4sI", b"GBYE", 0)
 
         max_attempts = 5
         for attempt in range(1, max_attempts + 1):
@@ -114,19 +117,24 @@ class KLD7Tracker:
                                   max_attempts, exc_info=True)
                     return False
 
-                # Reset: send serial break + drain at both baud rates.
-                # A break forces the K-LD7 UART to reset regardless of
-                # its current baud rate.
-                for reset_baud in (3000000, 115200):
-                    try:
-                        with pyserial.Serial(port, reset_baud, timeout=0.1) as ser:
-                            ser.send_break(duration=0.1)
+                # Send binary GBYE at 3Mbaud to close a stuck prior session,
+                # then drain. The K-LD7 will return to idle and accept INIT
+                # at 115200 on the next attempt.
+                try:
+                    with pyserial.Serial(port, 3000000, parity=pyserial.PARITY_EVEN,
+                                         timeout=0.1) as ser:
+                        ser.reset_input_buffer()
+                        ser.write(gbye_packet)
+                        ser.flush()
+                        time.sleep(0.3)
+                        # Drain any response
+                        while ser.in_waiting:
+                            ser.read(ser.in_waiting)
                             time.sleep(0.1)
-                            ser.reset_input_buffer()
-                            ser.reset_output_buffer()
-                    except Exception:
-                        pass
-                time.sleep(0.5)
+                    logger.info("[KLD7] Sent GBYE at 3Mbaud to reset prior session")
+                except Exception as flush_err:
+                    logger.debug("[KLD7] GBYE flush failed: %s", flush_err)
+                time.sleep(0.3)
 
         self._configure_for_golf()
         logger.info("[KLD7] Ready: port=%s, baud=%s, range=%dm, speed=%dkm/h, orientation=%s",
