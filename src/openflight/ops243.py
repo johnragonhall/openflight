@@ -1180,7 +1180,15 @@ class OPS243Radar:
         if not self.serial or not self.serial.is_open:
             raise ConnectionError("Not connected to radar")
 
-        self.serial.reset_input_buffer()
+        # Drain the serial buffer until no new bytes arrive for 200ms.
+        # A full I/Q dump is ~41KB at 57600 baud (~7s). If the previous
+        # capture wasn't fully read, bytes are still streaming in.
+        # A single reset_input_buffer() only clears what's arrived so far.
+        while True:
+            self.serial.reset_input_buffer()
+            time.sleep(0.2)
+            if self.serial.in_waiting == 0:
+                break
 
         # Restart sampling
         self.serial.write(b"PA")
