@@ -316,7 +316,7 @@ class KLD7Tracker:
 
         # Horizontal radar sees weaker ball returns (narrower beam in
         # the horizontal plane), so use a lower impact energy threshold.
-        energy_threshold = 2.0 if self.orientation == "horizontal" else 3.0
+        energy_threshold = 1.85 if self.orientation == "horizontal" else 3.0
 
         results = extract_launch_angle(
             frames,
