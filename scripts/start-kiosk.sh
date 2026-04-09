@@ -20,7 +20,10 @@ SOUND_PRE_TRIGGER=""
 BUFFER_SPLIT=""
 KLD7=false
 KLD7_PORT=""
-KLD7_ORIENTATION=""
+KLD7_ANGLE_OFFSET=""
+KLD7_HORIZONTAL=false
+KLD7_HORIZONTAL_PORT=""
+KLD7_HORIZONTAL_OFFSET=""
 
 # Buffer split presets (pre/post trigger segments out of 32 total)
 # At 20ksps: each segment = 6.4ms, total buffer = 204.8ms
@@ -198,28 +201,20 @@ if [ -n "$SAMPLE_RATE" ]; then
     SERVER_CMD="$SERVER_CMD --sample-rate $SAMPLE_RATE"
 fi
 
+# K-LD7 radar defaults when --kld7 is enabled
 if [ "$KLD7" = true ]; then
     SERVER_CMD="$SERVER_CMD --kld7"
-fi
-
-if [ -n "$KLD7_PORT" ]; then
-    SERVER_CMD="$SERVER_CMD --kld7-port $KLD7_PORT"
-fi
-
-if [ -n "$KLD7_ANGLE_OFFSET" ]; then
-    SERVER_CMD="$SERVER_CMD --kld7-angle-offset $KLD7_ANGLE_OFFSET"
-fi
-
-if [ "$KLD7_HORIZONTAL" = true ]; then
-    SERVER_CMD="$SERVER_CMD --kld7-horizontal"
-fi
-
-if [ -n "$KLD7_HORIZONTAL_PORT" ]; then
-    SERVER_CMD="$SERVER_CMD --kld7-horizontal-port $KLD7_HORIZONTAL_PORT"
-fi
-
-if [ -n "$KLD7_HORIZONTAL_OFFSET" ]; then
-    SERVER_CMD="$SERVER_CMD --kld7-horizontal-offset $KLD7_HORIZONTAL_OFFSET"
+    SERVER_CMD="$SERVER_CMD --kld7-port ${KLD7_PORT:-/dev/kld7_vertical}"
+    SERVER_CMD="$SERVER_CMD --kld7-angle-offset ${KLD7_ANGLE_OFFSET:-8}"
+    # Auto-enable horizontal if symlink exists and not explicitly disabled
+    if [ "$KLD7_HORIZONTAL" != true ] && [ -e /dev/kld7_horizontal ]; then
+        KLD7_HORIZONTAL=true
+    fi
+    if [ "$KLD7_HORIZONTAL" = true ]; then
+        SERVER_CMD="$SERVER_CMD --kld7-horizontal"
+        SERVER_CMD="$SERVER_CMD --kld7-horizontal-port ${KLD7_HORIZONTAL_PORT:-/dev/kld7_horizontal}"
+        SERVER_CMD="$SERVER_CMD --kld7-horizontal-offset ${KLD7_HORIZONTAL_OFFSET:-0}"
+    fi
 fi
 
 # Start Grafana Alloy for log shipping (if installed and credentials configured)
