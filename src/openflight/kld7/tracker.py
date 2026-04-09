@@ -314,11 +314,16 @@ class KLD7Tracker:
         logger.info("[KLD7] RADC: examining %d frames, ball_speed=%.1f mph",
                      len(frames), ball_speed_mph)
 
+        # Horizontal radar sees weaker ball returns (narrower beam in
+        # the horizontal plane), so use a lower impact energy threshold.
+        energy_threshold = 2.0 if self.orientation == "horizontal" else 3.0
+
         results = extract_launch_angle(
             frames,
             ops243_ball_speed_mph=ball_speed_mph,
             angle_offset_deg=self.angle_offset_deg,
             speed_tolerance_mph=10.0,
+            impact_energy_threshold=energy_threshold,
         )
 
         if not results:
