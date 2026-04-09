@@ -391,10 +391,6 @@ class TestOnShotDetected:
                 calls.append(("ball", shot_timestamp))
                 return KLD7Angle(vertical_deg=12.0, confidence=0.8, num_frames=2)
 
-            def get_club_angle(self, shot_timestamp=None):
-                calls.append(("club", shot_timestamp))
-                return None
-
             def reset(self):
                 calls.append(("reset", None))
 
@@ -417,7 +413,6 @@ class TestOnShotDetected:
         on_shot_detected(shot)
 
         assert ("ball", 1234.5) in calls
-        assert ("club", 1234.5) in calls
         assert emitted
 
     def test_implausible_kld7_angle_falls_back_to_estimate(self, monkeypatch):
@@ -430,9 +425,6 @@ class TestOnShotDetected:
 
             def get_angle_for_shot(self, shot_timestamp=None, ball_speed_mph=None):
                 return KLD7Angle(vertical_deg=79.4, confidence=0.58, num_frames=1)
-
-            def get_club_angle(self, shot_timestamp=None):
-                return None
 
             def reset(self):
                 return None
@@ -466,9 +458,6 @@ class TestOnShotDetected:
 
             def get_angle_for_shot(self, shot_timestamp=None, ball_speed_mph=None):
                 return KLD7Angle(vertical_deg=18.7, confidence=0.8, num_frames=2)
-
-            def get_club_angle(self, shot_timestamp=None):
-                return None
 
             def reset(self):
                 return None

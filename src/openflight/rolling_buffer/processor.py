@@ -659,9 +659,12 @@ class RollingBufferProcessor:
             # Fallback: closest speed to standard result
             ball_reading = min(outbound, key=lambda r: abs(r.speed_mph - ball_speed_mph))
         else:
-            ball_reading = ball_reading_std
+            # No outbound readings in overlapping timeline at all —
+            # use midpoint of capture as best-guess timestamp
+            ball_reading = None
+            logger.warning("[PROCESSOR] No outbound readings in overlapping timeline")
 
-        ball_timestamp_ms = ball_reading.timestamp_ms
+        ball_timestamp_ms = ball_reading.timestamp_ms if ball_reading else 68.0
 
         # Find club speed
         club_speed_mph, club_timestamp_ms = self.find_club_speed(

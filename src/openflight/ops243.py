@@ -57,12 +57,6 @@ class SpeedUnit(Enum):
     CMS = "UC"      # centimeters per second
 
 
-class PowerMode(Enum):
-    """Power modes for OPS243-A."""
-    ACTIVE = "PA"   # Normal operating mode
-    IDLE = "PI"     # Low power idle, waits for Active command
-    PULSE = "PP"    # Single pulse mode (must be in IDLE first)
-
 
 class Direction(Enum):
     """Direction of detected object."""
@@ -100,20 +94,18 @@ class OPS243Radar:
     """
     Driver for OPS243-A Doppler radar sensor.
 
+    Production mode uses rolling buffer capture exclusively.
+
     Example usage:
         radar = OPS243Radar()
         radar.connect()
-        radar.configure_for_golf()
+        radar.configure_for_rolling_buffer()
 
-        # Blocking read
-        reading = radar.read_speed()
-        print(f"Speed: {reading.speed} {reading.unit}")
+        # Wait for hardware trigger (sound trigger via HOST_INT)
+        response = radar.wait_for_hardware_trigger()
 
-        # Or use callback for continuous monitoring
-        def on_speed(reading):
-            print(f"Detected: {reading.speed} mph")
-
-        radar.start_streaming(callback=on_speed)
+        # Re-arm for next capture
+        radar.rearm_rolling_buffer()
     """
 
     # Default serial settings per datasheet
@@ -136,7 +128,6 @@ class OPS243Radar:
         self.serial: Optional[serial.Serial] = None
         self._streaming = False
         self._stream_thread: Optional[threading.Thread] = None
-        self._callback: Optional[Callable[[SpeedReading], None]] = None
         self._iq_callback: Optional[Callable[[IQBlock], None]] = None
         self._iq_error_callback: Optional[Callable[[str], None]] = None
         self._unit = "mph"
@@ -450,87 +441,6 @@ class OPS243Radar:
             raise ValueError("Power level must be 0-7")
         self._send_command(f"P{level}")
 
-    def configure_for_golf(self):
-        """
-        Configure radar with optimal settings for golf ball detection.
-
-        Based on OmniPreSense AN-027 Rolling Buffer and Sports Ball Detection docs:
-        - 30ksps sample rate (max ~208 mph, sufficient for all golf shots)
-        - 128 buffer size
-        - FFT size 4096 (X=32) for ±0.1 mph resolution at ~56 Hz report rate
-        - Peak averaging enabled (K+) for cleaner speed readings
-        - Multi-object reporting (O4) to detect both club and ball
-        - MPH units, magnitude reporting, both directions
-
-        Direction filtering is done in software based on the sign of the speed.
-        Per API docs AN-010-AD:
-        - Positive speed = INBOUND (toward radar) - ignored (backswing)
-        - Negative speed = OUTBOUND (away from radar) - recorded as shot
-
-        Positioning: Place radar 6-8 feet behind ball, angled 10° upward.
-        """
-        # Set units to MPH
-        self.set_units(SpeedUnit.MPH)
-
-        # 30ksps sample rate per OmniPreSense golf recommendation
-        # Max detectable speed ~208 mph (sufficient for golf, pros max ~190 mph)
-        # Lower than 50ksps but better resolution tradeoff
-        self.set_sample_rate(30000)
-        logger.info("[OPS] Sample rate: 30ksps")
-
-        # 128 buffer per OmniPreSense recommendation
-        # Combined with 30ksps gives good base for FFT
-        self.set_buffer_size(128)
-        logger.info("[OPS] Buffer size: 128")
-
-        # FFT size 4096 (X=32 multiplier with 128 buffer)
-        # This gives: ~56 Hz report rate, ±0.1 mph resolution
-        self.set_fft_size(32)
-        logger.info("[OPS] FFT size: 4096 (X=32) - ±0.1 mph resolution @ ~56 Hz")
-
-        # Enable magnitude to help filter weak signals
-        # Magnitude helps distinguish club (larger RCS, higher mag) from ball
-        self.enable_magnitude_report(True)
-
-        # Clear direction filter to get BOTH directions
-        # Direction is determined by the SIGN of the speed value.
-        # Per API docs: positive = inbound, negative = outbound
-        # This allows us to filter inbound readings (backswing) in software
-        self.set_direction_filter(None)
-
-        # Minimum speed 10 mph to filter very slow movements
-        # We filter higher speeds (backswing) in software based on direction
-        self.set_min_speed_filter(10)
-
-        # Minimum magnitude filter to reject weak signals (walking, noise)
-        # Real golf shots have magnitude 100+, walking is typically 20-30
-        self.set_magnitude_filter(min_mag=50)
-        logger.info("[OPS] Minimum magnitude filter: 50")
-
-        # Max transmit power for best range
-        self.set_transmit_power(0)
-
-        # Enable JSON for easier parsing
-        self.enable_json_output(True)
-
-        # Enable multi-object reporting to detect both club head AND ball
-        # O4 reports up to 4 objects per sample cycle, ordered by magnitude
-        self.set_num_reports(4)
-        logger.info("[OPS] Multi-object reporting enabled (O4)")
-
-        # Re-enable JSON output after O4 (in case it was reset)
-        self.enable_json_output(True)
-
-        # Enable peak speed averaging per OmniPreSense recommendation
-        # Helps provide cleaner speed readings
-        self.enable_peak_averaging(True)
-        logger.info("[OPS] Peak averaging enabled (K+)")
-
-        # Verify settings were applied
-        logger.info("[OPS] Verifying configuration...")
-        filter_settings = self.get_speed_filter()
-        logger.info("[OPS] Current filter settings: %s", filter_settings)
-
     def enable_peak_averaging(self, enabled: bool = True):
         """
         Enable/disable peak speed averaging.
@@ -588,38 +498,6 @@ class OPS243Radar:
         logger.debug("[OPS] Sending num_reports command: %s", cmd)
         self._send_command(cmd)
 
-    def set_decimal_precision(self, places: int):
-        """
-        Set number of decimal places in speed output.
-
-        Args:
-            places: Number of decimal places (0-5)
-        """
-        if places < 0 or places > 5:
-            raise ValueError("Decimal places must be 0-5")
-        self._send_command(f"F{places}")
-
-    def set_led(self, enabled: bool = True):
-        """
-        Enable/disable the onboard LEDs.
-
-        Disabling LEDs saves ~10mA of power.
-
-        Args:
-            enabled: True to turn LEDs on, False to turn off
-        """
-        self._send_command("OL" if enabled else "Ol")
-
-    def set_power_mode(self, mode: PowerMode):
-        """
-        Set the radar power mode.
-
-        Args:
-            mode: PowerMode.ACTIVE (normal), PowerMode.IDLE (low power),
-                  or PowerMode.PULSE (single shot, must be IDLE first)
-        """
-        self._send_command(mode.value)
-
     def system_reset(self):
         """Perform a full system reset including the clock."""
         self._send_command("P!")
@@ -655,47 +533,6 @@ class OPS243Radar:
             return data.get("Units", "unknown")
         except json.JSONDecodeError:
             return response
-
-    def enable_time_report(self, enabled: bool = True):
-        """
-        Enable/disable timestamp reporting with each reading.
-
-        When enabled, time since power-on is included with speed data.
-
-        Args:
-            enabled: True to include timestamps
-        """
-        self._send_command("OT" if enabled else "Ot")
-
-    def read_speed(self) -> Optional[SpeedReading]:
-        """
-        Read a single speed measurement (blocking).
-
-        Returns:
-            SpeedReading object or None if no valid reading
-        """
-        if not self.serial or not self.serial.is_open:
-            raise ConnectionError("Not connected to radar")
-
-        try:
-            # Read raw bytes first to see exactly what's coming in
-            raw_bytes = self.serial.readline()
-
-            if _show_raw_readings and raw_bytes:
-                print(f"[BYTES] {raw_bytes!r}")
-
-            line = raw_bytes.decode('ascii', errors='ignore').strip()
-            if not line:
-                return None
-
-            # Log raw data for debugging
-            raw_logger.debug("[OPS] RAW: %s", line)
-
-            return self._parse_reading(line)
-        except serial.SerialException as e:
-            if _show_raw_readings:
-                print(f"[SERIAL ERROR] {e}")
-            return None
 
     def _parse_reading(self, line: str) -> Optional[SpeedReading]:
         """
@@ -787,28 +624,12 @@ class OPS243Radar:
             logger.warning("[OPS] Failed to parse reading: %r - %s", line, e)
             return None
 
-    def start_streaming(self, callback: Callable[[SpeedReading], None]):
-        """
-        Start continuous speed streaming with callback.
-
-        Args:
-            callback: Function called with each SpeedReading
-        """
-        if self._streaming:
-            return
-
-        self._callback = callback
-        self._streaming = True
-        self._stream_thread = threading.Thread(target=self._stream_loop, daemon=True)
-        self._stream_thread.start()
-
     def stop_streaming(self):
-        """Stop continuous speed or I/Q streaming."""
+        """Stop any active I/Q streaming."""
         self._streaming = False
         if self._stream_thread:
             self._stream_thread.join(timeout=2.0)
             self._stream_thread = None
-        self._callback = None
 
         # If we were doing I/Q streaming, tell radar to stop
         if self._iq_callback is not None:
@@ -816,17 +637,6 @@ class OPS243Radar:
 
         self._iq_callback = None
         self._iq_error_callback = None
-
-    def _stream_loop(self):
-        """Internal streaming loop."""
-        while self._streaming:
-            try:
-                reading = self.read_speed()
-                if reading and self._callback:
-                    self._callback(reading)
-            except Exception:
-                if self._streaming:
-                    time.sleep(0.1)
 
     def save_config(self):
         """Save current configuration to persistent memory."""
@@ -918,25 +728,8 @@ class OPS243Radar:
         logger.info("[OPS] Rolling buffer mode active (S#%d, %dksps)",
                     pre_trigger_segments, sample_rate_ksps)
 
-    def enable_rolling_buffer(self):
-        """
-        Enable rolling buffer mode for raw I/Q capture.
-
-        DEPRECATED: Use enter_rolling_buffer_mode() instead for reliable configuration.
-
-        This method is kept for backwards compatibility but internally calls
-        enter_rolling_buffer_mode() with default settings.
-        """
-        logger.warning("[OPS] enable_rolling_buffer() is deprecated, "
-                       "use enter_rolling_buffer_mode() instead")
-        self.enter_rolling_buffer_mode()
-
     def disable_rolling_buffer(self):
-        """
-        Disable rolling buffer mode and return to normal streaming.
-
-        After disabling, call configure_for_golf() to restore streaming settings.
-        """
+        """Disable rolling buffer mode and return to normal CW mode."""
         logger.info("[OPS] Disabling rolling buffer mode...")
         self._send_command("GS")  # Return to standard CW mode
         time.sleep(0.1)
@@ -984,49 +777,6 @@ class OPS243Radar:
                      "Power cycle the board for changes to take effect.")
         print("[RADAR] Settings saved to persistent memory.")
         print("[RADAR] Power cycle the board (unplug USB, wait 3s, replug).")
-
-    def set_trigger_split(self, segments: int = 8):
-        """
-        Set the pre/post trigger data split for rolling buffer.
-
-        NOTE: This is automatically called by enter_rolling_buffer_mode().
-        Only use this method directly if you need to change the split
-        without re-entering rolling buffer mode.
-
-        The S#n command controls how much historical data is included:
-        - n=0: Only new samples (0% pre-trigger)
-        - n=8: Default (25% pre-trigger = 1024 samples)
-        - n=32: All current samples (100% pre-trigger)
-
-        Each segment = 128 samples. At 30ksps:
-        - 8 segments = 1024 samples = ~34ms pre-trigger
-
-        Note: After changing this setting, sampling is reactivated with PA
-        to ensure the buffer continues filling.
-
-        Args:
-            segments: Number of pre-trigger segments (0-32)
-        """
-        if not self.serial or not self.serial.is_open:
-            raise ConnectionError("Not connected to radar")
-
-        segments = max(0, min(32, segments))
-
-        # Use direct serial write with \r for reliability
-        self.serial.write(f"S#{segments}\r".encode())
-        self.serial.flush()
-        time.sleep(0.15)
-        logger.info("[OPS] Trigger split set to %s segments", segments)
-
-        # CRITICAL: Reactivate sampling after changing settings
-        # Per API doc: settings changes may interrupt the sampling loop
-        self.serial.write(b"PA")
-        self.serial.flush()
-        time.sleep(0.1)
-
-        # Clear any response data
-        self.serial.reset_input_buffer()
-        logger.info("[OPS] Sampling reactivated after trigger split change")
 
     def trigger_capture(self, timeout: float = 10.0) -> str:
         """

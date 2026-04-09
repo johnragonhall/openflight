@@ -137,21 +137,6 @@ class TestParseReading:
         assert reading.direction == Direction.INBOUND
 
 
-class TestConfigureForGolf:
-    """Tests for golf configuration."""
-
-    def test_configure_sets_correct_values(self):
-        """Verify configure_for_golf sets expected parameters."""
-        # We can't test actual hardware, but we can verify the method exists
-        # and doesn't raise errors when radar is not connected
-        radar = OPS243Radar.__new__(OPS243Radar)
-        radar.serial = None
-
-        # These should be the expected configuration values
-        assert radar.DEFAULT_BAUD == 57600
-        assert radar.DEFAULT_TIMEOUT == 1.0
-
-
 class TestFFTSize:
     """Tests for FFT size configuration."""
 
