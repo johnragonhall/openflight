@@ -246,6 +246,9 @@ class KLD7Tracker:
                         break
 
                     if code == "RADC":
+                        # Validate payload — USB short reads can truncate packets
+                        if not isinstance(payload, bytes) or len(payload) != 3072:
+                            continue
                         frame = KLD7Frame(timestamp=time.time())
                         frame.radc = payload
                         self._add_frame(frame)
