@@ -190,37 +190,66 @@ class KLD7Tracker:
         logger.info("[KLD7] Stopped")
 
     def _stream_loop(self):
-        """Background thread: stream RADC into ring buffer."""
-        from kld7 import FrameCode
+        """Background thread: stream RADC into ring buffer.
+
+        Retries on packet errors (common when two K-LD7s start simultaneously).
+        The kld7 library's stream_frames generator can fail if a stray packet
+        from the prior GNFD cycle is still in the serial buffer.
+        """
+        from kld7 import FrameCode, KLD7Exception
 
         frame_codes = FrameCode.RADC
-        current_frame = KLD7Frame(timestamp=time.time())
         frame_count = 0
+        errors = 0
+        max_errors = 10
 
-        logger.info("[KLD7] Stream started: RADC only (3Mbaud)")
+        logger.info("[KLD7] Stream started: RADC only (3Mbaud, %s)", self.orientation)
 
-        try:
-            for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
+        while self._running and errors < max_errors:
+            try:
+                for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
+                    if not self._running:
+                        break
+
+                    if code == "RADC":
+                        frame = KLD7Frame(timestamp=time.time())
+                        frame.radc = payload
+                        self._add_frame(frame)
+                        frame_count += 1
+                        errors = 0  # reset on success
+
+                        if frame_count == 1:
+                            logger.info("[KLD7] First RADC frame received (%d bytes, %s)",
+                                        len(payload) if payload else 0, self.orientation)
+                        elif frame_count == 50:
+                            logger.info("[KLD7] Stream health: %d RADC frames (%s)",
+                                        frame_count, self.orientation)
+
                 if not self._running:
                     break
+                logger.warning("[KLD7] Stream generator exited (frames=%d, %s)",
+                              frame_count, self.orientation)
 
-                if code == "RADC":
-                    current_frame.radc = payload
-                    self._add_frame(current_frame)
-                    frame_count += 1
-                    current_frame = KLD7Frame(timestamp=time.time())
+            except KLD7Exception as e:
+                errors += 1
+                logger.warning("[KLD7] Stream error %d/%d (%s): %s",
+                                errors, max_errors, self.orientation, e)
+                if errors < max_errors:
+                    # Drain serial and retry
+                    try:
+                        self._radar._drain_serial()
+                    except Exception:
+                        pass
+                    time.sleep(0.1)
 
-                    if frame_count == 1:
-                        logger.info("[KLD7] First RADC frame received (%d bytes)",
-                                    len(payload) if payload else 0)
-                    elif frame_count == 50:
-                        logger.info("[KLD7] Stream health: %d RADC frames", frame_count)
+            except Exception as e:
+                logger.error("[KLD7] Stream crashed after %d frames (%s): %s",
+                              frame_count, self.orientation, e, exc_info=True)
+                break
 
-            logger.warning("[KLD7] Stream ended (frames=%d, running=%s)",
-                          frame_count, self._running)
-
-        except Exception as e:
-            logger.error("[KLD7] Stream crashed after %d frames: %s", frame_count, e, exc_info=True)
+        if errors >= max_errors:
+            logger.error("[KLD7] Stream gave up after %d consecutive errors (%s)",
+                          max_errors, self.orientation)
 
     def _add_frame(self, frame: KLD7Frame):
         """Add a frame to the ring buffer."""
