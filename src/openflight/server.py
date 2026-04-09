@@ -268,6 +268,7 @@ def shot_to_dict(shot: Shot) -> dict:
         "launch_angle_confidence": shot.launch_angle_confidence,
         "angle_source": shot.angle_source,
         "club_angle_deg": shot.club_angle_deg,
+        "club_path_deg": shot.club_path_deg,
         # Spin data from rolling buffer mode
         "spin_rpm": round(shot.spin_rpm) if shot.spin_rpm else None,
         "spin_confidence": round(shot.spin_confidence, 2) if shot.spin_confidence else None,
@@ -917,6 +918,14 @@ def on_shot_detected(shot: Shot):
                             "num_frames": kld7_angle.num_frames,
                         } if kld7_angle else None,
                     )
+                # Club angle of attack (same RADC buffer, club speed from OPS)
+                if shot.club_speed_mph:
+                    club_angle_v = kld7_vertical.get_club_angle(club_speed_mph=shot.club_speed_mph)
+                    if club_angle_v and club_angle_v.vertical_deg is not None:
+                        shot.club_angle_deg = club_angle_v.vertical_deg
+                        logger.info("[SERVER] Club AoA: %.1f° (conf=%.0f%%)",
+                                     club_angle_v.vertical_deg, club_angle_v.confidence * 100)
+
                 kld7_vertical.reset()
 
             # --- Horizontal K-LD7 (club path / aim direction) ---
@@ -951,6 +960,14 @@ def on_shot_detected(shot: Shot):
                             "num_frames": kld7_angle_h.num_frames,
                         } if kld7_angle_h else None,
                     )
+                # Club path (same RADC buffer, club speed from OPS)
+                if shot.club_speed_mph:
+                    club_angle_h = kld7_horizontal.get_club_angle(club_speed_mph=shot.club_speed_mph)
+                    if club_angle_h and club_angle_h.horizontal_deg is not None:
+                        shot.club_path_deg = club_angle_h.horizontal_deg
+                        logger.info("[SERVER] Club path: %.1f° (conf=%.0f%%)",
+                                     club_angle_h.horizontal_deg, club_angle_h.confidence * 100)
+
                 kld7_horizontal.reset()
 
             if kld7_vertical or kld7_horizontal:
@@ -1055,6 +1072,7 @@ def on_shot_detected(shot: Shot):
                 launch_angle_confidence=shot.launch_angle_confidence,
                 angle_source=shot.angle_source,
                 club_angle_deg=shot.club_angle_deg,
+                club_path_deg=shot.club_path_deg,
                 pipeline_ms={
                     "kld7": round(kld7_ms, 1) if kld7_ms is not None else None,
                 },
@@ -1340,6 +1358,7 @@ class MockLaunchMonitor:
             launch_angle_horizontal=round(launch_h, 1),
             launch_angle_confidence=round(random.uniform(0.5, 0.95), 2),
             club_angle_deg=club_aoa,
+            club_path_deg=round(random.uniform(-5.0, 5.0), 1),
             mode="mock",
         )
 

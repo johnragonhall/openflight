@@ -4,16 +4,57 @@ Common issues with the K-LD7 angle radar and how to resolve them.
 
 ## Dual Radar Setup
 
-When running two K-LD7s (vertical + horizontal), each needs:
-- **Its own FTDI adapter and USB port**
-- **A different base frequency** to avoid RF interference (set via `base_freq` parameter: 0=Low, 2=High)
-- **A stable device name** via udev rules (see [setup guide](raspberry-pi-setup.md#stable-device-names-udev-rules)) — USB enumeration order can swap `/dev/ttyUSB0` and `/dev/ttyUSB1` after reboot
+Two K-LD7 radars measure independent angle planes:
+- **Vertical** — launch angle (ball flight elevation)
+- **Horizontal** — aim direction (ball flight left/right of target)
+
+### Requirements
+
+| Requirement | Details |
+|-------------|---------|
+| **Separate FTDI adapters** | Each K-LD7 needs its own 3.3V FTDI USB-to-serial adapter |
+| **USB 3.0 ports** | Both FTDI adapters must be on USB 3.0 ports. USB 2.0 causes packet errors due to insufficient bandwidth at 3Mbaud. The OPS243 can use USB 2.0. |
+| **Different base frequencies** | Vertical: RBFR=0 (24.05 GHz), Horizontal: RBFR=2 (24.25 GHz). Set automatically by the server. |
+| **Stable device names** | Use udev rules to prevent port swaps on reboot (see [setup guide](raspberry-pi-setup.md#stable-device-names-udev-rules)) |
+
+### Starting with dual radars
+
+```bash
+# Minimal — uses defaults (ports from udev symlinks, offsets from calibration)
+./scripts/start-kiosk.sh --kld7
+
+# Explicit
+./scripts/start-kiosk.sh --kld7 --kld7-port /dev/kld7_vertical --kld7-angle-offset 8 \
+  --kld7-horizontal --kld7-horizontal-port /dev/kld7_horizontal --kld7-horizontal-offset 0
+```
+
+When `--kld7` is passed, the kiosk script automatically:
+- Uses `/dev/kld7_vertical` as the vertical port (default)
+- Uses offset 8° for vertical (default)
+- Enables horizontal if `/dev/kld7_horizontal` symlink exists
+- Uses offset 0° for horizontal (default)
+
+### Horizontal radar mounting
+
+Mount the horizontal K-LD7 directly behind the ball, same position as the vertical. The antenna face should point toward the ball/target.
+
+**Sign convention** (looking from behind the ball toward the target):
+- **Positive angle** = ball went right of center
+- **Negative angle** = ball went left of center
+
+This matches the K-LD7 datasheet convention when the antenna face is oriented with Tx on the right side.
+
+### Horizontal detection rate
+
+The horizontal radar detects the ball less consistently than the vertical (~60-80% vs ~95%). This is because the K-LD7 beam is asymmetric (80° × 34°) — when mounted horizontally, the narrow 34° dimension is in the horizontal plane. The ball may not always produce a strong enough return for detection.
+
+Full shots (100+ mph) have much higher detection rates than half shots. If horizontal angles are missing on some shots, this is normal.
 
 ## Connection Issues
 
 ### "Wrong length reply" on startup
 
-**Symptom:** Server fails to start with:
+**Symptom:** Server logs show:
 ```
 [KLD7] Connect attempt 1/5 failed: Wrong length reply
 ```
@@ -30,85 +71,87 @@ When running two K-LD7s (vertical + horizontal), each needs:
 
 **Cause:** The K-LD7 uses an FTDI USB-to-serial adapter which shows up as `/dev/ttyUSB*`. If multiple USB-serial devices are connected, auto-detection may pick the wrong one.
 
-**Fix:** Specify the port explicitly:
+**Fix:** Specify the port explicitly or set up udev rules:
 ```bash
+# Explicit port
 scripts/start-kiosk.sh --kld7 --kld7-port /dev/ttyUSB0
-```
 
-To find the correct port:
-```bash
+# Find available ports
 ls /dev/ttyUSB*
-# or
 python3 -m serial.tools.list_ports -v
 ```
+
+### Server exits on K-LD7 failure
+
+If `--kld7` or `--kld7-horizontal` is passed but the radar fails to connect after 5 attempts, the server exits with an error. This is intentional — running without a requested radar would produce incomplete data.
 
 ## RADC Streaming Issues
 
 ### No RADC frames in buffer
 
-**Symptom:** K-LD7 connects successfully but shots show `angle_source: estimated` instead of `radar`. The K-LD7 buffer log shows `NO ANGLE` or zero RADC frames.
+**Symptom:** K-LD7 connects but shots show `angle_source: estimated` instead of `radar`.
 
 **Check the startup logs for:**
 ```
-[KLD7] Stream started: RADC only (3Mbaud)
-[KLD7] First RADC frame received (3072 bytes)    ← must see this
-[KLD7] Stream health: 50 RADC frames             ← confirms sustained streaming
+[KLD7] Stream started: RADC only (3Mbaud, vertical)
+[KLD7] First RADC frame received (3072 bytes, vertical)    ← must see this
+[KLD7] Stream health: 50 RADC frames (vertical)            ← confirms sustained streaming
 ```
 
 **If "First RADC frame" never appears:**
-- The K-LD7 isn't sending RADC data. Check that the connection is at 3Mbaud (the `Connected at X baud` log line).
-- RADC frames are 3072 bytes each at ~18 FPS = ~55 KB/s. This requires 3Mbaud. At 115200 baud, RADC can't be transmitted in real time and the library silently drops frames.
+- The K-LD7 isn't sending RADC data. Check that the connection is at 3Mbaud.
+- RADC frames are 3072 bytes each at ~18 FPS = ~55 KB/s. This requires 3Mbaud.
 
-**If "Stream crashed" appears:**
-- Check the traceback. Common cause: the K-LD7 FTDI adapter disconnected or had a USB glitch. The stream thread exits and won't restart — you need to restart the server.
+### Occasional stream errors (horizontal)
 
-### "Stream ended" with running=True
+**Symptom:** Debug logs show occasional `[KLD7] Stream error` messages on the horizontal radar.
 
-**Symptom:** The `stream_frames` generator exited unexpectedly.
+**Cause:** FTDI USB Full Speed (12 Mbps) adapters occasionally deliver short packets at 3Mbaud. The stream has built-in retry logic and recovers automatically. The error counter resets on each successful frame.
 
-**Cause:** The kld7 library's `stream_frames` can exit if it receives a `DONE` frame code or encounters a packet error. This shouldn't happen during normal operation.
+**This is normal** with two K-LD7s running simultaneously. The stream continues working. If errors become persistent (10 consecutive failures), the stream stops and you'll need to restart the server.
 
-**Fix:** Restart the server. If it persists, check USB cable and connections.
+### Truncated RADC packets
+
+**Symptom:** RADC payload is less than 3072 bytes.
+
+**Cause:** USB short reads from the FTDI driver. These frames are silently dropped — only complete 3072-byte RADC packets are processed.
+
+**Fix:** Ensure both K-LD7 FTDI adapters are on USB 3.0 ports.
 
 ## Angle Accuracy
 
-### Launch angles consistently too high or too low
+### Launch angle calibration (vertical)
 
-**Cause:** The `--kld7-angle-offset` parameter needs calibration for your mounting geometry.
+The raw RADC angle needs an offset to match real launch angles. The offset depends on your mounting geometry.
 
-**Calibration process:**
-1. Hit several full shots with a known club (e.g., 7-iron)
-2. Check the session log for raw RADC angles (subtract your current offset from the reported angle)
-3. Compare to expected launch angles for that club:
-   - Wedge: 24-30°
-   - 7-iron: 16-18°
-   - 5-iron: 12-14°
-   - Driver: 10-14°
-4. Set offset = expected angle - raw angle
+1. Start with `--kld7-angle-offset 8`
+2. Hit 5-10 shots with a 7-iron
+3. Compare reported angles to expected (7i: 16-18°)
+4. Adjust: if angles read 5° too low, increase offset by 5
 
 ```bash
-# Example: raw angle is 8°, expected 7i launch is 17°, offset = 9
-scripts/start-kiosk.sh --kld7 --kld7-angle-offset 9
+scripts/start-kiosk.sh --kld7 --kld7-angle-offset 8
 ```
+
+### Aim direction calibration (horizontal)
+
+1. Start with `--kld7-horizontal-offset 0`
+2. Hit several shots straight at the target
+3. The horizontal angle should read near 0° (±2°)
+4. If it reads consistently offset, adjust `--kld7-horizontal-offset`
 
 ### "RADC extraction returned None"
 
-**Symptom:** K-LD7 has RADC data but can't find the ball.
-
 **Possible causes:**
-1. **Ball speed too low** — The RADC extraction uses the OPS243 ball speed to find the ball's aliased velocity bin. Below ~35 mph, the ball signal may be too weak to detect.
-2. **Ball outside velocity search window** — The search window is ±10 mph around the OPS speed. If the OPS speed is wrong, the search misses.
-3. **Low SNR** — The ball has a small radar cross section. Single-frame detections require SNR ≥ 5.0. Weaker signals are rejected.
+1. **Ball speed too low** — Below ~35 mph, the ball signal may be too weak to detect.
+2. **Ball outside velocity search window** — The search window is ±10 mph around the OPS speed.
+3. **Low SNR** — Single-frame detections require SNR ≥ 5.0.
 
-**Diagnostic:** Check the K-LD7 buffer log:
-```json
-{"type": "kld7_buffer", "ball_angle": null, "frame_count": 68}
-```
-If `frame_count` is 68 (full buffer) but `ball_angle` is null, the RADC data is there but the ball wasn't found. This is normal for some shots — the ball doesn't always produce a strong enough return in the K-LD7's beam.
+This is normal for some shots — the ball doesn't always produce a strong enough return.
 
 ## Velocity Aliasing
 
-The K-LD7 operates at RSPI=3 (100 km/h max speed). Ball speeds above 62 mph (100 km/h) alias into the negative velocity range:
+The K-LD7 operates at RSPI=3 (100 km/h max speed). Ball speeds above 62 mph alias:
 
 | Ball Speed | Aliased Velocity | FFT Region |
 |-----------|-----------------|------------|
@@ -116,44 +159,66 @@ The K-LD7 operates at RSPI=3 (100 km/h max speed). Ball speeds above 62 mph (100
 | 62-124 mph | Negative (-100 to 0 km/h) | Bins 1024-2048 |
 | 124-186 mph | Positive again (wraps) | Bins 0-1024 |
 
-The RADC extraction handles aliasing automatically using the OPS243 ball speed. No user action needed.
+The RADC extraction handles aliasing automatically using the OPS243 ball speed.
 
-## Antenna Spacing
+## Hardware Reference
 
-The K-LD7 has two receive antennas (Rx1, Rx2) spaced 6.223 mm apart (datasheet). The RADC angle extraction uses phase interferometry between these channels. The code uses a calibrated spacing of 8.0 mm (`ANTENNA_SPACING_M` in `kld7/radc.py`) which accounts for effective electrical spacing differences.
+### Antenna spacing
 
-## Serial Port Bandwidth
+Rx1/Rx2 spacing: 6.223 mm (datasheet). Code uses calibrated value of 8.0 mm for effective electrical spacing.
+
+### Serial port bandwidth
 
 | Baud Rate | Throughput | RADC Capable? |
 |-----------|-----------|---------------|
-| 115200 | ~11.5 KB/s | No — RADC needs ~55 KB/s |
+| 115200 | ~11.5 KB/s | No |
 | 3000000 | ~300 KB/s | Yes |
 
-The kld7 library negotiates the baud rate during INIT. OpenFlight always requests 3Mbaud for RADC support. If you see `Connected at 115200 baud` in the logs, the negotiation failed and you won't get RADC data.
+### USB requirements
+
+| Device | USB Speed | Notes |
+|--------|-----------|-------|
+| K-LD7 FTDI adapters | USB 3.0 required | FTDI runs at USB Full Speed (12M) but needs the 3.0 controller's better scheduling |
+| OPS243-A | USB 2.0 OK | CDC-ACM, bursty transfers only on trigger |
+
+### Base frequency (RBFR)
+
+| RBFR | Frequency | Use |
+|------|-----------|-----|
+| 0 | 24.05 GHz (Low) | Vertical radar (default) |
+| 1 | 24.15 GHz (Mid) | Available |
+| 2 | 24.25 GHz (High) | Horizontal radar |
+
+200 MHz separation prevents RF interference between dual radars.
 
 ## Log Lines Reference
 
-Healthy startup sequence:
+### Healthy dual-radar startup
 ```
-[KLD7] Connected on /dev/ttyUSB0 at 3000000 baud (attempt 1/5)
-[KLD7] Configured: range=5m, speed=100km/h, orientation=vertical
-[KLD7] Ready: port=/dev/ttyUSB0, baud=3000000, range=5m, speed=100km/h, orientation=vertical
-[KLD7] Streaming started (orientation=vertical)
-[KLD7] Stream started: RADC only (3Mbaud)
-[KLD7] First RADC frame received (3072 bytes)
-[KLD7] Stream health: 50 RADC frames
-```
-
-Per-shot angle extraction:
-```
-[KLD7] Angle extraction: ball_speed=87.2 mph, buffer=68 frames
-[KLD7] RADC: examining 68 frames, ball_speed=87.2 mph
-[KLD7] RADC: angle=8.0° speed=86.5 mph snr=10.7 conf=0.90 frames=1
+[KLD7] Connected on /dev/kld7_vertical at 3000000 baud (attempt 1/5)
+[KLD7] Configured: range=5m, speed=100km/h, orientation=vertical, RBFR=0 (Low/24.05GHz)
+[KLD7] Ready: port=/dev/kld7_vertical, baud=3000000, range=5m, speed=100km/h, orientation=vertical
+[KLD7] Stream started: RADC only (3Mbaud, vertical)
+[KLD7] First RADC frame received (3072 bytes, vertical)
+[KLD7] Connected on /dev/kld7_horizontal at 3000000 baud (attempt 1/5)
+[KLD7] Configured: range=5m, speed=100km/h, orientation=horizontal, RBFR=2 (High/24.25GHz)
+[KLD7] Ready: port=/dev/kld7_horizontal, baud=3000000, range=5m, speed=100km/h, orientation=horizontal
+[KLD7] Stream started: RADC only (3Mbaud, horizontal)
+[KLD7] First RADC frame received (3072 bytes, horizontal)
 ```
 
-Recovery from prior crash:
+### Per-shot angle extraction
+```
+[KLD7] Angle extraction: ball_speed=66.1 mph, buffer=68 frames
+[KLD7] RADC: examining 68 frames, ball_speed=66.1 mph
+[KLD7] RADC: angle=8.3° speed=65.8 mph snr=28.2 conf=0.88 frames=2
+[SERVER] Vertical angle: 8.3° (conf=88%, 2 frames)
+[SERVER] Horizontal angle: 4.1° (conf=93%, 2 frames)
+```
+
+### Recovery from prior crash
 ```
 [KLD7] Connect attempt 1/5 failed: Wrong length reply
 [KLD7] Sent GBYE at 3Mbaud to reset prior session
-[KLD7] Connected on /dev/ttyUSB0 at 3000000 baud (attempt 2/5)
+[KLD7] Connected on /dev/kld7_vertical at 3000000 baud (attempt 2/5)
 ```

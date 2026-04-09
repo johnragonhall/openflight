@@ -282,6 +282,7 @@ class SessionLogger:
         launch_angle_confidence: Optional[float] = None,
         angle_source: Optional[str] = None,
         club_angle_deg: Optional[float] = None,
+        club_path_deg: Optional[float] = None,
         pipeline_ms: Optional[Dict] = None,
     ):
         """
@@ -331,6 +332,8 @@ class SessionLogger:
             data["angle_source"] = angle_source
         if club_angle_deg is not None:
             data["club_angle_deg"] = club_angle_deg
+        if club_path_deg is not None:
+            data["club_path_deg"] = club_path_deg
         if pipeline_ms is not None:
             data["pipeline_ms"] = pipeline_ms
 

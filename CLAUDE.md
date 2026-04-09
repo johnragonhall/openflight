@@ -134,7 +134,7 @@ uv run python scripts/test_rolling_buffer_persist.py --test
 ```bash
 scripts/start-kiosk.sh              # Default: rolling buffer + sound trigger
 scripts/start-kiosk.sh --mock       # Development mode without hardware
-scripts/start-kiosk.sh --kld7 --kld7-angle-offset 13  # With K-LD7 angle radar
+scripts/start-kiosk.sh --kld7                          # With K-LD7 angle radars (auto-detects horizontal)
 ```
 
 ### Sound Trigger Testing
@@ -150,29 +150,33 @@ uv run python scripts/test_sound_trigger_hardware.py
 ## Architecture
 
 ```
-React UI (WebSocket) ──► Flask Server ──► LaunchMonitor ──► OPS243Radar
+React UI (WebSocket) ──► Flask Server ──► RollingBufferMonitor ──► OPS243Radar
                               │                │
-                              │                ├── RollingBufferMonitor (spin detection)
-                              │                └── KLD7Tracker (×2, launch angle + club path)
+                              │                └── SoundTrigger (SEN-14262 → HOST_INT)
+                              │
+                              ├── KLD7Tracker (vertical, RADC → launch angle)
+                              ├── KLD7Tracker (horizontal, RADC → aim direction)
                               │
                               └── SessionLogger (JSONL files)
 ```
 
 ### Data Flow
 
-1. **OPS243Radar** (`ops243.py`) reads continuous I/Q samples via USB serial
-2. **StreamingSpeedDetector** (`streaming/processor.py`) processes blocks with FFT and 2D CFAR detection
-3. **LaunchMonitor** (`launch_monitor.py`) accumulates `SpeedReading` objects, detects shot completion after 0.5s gap
-4. Creates `Shot` object with ball_speed, club_speed, estimated_carry_yards
-5. **Flask server** (`server.py`) emits WebSocket "shot" event
-6. **React UI** (`ui/src/`) renders shot data
+1. **SoundTrigger** detects club impact via SEN-14262 GATE → OPS243 HOST_INT
+2. **OPS243Radar** (`ops243.py`) dumps rolling buffer I/Q data (4096 samples)
+3. **RollingBufferProcessor** (`rolling_buffer/processor.py`) runs FFT + mode-based speed extraction
+4. Creates `Shot` object with ball_speed, club_speed, spin, carry
+5. **KLD7Trackers** extract launch angle (vertical) and aim direction (horizontal) from RADC phase interferometry, filtered by OPS243 ball speed
+6. **Flask server** (`server.py`) emits WebSocket "shot" event
+7. **React UI** (`ui/src/`) renders shot data
 
 ### Key Modules
 
-- `ops243.py` - Radar driver, handles I/Q streaming and configuration
-- `launch_monitor.py` - Shot detection logic, separates club/ball speeds
-- `rolling_buffer/` - Spin rate estimation via continuous I/Q analysis
-- `kld7/` - K-LD7 angle radar tracker (launch angle, club path)
+- `ops243.py` - OPS243 radar driver, rolling buffer capture, I/Q processing
+- `launch_monitor.py` - Shot dataclass, ClubType enum, carry estimation
+- `rolling_buffer/` - Trigger strategies, I/Q processor, spin detection
+- `kld7/` - K-LD7 angle radar: RADC streaming, phase interferometry, dual-radar support
+- `kld7/radc.py` - FFT, CFAR detection, per-bin angle extraction from raw ADC
 - `server.py` - Flask server, shot processing, K-LD7 correlation, carry estimation
 - `session_logger.py` - JSONL logging for post-session analysis
 

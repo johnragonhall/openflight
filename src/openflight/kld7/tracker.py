@@ -269,8 +269,8 @@ class KLD7Tracker:
 
             except KLD7Exception as e:
                 errors += 1
-                logger.warning("[KLD7] Stream error %d/%d (%s): %s",
-                                errors, max_errors, self.orientation, e)
+                logger.debug("[KLD7] Stream error %d/%d (%s): %s",
+                              errors, max_errors, self.orientation, e)
                 if errors < max_errors:
                     # Drain serial and retry
                     try:
@@ -376,6 +376,29 @@ class KLD7Tracker:
             logger.info("[KLD7] RADC extraction returned None (no detections at %.1f mph)", ball_speed_mph)
         except Exception as e:
             logger.warning("[KLD7] RADC extraction failed: %s", e, exc_info=True)
+
+        return None
+
+    def get_club_angle(self, club_speed_mph: Optional[float] = None) -> Optional[KLD7Angle]:
+        """Extract club head angle from RADC using OPS243 club speed.
+
+        Same approach as ball extraction — uses club speed to find the
+        club's aliased velocity bin in the FFT, then phase interferometry.
+        """
+        if club_speed_mph is None:
+            return None
+
+        try:
+            result = self._extract_ball_radc(club_speed_mph)
+            if result is not None:
+                # Re-tag as club detection
+                result.detection_class = "club"
+                logger.info("[KLD7] Club angle: %.1f° at %.1f mph (%s)",
+                             result.vertical_deg or result.horizontal_deg,
+                             club_speed_mph, self.orientation)
+                return result
+        except Exception as e:
+            logger.debug("[KLD7] Club angle extraction failed: %s", e)
 
         return None
 

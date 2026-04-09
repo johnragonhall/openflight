@@ -177,7 +177,7 @@ export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
           <MetricCard
             value={hasLaunchAngle ? shot.launch_angle_vertical!.toFixed(1) : '—'}
             unit={hasLaunchAngle ? '°' : undefined}
-            label="Launch Angle"
+            label="V. Launch"
             subtext={hasLaunchAngle ? (shot.angle_source ?? undefined) : undefined}
             variant="secondary"
             confidence={hasLaunchAngle ? getLaunchAngleQuality(shot.launch_angle_confidence) : null}
@@ -191,11 +191,20 @@ export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
               variant="secondary"
             />
           )}
+          {shot.club_path_deg !== null && (
+            <MetricCard
+              value={(shot.club_path_deg >= 0 ? '+' : '') + shot.club_path_deg.toFixed(1)}
+              unit="°"
+              label="Club Path"
+              subtext="radar"
+              variant="secondary"
+            />
+          )}
           {shot.launch_angle_horizontal !== null && (
             <MetricCard
-              value={shot.launch_angle_horizontal.toFixed(1)}
+              value={(shot.launch_angle_horizontal >= 0 ? '+' : '') + shot.launch_angle_horizontal.toFixed(1)}
               unit="°"
-              label="Horizontal"
+              label="H. Launch"
               subtext={shot.angle_source ?? undefined}
               variant="secondary"
               confidence={getLaunchAngleQuality(shot.launch_angle_confidence)}

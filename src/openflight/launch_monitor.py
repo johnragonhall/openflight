@@ -231,7 +231,8 @@ class Shot:
     mode: str = "rolling-buffer"
     readings_data: Optional[list] = None
     angle_source: Optional[str] = None  # "radar", "camera", "estimated", or None
-    club_angle_deg: Optional[float] = None  # Club angle of attack from K-LD7
+    club_angle_deg: Optional[float] = None  # Club angle of attack from K-LD7 (vertical)
+    club_path_deg: Optional[float] = None  # Club path from K-LD7 (horizontal)
 
     @property
     def ball_speed_ms(self) -> float:
