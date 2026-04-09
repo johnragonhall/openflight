@@ -907,15 +907,6 @@ def on_shot_detected(shot: Shot):
                         "[SERVER] K-LD7 horizontal angle: %.1f° (conf: %.0f%%)",
                         kld7_angle.horizontal_deg, kld7_angle.confidence * 100,
                     )
-            # Also get club angle of attack
-            club_angle = kld7_tracker.get_club_angle(shot_timestamp=shot_ts)
-            if club_angle and club_angle.vertical_deg is not None:
-                shot.club_angle_deg = club_angle.vertical_deg
-                logger.info(
-                    "[SERVER] K-LD7 club angle: %.1f° (conf: %.0f%%)",
-                    club_angle.vertical_deg, club_angle.confidence * 100,
-                )
-
             # Log raw K-LD7 buffer alongside OPS shot for correlation analysis
             session_log = get_session_logger()
             if session_log and raw_buffer:
@@ -933,12 +924,6 @@ def on_shot_detected(shot: Shot):
                         "accepted": radar_vertical_accepted,
                         "sanity_check": radar_guard_details,
                     } if kld7_angle else None,
-                    club_angle={
-                        "vertical_deg": club_angle.vertical_deg,
-                        "confidence": club_angle.confidence,
-                        "magnitude": club_angle.magnitude,
-                        "num_frames": club_angle.num_frames,
-                    } if club_angle and club_angle.vertical_deg is not None else None,
                 )
 
             kld7_tracker.reset()
