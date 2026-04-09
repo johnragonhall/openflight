@@ -205,6 +205,12 @@ class KLD7Tracker:
 
         logger.info("[KLD7] Stream started: RADC only (3Mbaud, %s)", self.orientation)
 
+        # Increase serial read timeout — at 12M USB Full Speed, large RADC
+        # packets (3072 bytes) can arrive in chunks. The default 0.2s timeout
+        # causes short reads ("Failed to read all of reply") under load.
+        if hasattr(self._radar, '_port') and self._radar._port:
+            self._radar._port.timeout = 0.5
+
         while self._running and errors < max_errors:
             try:
                 for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
