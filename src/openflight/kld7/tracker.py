@@ -207,7 +207,7 @@ class KLD7Tracker:
 
         while self._running and errors < max_errors:
             try:
-                for code, payload in self._radar.stream_frames(frame_codes, max_count=-1, min_frame_interval=0.056):
+                for code, payload in self._radar.stream_frames(frame_codes, max_count=-1):
                     if not self._running:
                         break
 
