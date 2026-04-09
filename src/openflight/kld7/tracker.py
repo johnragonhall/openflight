@@ -319,7 +319,8 @@ class KLD7Tracker:
         )
 
         if not results:
-            logger.debug("[KLD7] RADC: no ball detections for %.1f mph", ball_speed_mph)
+            logger.info("[KLD7] RADC: no ball detections for %.1f mph (%s, %d frames examined)",
+                         ball_speed_mph, self.orientation, len(frames))
             return None
 
         best = results[0]

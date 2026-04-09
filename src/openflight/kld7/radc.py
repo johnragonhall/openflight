@@ -324,6 +324,11 @@ def extract_launch_angle(
         ball_bin_hi=b_hi,
     )
     if not impact_indices:
+        import logging
+        logging.getLogger("openflight.kld7.radc").info(
+            "[KLD7-RADC] No impact frames found (energy_threshold=%.1f, ball_bins=%d-%d, %d frames)",
+            impact_energy_threshold, b_lo, b_hi, len(frames),
+        )
         return []
 
     # Group consecutive impact frames into shot events
