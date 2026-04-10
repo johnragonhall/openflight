@@ -292,6 +292,21 @@ def static_files(path):
     return send_from_directory(app.static_folder, path)
 
 
+@app.route("/api/shutdown", methods=["POST"])
+def api_shutdown():
+    """Cleanly shut down the server via REST API."""
+    logger.info("[SERVER] Shutdown requested via REST API")
+
+    import threading
+    def _shutdown():
+        import time as _time, os, signal
+        _time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+    return {"status": "shutting_down"}, 200
+
+
 # Camera functions
 def init_camera(
     model_path: str = None,

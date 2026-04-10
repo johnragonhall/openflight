@@ -248,7 +248,7 @@ export function useSocket() {
   }, []);
 
   const shutdown = useCallback(() => {
-    socketRef.current?.emit('shutdown');
+    fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
   }, []);
 
   return {
