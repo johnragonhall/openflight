@@ -310,5 +310,6 @@ fi
 
 log "OpenFlight is running! Press Ctrl+C to stop."
 
-# Wait for server process
+# Wait for server process — exits when server stops (Ctrl+C or UI shutdown)
 wait $SERVER_PID
+cleanup
