@@ -860,6 +860,23 @@ def handle_set_radar_config(data):
         socketio.emit("radar_config_error", {"error": str(e)})
 
 
+@socketio.on("shutdown")
+def handle_shutdown():
+    """Cleanly shut down the server and all hardware."""
+    logger.info("[SERVER] Shutdown requested from UI")
+    socketio.emit("shutdown_ack", {"message": "Shutting down..."})
+
+    # Use a background thread so the ack message gets sent first
+    import threading
+    def _shutdown():
+        import time, os, signal
+        time.sleep(0.5)
+        logger.info("[SERVER] Shutting down...")
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+
+
 def on_shot_detected(shot: Shot):
     """Callback when a shot is detected - emit to all clients."""
     global ball_detected, ball_detection_confidence  # pylint: disable=global-statement

@@ -247,6 +247,10 @@ export function useSocket() {
     socketRef.current?.emit('toggle_camera_stream');
   }, []);
 
+  const shutdown = useCallback(() => {
+    socketRef.current?.emit('shutdown');
+  }, []);
+
   return {
     connected,
     mockMode,
@@ -264,5 +268,6 @@ export function useSocket() {
     updateRadarConfig,
     toggleCamera,
     toggleCameraStream,
+    shutdown,
   };
 }

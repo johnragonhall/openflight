@@ -74,12 +74,14 @@ function AppContent() {
     updateRadarConfig,
     toggleCamera,
     toggleCameraStream,
+    shutdown,
   } = useSocket();
 
   const { latestShot, shots, isNewShot, shotVersion } = useShotContext();
 
   const [currentView, setCurrentView] = useState<View>('live');
   const [selectedClub, setSelectedClub] = useState('driver');
+  const [showShutdown, setShowShutdown] = useState(false);
   const { isLaunchDaddyMode, isExploding, triggerExplosion, handleSecretTap } = useLaunchDaddy();
 
   // Trigger explosion when a new shot is detected in Launch Daddy mode
@@ -131,8 +133,34 @@ function AppContent() {
             onToggle={toggleCamera}
           />
           <ConnectionStatus connected={connected} />
+          <button
+            className="power-button"
+            onClick={() => setShowShutdown(true)}
+            title="Shut down"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+              <line x1="12" y1="2" x2="12" y2="12" />
+            </svg>
+          </button>
         </div>
       </header>
+
+      {showShutdown && (
+        <div className="shutdown-overlay">
+          <div className="shutdown-dialog">
+            <p>Shut down OpenFlight?</p>
+            <div className="shutdown-dialog__buttons">
+              <button className="shutdown-dialog__confirm" onClick={() => { shutdown(); setShowShutdown(false); }}>
+                Shut Down
+              </button>
+              <button className="shutdown-dialog__cancel" onClick={() => setShowShutdown(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="nav">
         <button
