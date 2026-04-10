@@ -299,9 +299,19 @@ def api_shutdown():
 
     import threading
     def _shutdown():
-        import time as _time, os, signal
+        import time as _time, os
         _time.sleep(0.5)
-        os.kill(os.getpid(), signal.SIGINT)
+        # Clean up before exit
+        try:
+            if kld7_vertical:
+                kld7_vertical.stop()
+            if kld7_horizontal:
+                kld7_horizontal.stop()
+            stop_monitor()
+        except Exception:
+            pass
+        logger.info("[SERVER] Goodbye")
+        os._exit(0)
 
     threading.Thread(target=_shutdown, daemon=True).start()
     return {"status": "shutting_down"}, 200
@@ -878,16 +888,23 @@ def handle_set_radar_config(data):
 @socketio.on("shutdown")
 def handle_shutdown():
     """Cleanly shut down the server and all hardware."""
-    logger.info("[SERVER] Shutdown requested from UI")
+    logger.info("[SERVER] Shutdown requested from UI (WebSocket)")
     socketio.emit("shutdown_ack", {"message": "Shutting down..."})
 
-    # Use a background thread so the ack message gets sent first
     import threading
     def _shutdown():
-        import time, os, signal
-        time.sleep(0.5)
-        logger.info("[SERVER] Shutting down...")
-        os.kill(os.getpid(), signal.SIGINT)
+        import time as _time, os
+        _time.sleep(0.5)
+        try:
+            if kld7_vertical:
+                kld7_vertical.stop()
+            if kld7_horizontal:
+                kld7_horizontal.stop()
+            stop_monitor()
+        except Exception:
+            pass
+        logger.info("[SERVER] Goodbye")
+        os._exit(0)
 
     threading.Thread(target=_shutdown, daemon=True).start()
 
