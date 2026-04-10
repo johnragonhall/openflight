@@ -145,6 +145,9 @@ cleanup() {
     if [ -n "$BROWSER_PID" ]; then
         kill $BROWSER_PID 2>/dev/null || true
     fi
+    # Chromium forks child processes that survive kill — clean them all
+    pkill -f "chromium.*--kiosk" 2>/dev/null || true
+    pkill -f "chrome.*--kiosk" 2>/dev/null || true
     exit 0
 }
 
