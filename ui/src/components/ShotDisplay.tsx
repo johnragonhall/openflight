@@ -179,15 +179,15 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
             variant="primary"
           />
           <MetricCard
-            value={shot.club_speed_mph ? formatSpeed(shot.club_speed_mph, unitSystem, 1) : '--'}
+            value={shot.club_speed_mph ? formatSpeed(shot.club_speed_mph, unitSystem, 1) : '—'}
             unit={shot.club_speed_mph ? getSpeedUnit(unitSystem) : undefined}
             label="Club Speed"
             subtext={shot.smash_factor ? `${shot.smash_factor.toFixed(2)} smash` : undefined}
             variant="secondary"
           />
           <MetricCard
-            value={hasLaunchAngle ? shot.launch_angle_vertical!.toFixed(1) : '--'}
-            unit={hasLaunchAngle ? 'deg' : undefined}
+            value={hasLaunchAngle ? shot.launch_angle_vertical!.toFixed(1) : '—'}
+            unit={hasLaunchAngle ? '°' : undefined}
             label="V. Launch"
             subtext={hasLaunchAngle ? (shot.angle_source ?? undefined) : undefined}
             variant="secondary"
@@ -196,7 +196,7 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
           {shot.club_angle_deg !== null && (
             <MetricCard
               value={shot.club_angle_deg.toFixed(1)}
-              unit="deg"
+              unit="°"
               label="Club AoA"
               subtext="radar"
               variant="secondary"
@@ -205,7 +205,7 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
           {shot.club_path_deg !== null && (
             <MetricCard
               value={(shot.club_path_deg >= 0 ? '+' : '') + shot.club_path_deg.toFixed(1)}
-              unit="deg"
+              unit="°"
               label="Club Path"
               subtext="radar"
               variant="secondary"
@@ -214,7 +214,7 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
           {shot.spin_axis_deg !== null && (
             <MetricCard
               value={(shot.spin_axis_deg >= 0 ? '+' : '') + shot.spin_axis_deg.toFixed(1)}
-              unit="deg"
+              unit="°"
               label="Spin Axis"
               subtext={shot.spin_axis_deg > 2 ? 'fade' : shot.spin_axis_deg < -2 ? 'draw' : 'straight'}
               variant="secondary"
@@ -223,7 +223,7 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
           {shot.launch_angle_horizontal !== null && (
             <MetricCard
               value={(shot.launch_angle_horizontal >= 0 ? '+' : '') + shot.launch_angle_horizontal.toFixed(1)}
-              unit="deg"
+              unit="°"
               label="H. Launch"
               subtext={shot.angle_source ?? undefined}
               variant="secondary"
@@ -231,7 +231,7 @@ export function ShotDisplay({ shot, animate = false, unitSystem }: ShotDisplayPr
             />
           )}
           <MetricCard
-            value={hasSpin ? formatSpinRpm(shot.spin_rpm!) : '--'}
+            value={hasSpin ? formatSpinRpm(shot.spin_rpm!) : '—'}
             unit={hasSpin ? 'rpm' : undefined}
             label="Spin Rate"
             variant="spin"
