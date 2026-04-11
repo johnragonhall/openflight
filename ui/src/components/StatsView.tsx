@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Shot } from '../types/shot';
 import { computeStats, getUniqueClubs } from '../types/shot';
 import type { UnitSystem } from '../utils/units';
-import { formatDistance, formatSpeed } from '../utils/units';
+import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
 import './StatsView.css';
 
 interface StatsViewProps {
@@ -13,6 +13,8 @@ interface StatsViewProps {
 
 export function StatsView({ shots, onClearSession, unitSystem }: StatsViewProps) {
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
+  const speedUnit = getSpeedUnit(unitSystem);
+  const distanceUnit = getDistanceUnit(unitSystem);
 
   const availableClubs = useMemo(() => getUniqueClubs(shots), [shots]);
 
@@ -66,20 +68,20 @@ export function StatsView({ shots, onClearSession, unitSystem }: StatsViewProps)
         </div>
         <div className="stat-card stat-card--primary">
           <span className="stat-card__value">{formatSpeed(stats.avg_ball_speed, unitSystem, 1)}</span>
-          <span className="stat-card__label">Avg Ball</span>
+          <span className="stat-card__label">Avg Ball ({speedUnit})</span>
         </div>
         <div className="stat-card">
           <span className="stat-card__value">{formatSpeed(stats.max_ball_speed, unitSystem, 1)}</span>
-          <span className="stat-card__label">Max Ball</span>
+          <span className="stat-card__label">Max Ball ({speedUnit})</span>
         </div>
         <div className="stat-card stat-card--primary">
           <span className="stat-card__value">{formatDistance(stats.avg_carry_est, unitSystem, 0)}</span>
-          <span className="stat-card__label">Avg Carry</span>
+          <span className="stat-card__label">Avg Carry ({distanceUnit})</span>
         </div>
         {stats.avg_club_speed && (
           <div className="stat-card">
             <span className="stat-card__value">{formatSpeed(stats.avg_club_speed, unitSystem, 1)}</span>
-            <span className="stat-card__label">Avg Club</span>
+            <span className="stat-card__label">Avg Club ({speedUnit})</span>
           </div>
         )}
         {stats.avg_smash_factor && (
