@@ -193,7 +193,7 @@ uv run pytest tests/ -v
 
 ## License
 
-MIT License - see LICENSE file.
+GNU Affero General Public License v3.0 (AGPL-3.0) - see LICENSE file.
 
 ## Acknowledgments
 
