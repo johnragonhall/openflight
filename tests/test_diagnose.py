@@ -433,3 +433,18 @@ class TestCheckSoundTrigger:
         assert result.status == "fail"
         assert "trigger" in result.detail.lower()
         assert "SEN-14262" in result.hint or "R17" in result.hint
+
+
+class TestParseArgs:
+    def test_default_flags(self):
+        args = diagnose.parse_args([])
+        assert args.require_all is False
+        assert args.no_interactive is False
+
+    def test_require_all_flag(self):
+        args = diagnose.parse_args(["--require-all"])
+        assert args.require_all is True
+
+    def test_no_interactive_flag(self):
+        args = diagnose.parse_args(["--no-interactive"])
+        assert args.no_interactive is True

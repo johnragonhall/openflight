@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from dataclasses import dataclass
@@ -509,8 +510,23 @@ def overall_status(results: list[CheckResult], require_all: bool) -> str:
     return "HEALTHY"
 
 
-def main() -> int:
-    """Entry point — runs all checks and prints summary."""
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="OpenFlight hardware diagnostic",
+    )
+    parser.add_argument(
+        "--require-all", action="store_true",
+        help="Fail if any check is skipped (e.g., optional horizontal K-LD7)",
+    )
+    parser.add_argument(
+        "--no-interactive", action="store_true",
+        help="Skip checks that require user interaction (sound trigger)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
     state = DiagnosticState()
     results: list[CheckResult] = []
 
@@ -524,18 +540,39 @@ def main() -> int:
         check_ops243_software_trigger,
         check_kld7_vertical,
         check_kld7_horizontal,
+        lambda s: check_sound_trigger_end_to_end(s, interactive=not args.no_interactive),
     ]
 
-    for i, check in enumerate(CHECKS, 1):
-        print_check_header(i, len(CHECKS), check.__name__)
-        result = check(state)
-        results.append(result)
-        print_check_result(i, len(CHECKS), result)
+    CHECK_NAMES = [
+        "OPS243 connectivity",
+        "OPS243 rolling buffer persisted",
+        "OPS243 software trigger",
+        "K-LD7 vertical",
+        "K-LD7 horizontal",
+        "Sound trigger + rolling buffer",
+    ]
+
+    try:
+        for i, (check, name) in enumerate(zip(CHECKS, CHECK_NAMES), 1):
+            print_check_header(i, len(CHECKS), name)
+            result = check(state)
+            results.append(result)
+            print_check_result(i, len(CHECKS), result)
+    except KeyboardInterrupt:
+        print()
+        print(_c("Interrupted by user", _YELLOW))
+        return 130
+    finally:
+        if state.ops243_radar is not None:
+            try:
+                state.ops243_radar.disconnect()
+            except Exception:
+                pass
 
     print()
     print(format_summary(results))
-    return 0 if overall_status(results, require_all=False) == "HEALTHY" else 1
+    return 0 if overall_status(results, require_all=args.require_all) == "HEALTHY" else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
