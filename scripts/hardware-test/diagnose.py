@@ -23,6 +23,7 @@ from typing import Literal, Optional
 sys.path.insert(0, "src")
 
 import serial.tools.list_ports
+
 from openflight.kld7.tracker import KLD7Tracker
 from openflight.ops243 import OPS243Radar
 from openflight.rolling_buffer.processor import RollingBufferProcessor

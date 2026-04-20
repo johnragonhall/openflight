@@ -2,11 +2,12 @@
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # diagnose.py is a script — import it as a module for testing
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts" / "hardware-test"))
 
-import diagnose
+import diagnose  # noqa: E402
 
 
 class TestCheckResult:
@@ -80,9 +81,6 @@ class TestOverallStatus:
     def test_unhealthy_on_any_fail(self):
         results = [diagnose.CheckResult(name="A", status="fail")]
         assert diagnose.overall_status(results, require_all=False) == "UNHEALTHY"
-
-
-from unittest.mock import MagicMock, patch
 
 
 class TestDetectOps243Port:
