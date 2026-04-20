@@ -284,3 +284,107 @@ class TestCheckOps243SoftwareTrigger:
 
         assert result.status == "fail"
         assert "parse" in result.detail.lower()
+
+
+class TestCheckKld7Vertical:
+    @patch("diagnose.detect_kld7_ports")
+    def test_skip_when_no_kld7_detected(self, mock_detect):
+        mock_detect.return_value = []
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_kld7_vertical(state)
+        assert result.status == "skip"
+        assert "no K-LD7" in result.detail
+
+    @patch("diagnose.detect_kld7_ports")
+    @patch("diagnose.KLD7Tracker")
+    @patch("diagnose.time.sleep")
+    def test_pass_when_frames_stream(
+        self, mock_sleep, mock_tracker_class, mock_detect,
+    ):
+        mock_detect.return_value = ["/dev/ttyUSB0"]
+        mock_tracker = MagicMock()
+        mock_tracker.connect.return_value = True
+        mock_tracker._ring_buffer = [MagicMock() for _ in range(42)]
+        mock_tracker_class.return_value = mock_tracker
+
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_kld7_vertical(state)
+
+        assert result.status == "pass"
+        assert "42 frames" in result.detail
+        assert state.kld7_vertical_port == "/dev/ttyUSB0"
+        mock_tracker.stop.assert_called_once()
+
+    @patch("diagnose.detect_kld7_ports")
+    @patch("diagnose.KLD7Tracker")
+    @patch("diagnose.time.sleep")
+    def test_fail_when_no_frames(
+        self, mock_sleep, mock_tracker_class, mock_detect,
+    ):
+        mock_detect.return_value = ["/dev/ttyUSB0"]
+        mock_tracker = MagicMock()
+        mock_tracker.connect.return_value = True
+        mock_tracker._ring_buffer = []
+        mock_tracker_class.return_value = mock_tracker
+
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_kld7_vertical(state)
+
+        assert result.status == "fail"
+        assert "0 frames" in result.detail or "no frames" in result.detail.lower()
+
+    @patch("diagnose.detect_kld7_ports")
+    @patch("diagnose.KLD7Tracker")
+    def test_fail_when_connect_returns_false(
+        self, mock_tracker_class, mock_detect,
+    ):
+        mock_detect.return_value = ["/dev/ttyUSB0"]
+        mock_tracker = MagicMock()
+        mock_tracker.connect.return_value = False
+        mock_tracker_class.return_value = mock_tracker
+
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_kld7_vertical(state)
+
+        assert result.status == "fail"
+        assert "connect" in result.detail.lower()
+
+
+class TestCheckKld7Horizontal:
+    @patch("diagnose.detect_kld7_ports")
+    def test_skip_when_no_kld7_detected(self, mock_detect):
+        mock_detect.return_value = []
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_kld7_horizontal(state)
+        assert result.status == "skip"
+        assert "no K-LD7" in result.detail
+
+    @patch("diagnose.detect_kld7_ports")
+    def test_skip_when_only_one_kld7_detected(self, mock_detect):
+        mock_detect.return_value = ["/dev/ttyUSB0"]
+        state = diagnose.DiagnosticState()
+        state.kld7_vertical_port = "/dev/ttyUSB0"
+        result = diagnose.check_kld7_horizontal(state)
+        assert result.status == "skip"
+        assert "only one K-LD7" in result.detail.lower() or "optional" in result.detail.lower()
+
+    @patch("diagnose.detect_kld7_ports")
+    @patch("diagnose.KLD7Tracker")
+    @patch("diagnose.time.sleep")
+    def test_pass_with_second_port(
+        self, mock_sleep, mock_tracker_class, mock_detect,
+    ):
+        mock_detect.return_value = ["/dev/ttyUSB0", "/dev/ttyUSB1"]
+        mock_tracker = MagicMock()
+        mock_tracker.connect.return_value = True
+        mock_tracker._ring_buffer = [MagicMock() for _ in range(40)]
+        mock_tracker_class.return_value = mock_tracker
+
+        state = diagnose.DiagnosticState()
+        state.kld7_vertical_port = "/dev/ttyUSB0"
+
+        result = diagnose.check_kld7_horizontal(state)
+
+        assert result.status == "pass"
+        assert "/dev/ttyUSB1" in result.detail
+        assert state.kld7_horizontal_port == "/dev/ttyUSB1"

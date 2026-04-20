@@ -22,6 +22,7 @@ from typing import Literal, Optional
 sys.path.insert(0, "src")
 
 import serial.tools.list_ports
+from openflight.kld7.tracker import KLD7Tracker
 from openflight.ops243 import OPS243Radar
 from openflight.rolling_buffer.processor import RollingBufferProcessor
 
@@ -264,6 +265,142 @@ def check_ops243_software_trigger(state: DiagnosticState) -> CheckResult:
     )
 
 
+def check_kld7_vertical(state: DiagnosticState) -> CheckResult:
+    """Check 4 — verify vertical K-LD7 connects and streams frames.
+
+    Uses the first detected K-LD7 port; Check 5 uses the second if
+    present. Streams for 1 second and verifies at least 5 frames
+    arrived (expected ~34 fps in the configured mode).
+    """
+    start = time.time()
+    ports = detect_kld7_ports()
+    if not ports:
+        return CheckResult(
+            name="K-LD7 vertical",
+            status="skip",
+            detail="no K-LD7 detected on any USB-serial port",
+            elapsed_s=time.time() - start,
+        )
+
+    port = ports[0]
+    tracker = KLD7Tracker(port=port, orientation="vertical")
+    try:
+        if not tracker.connect():
+            return CheckResult(
+                name="K-LD7 vertical",
+                status="fail",
+                detail=f"{port}: connect returned False (kld7 library or device error)",
+                elapsed_s=time.time() - start,
+            )
+
+        tracker.start()
+        stream_window_s = 1.0
+        time.sleep(stream_window_s)
+        frame_count = len(tracker._ring_buffer)
+    except Exception as e:
+        return CheckResult(
+            name="K-LD7 vertical",
+            status="fail",
+            detail=f"{port}: {type(e).__name__}: {e}",
+            elapsed_s=time.time() - start,
+        )
+    finally:
+        try:
+            tracker.stop()
+        except Exception:
+            pass
+
+    if frame_count < 5:
+        return CheckResult(
+            name="K-LD7 vertical",
+            status="fail",
+            detail=f"{port}: only {frame_count} frames in {stream_window_s}s (expected >= 5)",
+            hint="Detected but no frames streaming — check K-LD7 firmware / cable",
+            elapsed_s=time.time() - start,
+        )
+
+    fps = frame_count / stream_window_s
+    state.kld7_vertical_port = port
+    return CheckResult(
+        name="K-LD7 vertical",
+        status="pass",
+        detail=f"{port} • {frame_count} frames in {stream_window_s:.1f}s (~{fps:.0f} fps)",
+        elapsed_s=time.time() - start,
+    )
+
+
+def check_kld7_horizontal(state: DiagnosticState) -> CheckResult:
+    """Check 5 — verify horizontal K-LD7 connects and streams frames.
+
+    Uses the second detected K-LD7 port. Horizontal K-LD7 is optional,
+    so SKIP cleanly when only one K-LD7 is present.
+    """
+    start = time.time()
+    ports = detect_kld7_ports()
+    if not ports:
+        return CheckResult(
+            name="K-LD7 horizontal",
+            status="skip",
+            detail="no K-LD7 detected on any USB-serial port",
+            elapsed_s=time.time() - start,
+        )
+
+    candidate_ports = [p for p in ports if p != state.kld7_vertical_port]
+    if not candidate_ports:
+        return CheckResult(
+            name="K-LD7 horizontal",
+            status="skip",
+            detail="Only one K-LD7 detected — horizontal is optional",
+            elapsed_s=time.time() - start,
+        )
+
+    port = candidate_ports[0]
+    tracker = KLD7Tracker(port=port, orientation="horizontal")
+    try:
+        if not tracker.connect():
+            return CheckResult(
+                name="K-LD7 horizontal",
+                status="fail",
+                detail=f"{port}: connect returned False",
+                elapsed_s=time.time() - start,
+            )
+
+        tracker.start()
+        stream_window_s = 1.0
+        time.sleep(stream_window_s)
+        frame_count = len(tracker._ring_buffer)
+    except Exception as e:
+        return CheckResult(
+            name="K-LD7 horizontal",
+            status="fail",
+            detail=f"{port}: {type(e).__name__}: {e}",
+            elapsed_s=time.time() - start,
+        )
+    finally:
+        try:
+            tracker.stop()
+        except Exception:
+            pass
+
+    if frame_count < 5:
+        return CheckResult(
+            name="K-LD7 horizontal",
+            status="fail",
+            detail=f"{port}: only {frame_count} frames in {stream_window_s}s",
+            hint="Detected but no frames streaming — check K-LD7 firmware / cable",
+            elapsed_s=time.time() - start,
+        )
+
+    fps = frame_count / stream_window_s
+    state.kld7_horizontal_port = port
+    return CheckResult(
+        name="K-LD7 horizontal",
+        status="pass",
+        detail=f"{port} • {frame_count} frames in {stream_window_s:.1f}s (~{fps:.0f} fps)",
+        elapsed_s=time.time() - start,
+    )
+
+
 def format_summary(results: list[CheckResult]) -> str:
     """Format the summary block printed at the end of a run."""
     passed = sum(1 for r in results if r.status == "pass")
@@ -308,6 +445,8 @@ def main() -> int:
         check_ops243_connectivity,
         check_ops243_rolling_buffer_persisted,
         check_ops243_software_trigger,
+        check_kld7_vertical,
+        check_kld7_horizontal,
     ]
 
     for i, check in enumerate(CHECKS, 1):
