@@ -401,6 +401,83 @@ def check_kld7_horizontal(state: DiagnosticState) -> CheckResult:
     )
 
 
+def check_sound_trigger_end_to_end(
+    state: DiagnosticState, interactive: bool = True,
+) -> CheckResult:
+    """Check 6 — verify sound trigger path fires a hardware trigger.
+
+    Re-arms the rolling buffer (Check 3 consumed it), prompts the user
+    to clap or tap the SEN-14262 sensor, waits up to 15s for the
+    hardware trigger, and parses the resulting capture.
+    """
+    start = time.time()
+    if state.ops243_radar is None:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="skip",
+            detail="skipped because OPS243 is not connected",
+            elapsed_s=time.time() - start,
+        )
+    if not interactive:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="skip",
+            detail="skipped — interactive mode disabled (--no-interactive)",
+            elapsed_s=time.time() - start,
+        )
+
+    radar = state.ops243_radar
+    try:
+        radar.rearm_rolling_buffer()
+    except Exception as e:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="fail",
+            detail=f"Failed to rearm rolling buffer: {type(e).__name__}: {e}",
+            elapsed_s=time.time() - start,
+        )
+
+    print(f"        {_c('► Clap loudly or tap the SEN-14262 sensor now.', _BOLD)}")
+    print(f"        {_c('  Waiting up to 15 seconds...', _DIM)}")
+
+    try:
+        response = radar.wait_for_hardware_trigger(timeout=15.0)
+    except Exception as e:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="fail",
+            detail=f"wait_for_hardware_trigger raised {type(e).__name__}: {e}",
+            elapsed_s=time.time() - start,
+        )
+
+    if not response:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="fail",
+            detail="No hardware trigger fired within 15 seconds",
+            hint="Check SEN-14262 wiring to OPS243 HOST_INT pin. Adjust R17 resistor if sensor too quiet.",
+            elapsed_s=time.time() - start,
+        )
+
+    processor = RollingBufferProcessor()
+    capture = processor.parse_capture(response)
+    if capture is None:
+        return CheckResult(
+            name="Sound trigger + rolling buffer",
+            status="fail",
+            detail="Trigger fired but capture response did not parse",
+            elapsed_s=time.time() - start,
+        )
+
+    n = len(capture.i_samples)
+    return CheckResult(
+        name="Sound trigger + rolling buffer",
+        status="pass",
+        detail=f"Hardware trigger fired, capture valid ({n} samples)",
+        elapsed_s=time.time() - start,
+    )
+
+
 def format_summary(results: list[CheckResult]) -> str:
     """Format the summary block printed at the end of a run."""
     passed = sum(1 for r in results if r.status == "pass")

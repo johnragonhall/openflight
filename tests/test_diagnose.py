@@ -388,3 +388,48 @@ class TestCheckKld7Horizontal:
         assert result.status == "pass"
         assert "/dev/ttyUSB1" in result.detail
         assert state.kld7_horizontal_port == "/dev/ttyUSB1"
+
+
+class TestCheckSoundTrigger:
+    def test_skip_when_no_radar(self):
+        state = diagnose.DiagnosticState()
+        result = diagnose.check_sound_trigger_end_to_end(state, interactive=True)
+        assert result.status == "skip"
+
+    def test_skip_when_not_interactive(self):
+        state = diagnose.DiagnosticState()
+        state.ops243_radar = MagicMock()
+        result = diagnose.check_sound_trigger_end_to_end(state, interactive=False)
+        assert result.status == "skip"
+        assert "interactive" in result.detail.lower()
+
+    @patch("diagnose.RollingBufferProcessor")
+    def test_pass_with_trigger_and_valid_capture(self, mock_processor_class):
+        state = diagnose.DiagnosticState()
+        radar = MagicMock()
+        radar.wait_for_hardware_trigger.return_value = '{"I":[...]}'
+        state.ops243_radar = radar
+
+        mock_capture = MagicMock()
+        mock_capture.i_samples = [0] * 4096
+        mock_processor = MagicMock()
+        mock_processor.parse_capture.return_value = mock_capture
+        mock_processor_class.return_value = mock_processor
+
+        result = diagnose.check_sound_trigger_end_to_end(state, interactive=True)
+
+        assert result.status == "pass"
+        assert "4096" in result.detail
+        radar.rearm_rolling_buffer.assert_called_once()
+
+    def test_fail_on_timeout(self):
+        state = diagnose.DiagnosticState()
+        radar = MagicMock()
+        radar.wait_for_hardware_trigger.return_value = ""
+        state.ops243_radar = radar
+
+        result = diagnose.check_sound_trigger_end_to_end(state, interactive=True)
+
+        assert result.status == "fail"
+        assert "trigger" in result.detail.lower()
+        assert "SEN-14262" in result.hint or "R17" in result.hint
