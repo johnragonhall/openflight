@@ -291,3 +291,285 @@ class TestAngleBoundsValidation:
         """extract_launch_angle should accept horizontal orientation."""
         results = extract_launch_angle([], orientation="horizontal")
         assert results == []
+
+
+class TestOpsBinSoftAnchor:
+    """Tests for the OPS-expected-bin soft penalty in extract_launch_angle.
+
+    The soft anchor reduces the SNR^2 weight of frames whose peak bin is
+    far from the OPS-expected bin (clutter stripes), so the final
+    weighted angle is dominated by the frame whose peak bin actually
+    lines up with the OPS-measured ball speed.
+    """
+
+    # K-LD7 antenna geometry (must match radc.py)
+    _D = 8.0e-3
+    _LAMBDA = 3e8 / 24.125e9
+
+    @classmethod
+    def _phase_for_angle(cls, angle_deg: float) -> float:
+        """Inverse of per_bin_angle_deg: returns Δφ in radians."""
+        sin_theta = np.sin(np.radians(angle_deg))
+        return float(2.0 * np.pi * cls._D * sin_theta / cls._LAMBDA)
+
+    @staticmethod
+    def _pack_payload(
+        f1a_iq: np.ndarray, f2a_iq: np.ndarray,
+    ) -> bytes:
+        """Pack complex I/Q into a 3072-byte RADC payload."""
+        payload = bytearray(3072)
+        for slot, iq in ((0, f1a_iq), (2, f2a_iq)):
+            i_vals = (iq.real + ADC_MIDPOINT).astype(np.uint16)
+            q_vals = (iq.imag + ADC_MIDPOINT).astype(np.uint16)
+            payload[slot * 512: (slot + 1) * 512] = i_vals.tobytes()
+            payload[(slot + 1) * 512: (slot + 2) * 512] = q_vals.tobytes()
+        return bytes(payload)
+
+    @classmethod
+    def _make_frame_at_bin(
+        cls,
+        peak_bin: int,
+        angle_deg: float,
+        amplitude: float = 6000.0,
+        seed: int | None = 0,
+        ts: float = 1000.0,
+    ) -> dict:
+        """Build a synthetic RADC frame whose F1A/F2A spectrum peaks at
+        `peak_bin` and whose interferometric angle at that bin is
+        approximately `angle_deg`."""
+        n = 256
+        fft_size = 2048
+        # Tone is constructed for a 256-sample window; freq scales by FFT size
+        freq = peak_bin / fft_size
+        t = np.arange(n)
+        carrier = np.exp(2j * np.pi * freq * t)
+        signal = amplitude * carrier
+
+        # Per-channel noise; F1A and F2A get independent noise but the
+        # *signal* in F2A is phase-shifted relative to F1A.
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = np.random.default_rng()
+        noise1 = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 80.0
+        noise2 = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 80.0
+
+        delta_phi = cls._phase_for_angle(angle_deg)
+        f1a_iq = signal + noise1
+        f2a_iq = signal * np.exp(-1j * delta_phi) + noise2
+
+        return {
+            "timestamp": ts,
+            "radc": cls._pack_payload(f1a_iq, f2a_iq),
+            "tdat": None,
+            "pdat": [],
+        }
+
+    @classmethod
+    def _noise_frame(cls, ts: float, seed: int) -> dict:
+        """A frame with very low-amplitude noise so the impact detector
+        has a non-zero baseline to compare against, but the noise floor
+        is whitened enough that no random bin in the ball band passes
+        the SNR>=2 single-frame floor inside extract_launch_angle."""
+        n = 256
+        rng = np.random.default_rng(seed)
+        # Hann-window of pure white noise has a flat magnitude spectrum
+        # in expectation, so peak/median ratio is close to 1. Amplitude
+        # itself doesn't change the peak/median ratio — only the energy
+        # vs the impact threshold. Keep low and the impact detector
+        # will not pick up these frames.
+        noise1 = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 5.0
+        noise2 = (rng.standard_normal(n) + 1j * rng.standard_normal(n)) * 5.0
+        return {
+            "timestamp": ts,
+            "radc": cls._pack_payload(noise1, noise2),
+            "tdat": None,
+            "pdat": [],
+        }
+
+    @classmethod
+    def _impact_window(
+        cls, center_frame: int, total: int, ball_frames: list[dict],
+    ) -> list[dict]:
+        """Build a list of `total` synthesized RADC frames. Most are
+        low-energy noise (so the impact detector's median energy
+        baseline is non-zero); positions starting at `center_frame`
+        get the supplied ball/clutter frames."""
+        out = [cls._noise_frame(ts=1000.0 + i * 0.056, seed=900 + i)
+               for i in range(total)]
+        for offset, frame in enumerate(ball_frames):
+            idx = center_frame + offset
+            if 0 <= idx < total:
+                frame["timestamp"] = 1000.0 + idx * 0.056
+                out[idx] = frame
+        return out
+
+    @classmethod
+    def _two_strong_frames(
+        cls,
+        ops_bin: int,
+        anchor_offset: int,
+        anchor_angle: float,
+        outlier_offset: int,
+        outlier_angle: float,
+    ) -> list[dict]:
+        """Build a small frame list where every frame either lands at
+        bin (ops_bin + anchor_offset) with `anchor_angle`, or at bin
+        (ops_bin + outlier_offset) with `outlier_angle`. There are no
+        noise filler frames, so the per-frame loop sees exactly the
+        intended 2 detections after impact-window expansion. With
+        len(angs) == 2 the outlier-rejection step is skipped (it only
+        activates when len(angs) >= 3), so the average reflects the
+        soft-anchor weights cleanly."""
+        a = cls._make_frame_at_bin(
+            peak_bin=ops_bin + anchor_offset, angle_deg=anchor_angle,
+            amplitude=8000.0, seed=101,
+        )
+        b = cls._make_frame_at_bin(
+            peak_bin=ops_bin + outlier_offset, angle_deg=outlier_angle,
+            amplitude=8000.0, seed=202,
+        )
+        # Place the two strong frames adjacent so the impact detector
+        # groups them, and pad the rest with clones of the same frames
+        # so impact-window expansion can't pull in random-noise frames.
+        # 4 frames keeps things minimal but lets the (-1, +3) expansion
+        # only see clones of these two, not random noise.
+        frames = [
+            dict(a, timestamp=1.0),
+            dict(b, timestamp=2.0),
+            dict(a, timestamp=3.0),
+            dict(b, timestamp=4.0),
+        ]
+        return frames
+
+    def test_far_outlier_frame_is_downweighted(self):
+        """Two strong frames, equal SNR, both inside the velocity band —
+        the one near the OPS bin should dominate when the penalty is on.
+
+        The frame furthest from the median angle is dropped by the
+        existing outlier-rejection step. With the soft anchor on, the
+        surviving outlier frame still gets its weight reduced, so the
+        result is pulled clearly toward the OPS-anchored angle.
+        """
+        ops_speed_mph = 70.0
+        ops_bin = 1163
+        speed_tol = 40.0
+
+        # Use _two_strong_frames so the per-frame loop sees only the
+        # ball + clutter detections (and their clones) — no noise.
+        # Ball at OPS bin, +5°. Clutter +60 bins away, -25°.
+        frames = self._two_strong_frames(
+            ops_bin=ops_bin,
+            anchor_offset=0, anchor_angle=5.0,
+            outlier_offset=60, outlier_angle=-25.0,
+        )
+
+        # impact_energy_threshold relative to median energy: with a
+        # window full of strong frames the median ~ peak, so we lower
+        # the gate to ensure detection. (Real captures have a clear
+        # impact spike against a low-energy baseline.)
+        impact_threshold = 0.5
+
+        # PENALTY ON
+        results_on = extract_launch_angle(
+            frames=frames,
+            ops243_ball_speed_mph=ops_speed_mph,
+            speed_tolerance_mph=speed_tol,
+            impact_energy_threshold=impact_threshold,
+            orientation=None,
+            ops_bin_outlier_tol=25,
+            ops_bin_outlier_penalty=10.0,
+        )
+        # PENALTY OFF
+        results_off = extract_launch_angle(
+            frames=frames,
+            ops243_ball_speed_mph=ops_speed_mph,
+            speed_tolerance_mph=speed_tol,
+            impact_energy_threshold=impact_threshold,
+            orientation=None,
+            ops_bin_outlier_tol=25,
+            ops_bin_outlier_penalty=1.0,
+        )
+        assert results_on and results_off
+        on = results_on[0]["launch_angle_deg"]
+        off = results_off[0]["launch_angle_deg"]
+        # The penalty must move the answer toward +5 (anchor angle)
+        # relative to the un-penalized baseline.
+        assert on > off, (
+            f"penalty should pull angle toward anchor; on={on:+.1f} "
+            f"off={off:+.1f}"
+        )
+        assert abs(on - 5.0) < abs(off - 5.0), (
+            f"penalty result should be closer to +5 than baseline; "
+            f"on={on:+.1f} off={off:+.1f}"
+        )
+
+    def test_no_penalty_when_ball_speed_unknown(self):
+        """ops243_ball_speed_mph=None must keep the legacy code path —
+        the penalty is a no-op (no anchor available). Both frames at
+        the same angle must produce that angle as the result."""
+        # Both peaks inside the broad default range (-39 to -7 km/h
+        # => bins ~1250 to ~1857) so they survive the band filter
+        # without an OPS-anchored band.
+        frames = self._two_strong_frames(
+            ops_bin=1300,
+            anchor_offset=0, anchor_angle=10.0,
+            outlier_offset=500, outlier_angle=10.0,
+        )
+
+        results = extract_launch_angle(
+            frames=frames,
+            ops243_ball_speed_mph=None,
+            impact_energy_threshold=0.5,
+            orientation=None,
+        )
+        assert results, "expected at least one detected shot"
+        # Both frames at +10° -> result must be near +10°
+        assert abs(results[0]["launch_angle_deg"] - 10.0) < 5.0
+
+    def test_soft_anchor_layered_on_top_of_band_filter(self):
+        """Strong peaks well outside the OPS-anchored band do NOT make
+        it through to the SNR^2 average. The anchor penalty only acts on
+        frames that already survived the velocity band filter; this
+        layering is what keeps the change safe (we never pull a clutter
+        frame in that the existing band filter would have rejected)."""
+        ops_speed_mph = 70.0
+        ops_bin = 1163
+
+        # Strong tones placed 600 bins from OPS bin — far outside the
+        # ±10 mph band [988, 1318]. The peak inside the band is just
+        # noise, so the resulting frames have low SNR (~2-3) and any
+        # angle the algorithm reports has no physical meaning.
+        far_a = self._make_frame_at_bin(
+            peak_bin=ops_bin + 600, angle_deg=-30.0,
+            amplitude=8000.0, seed=55,
+        )
+        far_b = self._make_frame_at_bin(
+            peak_bin=ops_bin + 610, angle_deg=-30.0,
+            amplitude=8000.0, seed=66,
+        )
+        frames = [
+            dict(far_a, timestamp=1.0),
+            dict(far_b, timestamp=2.0),
+            dict(far_a, timestamp=3.0),
+            dict(far_b, timestamp=4.0),
+        ]
+
+        results = extract_launch_angle(
+            frames=frames,
+            ops243_ball_speed_mph=ops_speed_mph,
+            speed_tolerance_mph=10.0,
+            impact_energy_threshold=0.5,
+            orientation=None,
+        )
+        # Either nothing detected, or whatever the algorithm latches
+        # onto inside the narrow band has near-noise SNR — i.e. the
+        # strong outside-band tone was already filtered. The injected
+        # -30° angle must NOT propagate into the result.
+        if results:
+            assert abs(results[0]["launch_angle_deg"] - (-30.0)) > 5.0, (
+                "strong out-of-band tone leaked into the angle result"
+            )
+            assert results[0]["avg_snr_db"] < 5.0, (
+                "out-of-band peak should not produce a high-SNR shot"
+            )

@@ -286,6 +286,8 @@ def extract_launch_angle(
     ops243_ball_speed_mph: float | None = None,
     speed_tolerance_mph: float = 10.0,
     orientation: str | None = None,
+    ops_bin_outlier_tol: int = 25,
+    ops_bin_outlier_penalty: float = 10.0,
 ) -> list[dict]:
     """Extract vertical launch angle per shot from RADC frames.
 
@@ -294,7 +296,12 @@ def extract_launch_angle(
     2. Group consecutive impacts into shot events
     3. For each shot, run band-limited CFAR in the ball velocity range
     4. Per-bin interferometric angle estimation on ball detections
-    5. SNR²-weighted average angle (heavily favors strongest returns)
+    5. SNR²-weighted average angle (heavily favors strongest returns).
+       When the OPS243 ball speed is supplied, frames whose peak bin is
+       more than ops_bin_outlier_tol away from the OPS-expected bin have
+       their weight reduced by ops_bin_outlier_penalty (default 10×).
+       This downweights persistent clutter stripes that sit inside the
+       ball velocity band but far from the actual ball location.
     6. Apply angle offset
 
     Args:
@@ -303,6 +310,12 @@ def extract_launch_angle(
             club/multipath contamination and works for any club/player.
             If None (offline analysis), uses the broad default ball range.
         speed_tolerance_mph: Search window ± around ops243_ball_speed_mph.
+        ops_bin_outlier_tol: When ops243_ball_speed_mph is provided, frames
+            whose peak bin is more than this many bins from the
+            OPS-expected bin are downweighted in the final average.
+            Has no effect when ops243_ball_speed_mph is None.
+        ops_bin_outlier_penalty: Weight divisor for outlier frames
+            (default 10×). Set to 1.0 to disable the soft check.
 
     Returns a list of shot dicts, one per detected shot. Each contains
     launch_angle_deg, ball_speed_mph, confidence, and supporting data.
@@ -313,11 +326,22 @@ def extract_launch_angle(
         b_lo, b_hi = ball_bin_range_from_speed(
             ops243_ball_speed_mph, speed_tolerance_mph, fft_size, max_speed_kmh,
         )
+        # Where the ball *should* peak, given the OPS243 speed. Used as a
+        # soft anchor for the SNR²-weighted average below.
+        ball_speed_kmh = ops243_ball_speed_mph * 1.609
+        unambiguous_range = max_speed_kmh * 2.0
+        aliased_kmh = ball_speed_kmh % unambiguous_range
+        if aliased_kmh > max_speed_kmh:
+            aliased_kmh -= unambiguous_range
+        ops_expected_bin: int | None = _velocity_to_bin(
+            aliased_kmh, fft_size, max_speed_kmh,
+        )
     else:
         # Broad default ball velocity range for offline analysis.
         # Ball 100-120 mph aliases to -39 to -7 km/h at RSPI=3 (100 km/h max).
         b_lo = _velocity_to_bin(-39.0, fft_size, max_speed_kmh)
         b_hi = _velocity_to_bin(-7.0, fft_size, max_speed_kmh)
+        ops_expected_bin = None
 
     min_velocity_bin = 150  # skip low-velocity body/clutter
     impact_indices = find_impact_frames(
@@ -359,6 +383,7 @@ def extract_launch_angle(
         peak_angles = []
         peak_snrs = []
         peak_speeds_mph = []
+        peak_bins: list[int] = []
 
         for fi in sorted(frame_set):
             radc_raw = frames[fi].get("radc")
@@ -390,6 +415,7 @@ def extract_launch_angle(
 
             peak_angles.append(float(angles[peak_bin]))
             peak_snrs.append(snr)
+            peak_bins.append(peak_bin)
             vel = bin_to_velocity_kmh(peak_bin, fft_size, max_speed_kmh)
             peak_speeds_mph.append((200.0 + vel) / 1.609)
 
@@ -398,6 +424,7 @@ def extract_launch_angle(
 
         angs = np.array(peak_angles)
         snrs = np.array(peak_snrs)
+        bins_arr = np.array(peak_bins, dtype=int)
 
         if len(angs) == 1:
             # Single-frame detection — accept if SNR is strong.
@@ -407,6 +434,7 @@ def extract_launch_angle(
                 continue
             clean_angs = angs
             clean_snrs = snrs
+            clean_bins = bins_arr
         else:
             # Multi-frame: outlier rejection — drop the point furthest from median
             clean_mask = np.ones(len(angs), dtype=bool)
@@ -416,9 +444,28 @@ def extract_launch_angle(
                 clean_mask[worst] = False
             clean_angs = angs[clean_mask]
             clean_snrs = snrs[clean_mask]
+            clean_bins = bins_arr[clean_mask]
 
-        # SNR²-weighted average of surviving peaks
+        # SNR²-weighted average of surviving peaks. When the OPS-expected
+        # bin is known, frames whose peak bin is far from it (likely
+        # clutter latched onto a persistent stripe) get a weight penalty.
         w = clean_snrs ** 2
+        if (
+            ops_expected_bin is not None
+            and ops_bin_outlier_penalty > 1.0
+            and ops_bin_outlier_tol >= 0
+        ):
+            outlier = np.abs(clean_bins - ops_expected_bin) > ops_bin_outlier_tol
+            if outlier.any():
+                w = w.astype(float).copy()
+                w[outlier] = w[outlier] / ops_bin_outlier_penalty
+                logger.info(
+                    "[RADC] OPS-bin penalty: %d/%d frames > %d bins from "
+                    "expected bin %d, weight /%.1f",
+                    int(outlier.sum()), len(clean_bins),
+                    ops_bin_outlier_tol, ops_expected_bin,
+                    ops_bin_outlier_penalty,
+                )
         total_w = float(np.sum(w))
         if total_w <= 0:
             continue
