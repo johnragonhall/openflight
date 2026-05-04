@@ -477,23 +477,26 @@ def main():
 
     # Connect K-LD7
     print("Connecting K-LD7...")
+    # Use connect_with_recovery to (a) retry past a stuck prior session
+    # by sending GBYE-at-3Mbaud between attempts, and (b) install the
+    # USB Full Speed short-read patch on _read_packet. Same recovery
+    # path the live tracker uses.
     try:
-        kld7 = KLD7(port, baudrate=args.baud)
+        from openflight.kld7.serial_io import connect_with_recovery
+    except ImportError as e:
+        print(f"  WARN: connect_with_recovery unavailable ({e}); "
+              "falling back to single-attempt connect")
+        connect_with_recovery = None  # type: ignore[assignment]
+
+    try:
+        if connect_with_recovery is not None:
+            kld7 = connect_with_recovery(port, baudrate=args.baud, log=print)
+        else:
+            kld7 = KLD7(port, baudrate=args.baud)
     except (KLD7Exception, Exception) as e:
         print(f"Error: {e}")
         sys.exit(1)
     print(f"  Connected: {kld7}")
-
-    # Patch _read_packet for USB Full Speed short reads — same patch
-    # the live tracker applies. Without it, the kld7 library aborts
-    # on every "Failed to read all of reply" and cascades into stream
-    # failures.
-    try:
-        from openflight.kld7.serial_io import install_robust_read_packet
-        install_robust_read_packet(kld7)
-    except ImportError as e:
-        print(f"  WARN: robust _read_packet patch unavailable ({e}); "
-              "stream may fail with short-read errors")
 
     print("Configuring for golf...")
     configure_for_golf(kld7)

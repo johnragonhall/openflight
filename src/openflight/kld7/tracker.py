@@ -84,51 +84,19 @@ class KLD7Tracker:
 
         # The kld7 library always opens at 115200, sends INIT to negotiate
         # up to 3Mbaud, then switches. If a prior session left the K-LD7 at
-        # 3Mbaud (crashed before GBYE), the 115200-baud INIT is garbled.
+        # 3Mbaud (crashed before GBYE), the 115200-baud INIT is garbled
+        # and the next command times out.
         #
-        # Recovery: send a binary GBYE packet at 3Mbaud to cleanly close
-        # the prior session, returning the K-LD7 to its idle state where
-        # it accepts INIT at 115200 again.
-        import struct
-        import serial as pyserial
-
-        # Binary GBYE packet: 4-byte command + 4-byte length (0)
-        gbye_packet = struct.pack("<4sI", b"GBYE", 0)
-
-        max_attempts = 5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                self._radar = KLD7(port, baudrate=3000000)
-                actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
-                logger.info("[KLD7] Connected on %s at %s baud (attempt %d/%d)",
-                             port, actual_baud, attempt, max_attempts)
-                break
-            except Exception as e:
-                logger.warning("[KLD7] Connect attempt %d/%d failed: %s",
-                                attempt, max_attempts, e)
-                if attempt >= max_attempts:
-                    logger.error("[KLD7] Connection failed after %d attempts — giving up",
-                                  max_attempts, exc_info=True)
-                    return False
-
-                # Send binary GBYE at 3Mbaud to close a stuck prior session,
-                # then drain. The K-LD7 will return to idle and accept INIT
-                # at 115200 on the next attempt.
-                try:
-                    with pyserial.Serial(port, 3000000, parity=pyserial.PARITY_EVEN,
-                                         timeout=0.1) as ser:
-                        ser.reset_input_buffer()
-                        ser.write(gbye_packet)
-                        ser.flush()
-                        time.sleep(0.3)
-                        # Drain any response
-                        while ser.in_waiting:
-                            ser.read(ser.in_waiting)
-                            time.sleep(0.1)
-                    logger.info("[KLD7] Sent GBYE at 3Mbaud to reset prior session")
-                except Exception as flush_err:
-                    logger.debug("[KLD7] GBYE flush failed: %s", flush_err)
-                time.sleep(0.3)
+        # `connect_with_recovery` retries with a GBYE-at-3Mbaud reset
+        # between attempts, and applies the robust _read_packet patch.
+        from .serial_io import connect_with_recovery
+        try:
+            self._radar = connect_with_recovery(port, baudrate=3000000, log=logger.info)
+        except Exception:
+            logger.error("[KLD7] Connection failed after retries — giving up",
+                          exc_info=True)
+            return False
+        actual_baud = getattr(self._radar._port, 'baudrate', 'unknown') if hasattr(self._radar, '_port') else 'unknown'
 
         self._configure_for_golf()
         logger.info("[KLD7] Ready: port=%s, baud=%s, range=%dm, speed=%dkm/h, orientation=%s",
@@ -213,11 +181,9 @@ class KLD7Tracker:
 
         logger.info("[KLD7] Stream started: RADC only (3Mbaud, %s)", self.orientation)
 
-        # Patch the library's _read_packet to handle USB Full Speed
-        # short reads (FTDI splits large packets across microframes).
-        # See serial_io.install_robust_read_packet for why.
-        from .serial_io import install_robust_read_packet
-        install_robust_read_packet(self._radar)
+        # Note: the robust _read_packet patch is applied during connect()
+        # via serial_io.connect_with_recovery, so we don't need to
+        # re-install it here.
 
         while self._running and errors < max_errors:
             try:

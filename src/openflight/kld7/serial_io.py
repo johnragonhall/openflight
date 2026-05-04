@@ -1,27 +1,31 @@
 """Serial I/O helpers for the K-LD7.
 
-The kld7 Python library's default `_read_packet` calls
-`serial.read(length)` exactly once. At 12M USB Full Speed the FTDI
-driver splits large packets across USB microframes, so
-`serial.read(length)` often returns whatever bytes are available
-rather than the full requested length. The library treats the short
-read as an error ("Failed to read all of reply") and continues with
-a truncated packet, which then fails to parse and cascades into
-"KLD7Exception: Wrong length reply" / drops the rest of the stream.
+Two cross-cutting concerns shared by the live tracker and the offline
+capture scripts:
 
-The patch below replaces `_read_packet` with a retrying version that
-loops until it has the full payload (or the underlying read returns
-zero bytes, which means timeout / EOF).
+1. ``install_robust_read_packet`` — Replace the kld7 library's
+   ``_read_packet`` with a version that loops over partial reads.
+   The default reads the 8-byte header and the variable-length body
+   each with a single ``serial.read(N)`` call, but at 12M USB Full
+   Speed the FTDI driver splits large packets across USB microframes.
+   Without the loop you get "Failed to read all of reply" on the body
+   and "Wrong length reply" on the header.
 
-Both the live tracker and offline capture scripts apply this same
-patch on every connected radar, so the choice of code path doesn't
-change the recovery behaviour.
+2. ``connect_with_recovery`` — Open a kld7.KLD7 with retry. If a
+   prior session crashed mid-stream the radar is left at 3 Mbaud and
+   the next ``INIT`` at 115200 is garbled, leaving the radar in an
+   undefined state that returns "Timeout waiting for reply" on the
+   first command. We recover by sending a binary GBYE packet at
+   3 Mbaud to cleanly close the prior session before retrying INIT.
+
+Both helpers are idempotent and safe to call from any orientation.
 """
 
 from __future__ import annotations
 
 import struct
-from typing import Any
+import time
+from typing import Any, Optional
 
 
 def install_robust_read_packet(radar: Any) -> None:
@@ -71,3 +75,95 @@ def install_robust_read_packet(radar: Any) -> None:
         return reply, payload
 
     radar._read_packet = lambda: _robust_read_packet(radar)
+
+
+# Binary GBYE packet: 4-byte command + 4-byte length (0).
+_GBYE_PACKET = struct.pack("<4sI", b"GBYE", 0)
+
+
+def _send_gbye_at_3mbaud(port: str, log: Optional[Any] = None) -> None:
+    """Send a binary GBYE packet at 3 Mbaud to cleanly close a stuck
+    prior session, then drain any response. Best-effort — failures
+    are silenced (a stuck radar may also fail to respond to GBYE).
+    """
+    try:
+        import serial as pyserial  # type: ignore[import-not-found]
+    except ImportError:
+        return
+    try:
+        with pyserial.Serial(
+            port, 3000000, parity=pyserial.PARITY_EVEN, timeout=0.1,
+        ) as ser:
+            ser.reset_input_buffer()
+            ser.write(_GBYE_PACKET)
+            ser.flush()
+            time.sleep(0.3)
+            while ser.in_waiting:
+                ser.read(ser.in_waiting)
+                time.sleep(0.1)
+        if log is not None:
+            log("[KLD7] Sent GBYE at 3Mbaud to reset prior session")
+    except Exception as e:  # pylint: disable=broad-except
+        if log is not None:
+            log(f"[KLD7] GBYE flush failed: {e}")
+
+
+def connect_with_recovery(
+    port: str,
+    baudrate: int = 3_000_000,
+    max_attempts: int = 5,
+    log: Optional[Any] = None,
+) -> Any:
+    """Open a kld7.KLD7 instance, recovering from a stuck prior
+    session.
+
+    The kld7 library always opens at 115200 and negotiates up via
+    INIT. If a previous session left the radar streaming at 3 Mbaud,
+    the INIT is garbled and the radar enters an undefined state in
+    which the first command times out. We recover by sending a
+    binary GBYE packet at 3 Mbaud between attempts.
+
+    Args:
+        port: Serial port path (e.g. ``/dev/ttyUSB0``).
+        baudrate: Target baud after INIT negotiation. Default 3 Mbaud.
+        max_attempts: Number of connect attempts before giving up.
+        log: Optional callable accepting a single string for progress
+            messages (use ``logger.info`` or ``print``).
+
+    Returns:
+        A connected ``kld7.KLD7`` instance with the robust _read_packet
+        patch already installed.
+
+    Raises:
+        Exception: re-raises the last underlying connection error if
+            all attempts fail.
+    """
+    from kld7 import KLD7  # type: ignore[import-not-found]
+
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            radar = KLD7(port, baudrate=baudrate)
+            install_robust_read_packet(radar)
+            if log is not None:
+                log(
+                    f"[KLD7] Connected on {port} at {baudrate} baud "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+            return radar
+        except Exception as e:  # pylint: disable=broad-except
+            last_err = e
+            if log is not None:
+                log(
+                    f"[KLD7] Connect attempt {attempt}/{max_attempts} "
+                    f"failed: {e}"
+                )
+            if attempt >= max_attempts:
+                break
+            _send_gbye_at_3mbaud(port, log=log)
+            time.sleep(0.3)
+
+    # All attempts failed.
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("connect_with_recovery: no attempts ran")
