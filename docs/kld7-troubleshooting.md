@@ -14,8 +14,41 @@ Two K-LD7 radars measure independent angle planes:
 |-------------|---------|
 | **Separate FTDI adapters** | Each K-LD7 needs its own 3.3V FTDI USB-to-serial adapter |
 | **USB 3.0 ports** | Both FTDI adapters must be on USB 3.0 ports. USB 2.0 causes packet errors due to insufficient bandwidth at 3Mbaud. The OPS243 can use USB 2.0. |
+| **Different USB controllers** | Spread the two K-LD7s across different USB *controllers* on the Pi, not just different ports. Two K-LD7s sharing one xHCI controller can starve each other at 3 Mbaud. See [USB bus arrangement](#usb-bus-arrangement) below. |
 | **Different base frequencies** | Vertical: RBFR=0 (24.05 GHz), Horizontal: RBFR=2 (24.25 GHz). Set automatically by the server. |
 | **Stable device names** | Use udev rules to prevent port swaps on reboot (see [setup guide](raspberry-pi-setup.md#stable-device-names-udev-rules)) |
+
+### USB bus arrangement
+
+The Raspberry Pi 5 exposes two independent xHCI controllers (one per pair of physical ports — the two USB 3.0 sockets share one controller, the two USB 2.0 sockets share the other). When both K-LD7s end up on the same controller, the controller's scheduling can't keep up with two simultaneous 3 Mbaud streams and you'll see one or more of:
+
+- `KLD7Exception: Wrong length reply` on connect
+- `KLD7Exception: Timeout waiting for reply` on connect
+- `Failed to read all of reply` mid-stream
+- One radar's `Stream health (...) Hz` log dropping below 25 Hz
+- One radar's `kld7_buffer` snapshots showing significantly fewer frames than the other
+
+**Verify your bus arrangement:**
+
+```bash
+ls -l /dev/serial/by-path/
+```
+
+Look at the `platform-xhci-hcd.<N>` prefix — the `<N>` is the controller number. Both K-LD7s on `xhci-hcd.0` (or both on `xhci-hcd.1`) is the failure mode. You want one on `xhci-hcd.0` and the other on `xhci-hcd.1`:
+
+```
+# Bad — both K-LD7s on controller 0:
+platform-xhci-hcd.0-usb-0:1:1.0-port0 -> ../../ttyUSB0    # K-LD7 vertical
+platform-xhci-hcd.0-usb-0:2:1.0-port0 -> ../../ttyUSB1    # K-LD7 horizontal
+platform-xhci-hcd.1-usb-0:2:1.0       -> ../../ttyACM0    # OPS243
+
+# Good — K-LD7s split across both controllers:
+platform-xhci-hcd.0-usb-0:1:1.0-port0 -> ../../ttyUSB0    # K-LD7 vertical (USB 3.0)
+platform-xhci-hcd.1-usb-0:1:1.0-port0 -> ../../ttyUSB1    # K-LD7 horizontal (USB 2.0 still works)
+platform-xhci-hcd.1-usb-0:2:1.0       -> ../../ttyACM0    # OPS243
+```
+
+**Fix:** physically move one of the K-LD7 FTDI adapters to a port served by the *other* controller (typically the USB 2.0 ports on Pi 5). At 3 Mbaud the FTDI runs at USB Full Speed (12 Mbps) which a USB 2.0 port handles fine — the issue is bus contention, not raw bandwidth.
 
 ### Starting with dual radars
 
@@ -59,11 +92,31 @@ Full shots (100+ mph) have much higher detection rates than half shots. If horiz
 [KLD7] Connect attempt 1/5 failed: Wrong length reply
 ```
 
-**Cause:** The K-LD7 was left at 3Mbaud from a prior session that crashed without sending GBYE. The kld7 library tries to INIT at 115200 baud, but the K-LD7 is still at 3Mbaud and can't parse the packet.
+**Most likely cause #1: stuck prior session.** The K-LD7 was left at 3Mbaud from a prior session that crashed without sending GBYE. The kld7 library tries to INIT at 115200 baud, but the K-LD7 is still at 3Mbaud and can't parse the packet.
 
-**Automatic recovery:** The server sends a binary GBYE packet at 3Mbaud between retry attempts to reset the K-LD7 to its idle state. This usually succeeds on attempt 2. If it doesn't recover after 5 attempts, the server exits.
+> **Automatic recovery:** The server (and `scripts/analysis/capture_kld7_radc.py`) sends a binary GBYE packet at 3Mbaud between retry attempts to reset the K-LD7 to its idle state. This usually succeeds on attempt 2. If it doesn't recover after 5 attempts, the server exits.
+>
+> **Manual recovery:** Power cycle the K-LD7 (unplug USB, wait 3 seconds, replug).
 
-**Manual recovery:** Power cycle the K-LD7 (unplug USB, wait 3 seconds, replug).
+**Most likely cause #2: USB bus contention.** Both K-LD7s are plugged into ports served by the same USB controller on the Pi, and the controller can't keep up at 3 Mbaud. See [USB bus arrangement](#usb-bus-arrangement). The retry/GBYE logic can't recover from this because it's a hardware-level scheduling problem, not a stuck-session problem.
+
+### "Timeout waiting for reply" on startup
+
+**Symptom:** Server logs show:
+```
+[KLD7] Connect attempt 1/5 failed: Timeout waiting for reply
+[KLD7] Connect attempt 2/5 failed: Timeout waiting for reply
+... (continues to attempt 5/5)
+```
+
+Unlike "Wrong length reply", this means the K-LD7 isn't responding at all — even after the GBYE-at-3Mbaud reset between attempts.
+
+**Most likely cause: USB bus contention.** Both K-LD7s on the same USB controller can leave one of them silently unable to transmit. See [USB bus arrangement](#usb-bus-arrangement) — verify with `ls -l /dev/serial/by-path/` that the two K-LD7s are on different `xhci-hcd.<N>` controllers.
+
+Other possibilities:
+- Wrong port specified (`--kld7-port` / `--kld7-horizontal-port`).
+- Bad USB cable.
+- Hardware failure — try a different FTDI adapter.
 
 ### "No K-LD7 EVAL board detected"
 
@@ -112,11 +165,13 @@ If `--kld7` or `--kld7-horizontal` is passed but the radar fails to connect afte
 
 ### Truncated RADC packets
 
-**Symptom:** RADC payload is less than 3072 bytes.
+**Symptom:** RADC payload is less than 3072 bytes, or `Stream health (...): N Hz` log lines show one orientation running below 25 Hz.
 
-**Cause:** USB short reads from the FTDI driver. These frames are silently dropped — only complete 3072-byte RADC packets are processed.
+**Causes:**
 
-**Fix:** Ensure both K-LD7 FTDI adapters are on USB 3.0 ports.
+1. **USB Full Speed short reads** are normal at 3 Mbaud and now handled in software — `serial_io.install_robust_read_packet()` loops over the read until the full packet arrives, so individual short reads no longer drop frames.
+2. **USB controller contention** — if persistent, both K-LD7s are likely on the same xHCI controller. See [USB bus arrangement](#usb-bus-arrangement).
+3. **USB 2.0 port without a free controller** — USB 2.0 is fine *if* the port is served by a different controller from the other K-LD7. Two K-LD7s on the same USB 2.0 hub will contend.
 
 ## Angle Accuracy
 
