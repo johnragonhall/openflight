@@ -1,83 +1,59 @@
 import React, { useState } from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ClubPicker } from '../components/ClubPicker';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ShotDisplay } from '../components/ShotDisplay';
-import { StatsView } from '../components/StatsView';
+import { ShotTracer2D } from '../components/ShotTracer2D';
+import { ShotTracer3D } from '../components/ShotTracer3D';
+import { useConnection } from '../state/ConnectionContext';
 import { useUnitPreference } from '../state/useUnitPreference';
 import type { Shot } from '../types/shot';
+import type { RootStackParamList, MainTabParamList } from '../types/navigation';
 import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
 import { exportSessionCSV } from '../utils/exportSession';
 
-type ViewTab = 'live' | 'stats';
+type NavProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Live'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
-interface HomeScreenProps {
-  connected: boolean;
-  connectionLabel: string;
-  mockMode: boolean;
-  shots: Shot[];
-  latestShot: Shot | null;
-  selectedClub: string;
-  errorMessage: string | null;
-  malformedCount: number;
-  onPressConnect: () => void;
-  onPressSettings: () => void;
-  onClearSession: () => void;
-  onSetClub: (clubId: string) => void;
-  onDismissError: () => void;
-}
+type TracerView = '2d' | '3d';
 
-export function HomeScreen({
-  connected,
-  connectionLabel,
-  mockMode,
-  shots,
-  latestShot,
-  selectedClub,
-  errorMessage,
-  malformedCount,
-  onPressConnect,
-  onPressSettings,
-  onClearSession,
-  onSetClub,
-  onDismissError,
-}: HomeScreenProps) {
+export function HomeScreen() {
+  const nav = useNavigation<NavProp>();
+  const {
+    connected, connectionLabel, mockMode, shots, latestShot,
+    selectedClub, errorMessage, malformedCount,
+    setClub, clearSession, dismissError,
+  } = useConnection();
+
   const [clubPickerVisible, setClubPickerVisible] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ViewTab>('live');
+  const [tracerView, setTracerView] = useState<TracerView>('2d');
 
   const handleExport = async () => {
-    try {
-      await exportSessionCSV(shots);
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : 'Export failed');
-    }
+    try { await exportSessionCSV(shots); }
+    catch (e) { setExportError(e instanceof Error ? e.message : 'Export failed'); }
   };
 
   const activeError = exportError ?? errorMessage;
-  const activeDismiss = exportError ? () => setExportError(null) : onDismissError;
+  const activeDismiss = exportError ? () => setExportError(null) : dismissError;
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.logo}>OpenFlight</Text>
         <View style={styles.headerRight}>
           {mockMode && <Text style={styles.mockBadge}>MOCK</Text>}
           {malformedCount > 3 && <Text style={styles.warnBadge}>BLE⚠</Text>}
-          <TouchableOpacity onPress={onPressSettings} style={styles.settingsBtn} hitSlop={8}>
-            <Text style={styles.settingsIcon}>⚙</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.statusBadge, connected ? styles.connectedBadge : styles.disconnectedBadge]}
-            onPress={onPressConnect}
+            onPress={() => nav.navigate('Connection')}
           >
             <View style={[styles.dot, connected ? styles.dotConnected : styles.dotDisconnected]} />
             <Text style={[styles.statusText, connected ? styles.statusConnected : styles.statusDisconnected]}>
@@ -89,84 +65,80 @@ export function HomeScreen({
 
       {activeError && <ErrorBanner message={activeError} onDismiss={activeDismiss} />}
 
-      {/* Not connected */}
       {!connected ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not connected</Text>
           <Text style={styles.emptySubtitle}>Tap Connect to link to your launch monitor</Text>
-          <TouchableOpacity style={styles.connectButton} onPress={onPressConnect}>
+          <TouchableOpacity style={styles.connectButton} onPress={() => nav.navigate('Connection')}>
             <Text style={styles.connectButtonText}>Connect</Text>
           </TouchableOpacity>
         </View>
+      ) : latestShot === null ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Waiting for shots…</Text>
+          <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+            <Text style={styles.clubChipText}>{selectedClub}</Text>
+            <Text style={styles.clubChipCaret}>▾</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
-        <>
-          {/* Live / Stats tabs — only show when there are shots */}
-          {shots.length > 0 && (
-            <View style={styles.tabBar}>
-              {(['live', 'stats'] as ViewTab[]).map((tab) => (
-                <TouchableOpacity
-                  key={tab}
-                  style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
-                  onPress={() => setActiveTab(tab)}
-                >
-                  <Text style={[styles.tabBtnText, activeTab === tab && styles.tabBtnTextActive]}>
-                    {tab === 'live' ? 'Live' : 'Stats'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {activeTab === 'stats' ? (
-            <StatsView shots={shots} onClearSession={onClearSession} />
-          ) : latestShot === null ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>Waiting for shots…</Text>
-              <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
-                <Text style={styles.clubChipText}>{selectedClub}</Text>
-                <Text style={styles.clubChipCaret}>▾</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList<Shot>
-              data={shots}
-              keyExtractor={(item) => item.timestamp}
-              ListHeaderComponent={
-                <>
-                  <ShotDisplay shot={latestShot} />
-                  <View style={styles.toolbarRow}>
-                    <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
-                      <Text style={styles.clubChipText}>{selectedClub}</Text>
-                      <Text style={styles.clubChipCaret}>▾</Text>
+        <FlatList<Shot>
+          data={shots}
+          keyExtractor={(item) => item.timestamp}
+          ListHeaderComponent={
+            <>
+              <View style={styles.tracerWrap}>
+                <View style={styles.tracerToggle}>
+                  {(['2d', '3d'] as TracerView[]).map((v) => (
+                    <TouchableOpacity
+                      key={v}
+                      style={[styles.tracerBtn, tracerView === v && styles.tracerBtnActive]}
+                      onPress={() => setTracerView(v)}
+                    >
+                      <Text style={[styles.tracerBtnText, tracerView === v && styles.tracerBtnTextActive]}>
+                        {v.toUpperCase()}
+                      </Text>
                     </TouchableOpacity>
-                    <View style={styles.toolbarRight}>
-                      {shots.length > 0 && (
-                        <TouchableOpacity onPress={handleExport} style={styles.toolbarBtn}>
-                          <Text style={styles.toolbarBtnText}>Export</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity onPress={onClearSession} style={styles.toolbarBtn}>
-                        <Text style={styles.toolbarBtnText}>Clear</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={styles.historyLabel}>Session ({shots.length})</Text>
-                </>
-              }
-              renderItem={({ item, index }) => {
-                if (index === 0) return null;
-                return <ShotListRow shot={item} />;
-              }}
-              contentContainerStyle={styles.listContent}
-            />
-          )}
-        </>
+                  ))}
+                </View>
+                {tracerView === '2d'
+                  ? <ShotTracer2D shot={latestShot} />
+                  : <ShotTracer3D shot={latestShot} />}
+              </View>
+
+              <ShotDisplay shot={latestShot} />
+
+              <View style={styles.toolbarRow}>
+                <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+                  <Text style={styles.clubChipText}>{selectedClub}</Text>
+                  <Text style={styles.clubChipCaret}>▾</Text>
+                </TouchableOpacity>
+                <View style={styles.toolbarRight}>
+                  {shots.length > 0 && (
+                    <TouchableOpacity onPress={handleExport} style={styles.toolbarBtn}>
+                      <Text style={styles.toolbarBtnText}>CSV</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={clearSession} style={styles.toolbarBtn}>
+                    <Text style={styles.toolbarBtnText}>Clear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <Text style={styles.historyLabel}>Session ({shots.length})</Text>
+            </>
+          }
+          renderItem={({ item, index }) => {
+            if (index === 0) return null;
+            return <ShotListRow shot={item} />;
+          }}
+          contentContainerStyle={styles.listContent}
+        />
       )}
 
       <ClubPicker
         visible={clubPickerVisible}
         selectedClub={selectedClub}
-        onSelect={onSetClub}
+        onSelect={setClub}
         onClose={() => setClubPickerVisible(false)}
       />
     </SafeAreaView>
@@ -208,15 +180,13 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { color: '#22c55e', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
   mockBadge: {
-    backgroundColor: '#7c3aed', color: '#ffffff', fontSize: 10, fontWeight: '700',
+    backgroundColor: '#7c3aed', color: '#fff', fontSize: 10, fontWeight: '700',
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, letterSpacing: 1,
   },
   warnBadge: {
     backgroundColor: '#78350f', color: '#fbbf24', fontSize: 10, fontWeight: '700',
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
-  settingsBtn: { padding: 4 },
-  settingsIcon: { color: '#6b7280', fontSize: 18 },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
@@ -229,16 +199,18 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '600' },
   statusConnected: { color: '#22c55e' },
   statusDisconnected: { color: '#9ca3af' },
-  tabBar: {
-    flexDirection: 'row', backgroundColor: '#111111',
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+  tracerWrap: { position: 'relative' },
+  tracerToggle: {
+    position: 'absolute', top: 8, right: 8, zIndex: 10,
+    flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8, overflow: 'hidden',
   },
-  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: '#22c55e' },
-  tabBtnText: { color: '#6b7280', fontWeight: '600', fontSize: 14 },
-  tabBtnTextActive: { color: '#22c55e' },
+  tracerBtn: { paddingHorizontal: 10, paddingVertical: 5 },
+  tracerBtnActive: { backgroundColor: '#22c55e' },
+  tracerBtnText: { color: '#9ca3af', fontSize: 11, fontWeight: '700' },
+  tracerBtnTextActive: { color: '#0a0a0a' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
-  emptyTitle: { color: '#ffffff', fontSize: 20, fontWeight: '700' },
+  emptyTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
   emptySubtitle: { color: '#6b7280', fontSize: 15, textAlign: 'center' },
   connectButton: {
     marginTop: 16, backgroundColor: '#22c55e',
@@ -258,7 +230,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
   },
-  clubChipText: { color: '#ffffff', fontWeight: '700', fontSize: 14, textTransform: 'uppercase' },
+  clubChipText: { color: '#fff', fontWeight: '700', fontSize: 14, textTransform: 'uppercase' },
   clubChipCaret: { color: '#6b7280', fontSize: 12 },
   historyLabel: {
     color: '#6b7280', fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
@@ -270,10 +242,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
   },
-  shotRowClub: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  shotRowClub: { color: '#fff', fontWeight: '600', fontSize: 14 },
   shotRowTime: { color: '#6b7280', fontSize: 12, marginTop: 2 },
   shotRowMetrics: { flexDirection: 'row', gap: 20 },
   shotRowMetric: { alignItems: 'flex-end' },
-  shotRowValue: { color: '#ffffff', fontWeight: '700', fontSize: 18, fontVariant: ['tabular-nums' as const] },
+  shotRowValue: { color: '#fff', fontWeight: '700', fontSize: 18, fontVariant: ['tabular-nums' as const] },
   shotRowUnit: { color: '#6b7280', fontSize: 11 },
 });

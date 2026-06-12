@@ -15,6 +15,7 @@ import type { SocketConnectionState } from '../hooks/useSocketConnection';
 
 const STORAGE_KEY = 'openflight.last-host';
 const DEFAULT_HOST = '192.168.1.';
+export const BLE_PIN_KEY = 'openflight.ble-pin';
 
 interface ConnectionScreenProps {
   socket: SocketConnectionState;
@@ -118,9 +119,31 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
   const isScanning = ble.status === 'scanning';
   const isConnecting = ble.status === 'connecting';
   const isConnected = ble.status === 'connected';
+  const [pin, setPin] = useState('');
+
+  useEffect(() => {
+    AsyncStorage.getItem(BLE_PIN_KEY).then((v) => { if (v) setPin(v); }).catch(() => {});
+  }, []);
+
+  const savePin = (v: string) => {
+    setPin(v);
+    AsyncStorage.setItem(BLE_PIN_KEY, v).catch(() => {});
+  };
 
   return (
     <View style={styles.panel}>
+      <Text style={styles.hint}>BLE PIN (shown on Pi console when BLE starts)</Text>
+      <TextInput
+        style={styles.input}
+        value={pin}
+        onChangeText={savePin}
+        placeholder="0000"
+        placeholderTextColor="#4b5563"
+        keyboardType="number-pad"
+        maxLength={4}
+        secureTextEntry
+      />
+
       {isConnected && ble.connectedDevice ? (
         <>
           <View style={styles.statusBadge}>

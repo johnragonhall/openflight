@@ -56,6 +56,7 @@ export function useSocket() {
   const addShotRef = useRef(addShot);
   const setShotsRef = useRef(setShots);
   const clearShotsRef = useRef(clearShots);
+  const adminTokenRef = useRef('');
 
   useEffect(() => {
     addShotRef.current = addShot;
@@ -64,6 +65,7 @@ export function useSocket() {
   }, [addShot, setShots, clearShots]);
 
   const [connected, setConnected] = useState(false);
+  const [adminToken, setAdminToken] = useState('');
   const [mockMode, setMockMode] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [debugReadings, setDebugReadings] = useState<DebugReading[]>([]);
@@ -102,8 +104,12 @@ export function useSocket() {
     newSocket.on('connect', () => {
       console.log('Connected to server');
       setConnected(true);
-      newSocket.emit('get_session');
       newSocket.emit('get_trigger_status');
+    });
+
+    newSocket.on('admin_token', (data: { token: string }) => {
+      adminTokenRef.current = data.token;
+      setAdminToken(data.token);
     });
 
     newSocket.on('disconnect', () => {
@@ -220,19 +226,19 @@ export function useSocket() {
   }, []);
 
   const clearSession = useCallback(() => {
-    socketRef.current?.emit('clear_session');
+    socketRef.current?.emit('clear_session', { token: adminTokenRef.current });
   }, []);
 
   const setClub = useCallback((club: string) => {
-    socketRef.current?.emit('set_club', { club });
+    socketRef.current?.emit('set_club', { club, token: adminTokenRef.current });
   }, []);
 
   const simulateShot = useCallback(() => {
-    socketRef.current?.emit('simulate_shot');
+    socketRef.current?.emit('simulate_shot', { token: adminTokenRef.current });
   }, []);
 
   const toggleDebug = useCallback(() => {
-    socketRef.current?.emit('toggle_debug');
+    socketRef.current?.emit('toggle_debug', { token: adminTokenRef.current });
   }, []);
 
   const updateRadarConfig = useCallback((config: Partial<RadarConfig>) => {
@@ -241,19 +247,24 @@ export function useSocket() {
 
   // Camera controls
   const toggleCamera = useCallback(() => {
-    socketRef.current?.emit('toggle_camera');
+    socketRef.current?.emit('toggle_camera', { token: adminTokenRef.current });
   }, []);
 
   const toggleCameraStream = useCallback(() => {
-    socketRef.current?.emit('toggle_camera_stream');
+    socketRef.current?.emit('toggle_camera_stream', { token: adminTokenRef.current });
   }, []);
 
   const shutdown = useCallback(() => {
-    fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+    fetch('/api/shutdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: adminTokenRef.current }),
+    }).catch(() => {});
   }, []);
 
   return {
     connected,
+    adminToken,
     mockMode,
     debugMode,
     debugReadings,

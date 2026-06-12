@@ -63,6 +63,7 @@ const Icons = {
 function AppContent() {
   const {
     connected,
+    adminToken,
     mockMode,
     debugMode,
     debugReadings,
@@ -269,7 +270,7 @@ function AppContent() {
         {currentView === 'stats' && <StatsView shots={shots} onClearSession={clearSession} />}
         {currentView === 'shots' && <ShotList shots={shots} />}
         {currentView === 'camera' && (
-          <CameraFeed cameraStatus={cameraStatus} onToggleCamera={toggleCamera} onToggleStream={toggleCameraStream} />
+          <CameraFeed cameraStatus={cameraStatus} onToggleCamera={toggleCamera} onToggleStream={toggleCameraStream} streamToken={adminToken} />
         )}
         {currentView === 'debug' && (
           <DebugPanel

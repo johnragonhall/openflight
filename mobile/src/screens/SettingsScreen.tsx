@@ -1,13 +1,28 @@
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUnitPreference } from '../state/useUnitPreference';
 import type { UnitSystem } from '../utils/units';
 
+export const CAMERA_URL_KEY = 'camera_url';
+export const DEFAULT_CAMERA_URL = 'http://openflight.local:8080/stream';
+
 export function SettingsScreen() {
   const { unitSystem, setUnitSystem } = useUnitPreference();
+  const [cameraUrl, setCameraUrl] = useState(DEFAULT_CAMERA_URL);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CAMERA_URL_KEY).then((v) => { if (v) setCameraUrl(v); }).catch(() => {});
+  }, []);
+
+  const saveCameraUrl = (url: string) => {
+    setCameraUrl(url);
+    AsyncStorage.setItem(CAMERA_URL_KEY, url).catch(() => {});
+  };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Section title="Units">
         <SegmentedControl
           options={[
@@ -19,21 +34,33 @@ export function SettingsScreen() {
         />
       </Section>
 
+      <Section title="Camera Stream">
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Pi Stream URL</Text>
+        </View>
+        <TextInput
+          style={styles.urlInput}
+          value={cameraUrl}
+          onChangeText={saveCameraUrl}
+          placeholder={DEFAULT_CAMERA_URL}
+          placeholderTextColor="#4b5563"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+        />
+      </Section>
+
       <Section title="About">
         <View style={styles.row}>
           <Text style={styles.rowLabel}>App Version</Text>
           <Text style={styles.rowValue}>1.0.0</Text>
         </View>
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>Default Port</Text>
-          <Text style={styles.rowValue}>8080</Text>
-        </View>
-        <View style={styles.row}>
           <Text style={styles.rowLabel}>BLE Service UUID</Text>
           <Text style={[styles.rowValue, styles.mono]}>4fafc201…</Text>
         </View>
       </Section>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -92,4 +119,9 @@ const styles = StyleSheet.create({
   rowLabel: { color: '#9ca3af', fontSize: 14 },
   rowValue: { color: '#6b7280', fontSize: 13 },
   mono: { fontFamily: 'monospace' },
+  urlInput: {
+    backgroundColor: '#111', color: '#e5e7eb', fontSize: 13,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8,
+    borderWidth: 1, borderColor: '#1f2937', marginHorizontal: 2, marginBottom: 8,
+  },
 });

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import secrets
 import statistics
 import sys
 import threading
@@ -16,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
@@ -53,8 +54,18 @@ except ImportError:
 
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIST_DIR), static_url_path="")
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+_LOCAL_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
+]
+CORS(app, origins=_LOCAL_ORIGINS)
+socketio = SocketIO(app, cors_allowed_origins=_LOCAL_ORIGINS, async_mode="threading")
+
+# Generated at startup; printed to console for operator use
+_ADMIN_TOKEN: str = secrets.token_hex(16)
 
 # Global state
 monitor = None
@@ -847,6 +858,9 @@ def static_files(path):
 @app.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     """Cleanly shut down the server via REST API."""
+    body = request.get_json(silent=True) or {}
+    if body.get("token") != _ADMIN_TOKEN:
+        return {"error": "Unauthorized"}, 403
     logger.info("[SERVER] Shutdown requested via REST API")
     threading.Thread(target=_shutdown_process_after_delay, daemon=True).start()
     return {"status": "shutting_down"}, 200
@@ -1101,15 +1115,18 @@ def generate_mjpeg():
 @app.route("/camera/stream")
 def camera_stream():
     """MJPEG stream endpoint."""
+    if request.args.get("token") != _ADMIN_TOKEN:
+        return "Unauthorized", 401
     if not camera_enabled or not camera_streaming:
         return "Camera not available", 503
-
     return Response(generate_mjpeg(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 @socketio.on("toggle_camera")
-def handle_toggle_camera():
+def handle_toggle_camera(data=None):
     """Toggle camera on/off."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     global camera_enabled  # pylint: disable=global-statement
 
     if not camera:
@@ -1132,8 +1149,10 @@ def handle_toggle_camera():
 
 
 @socketio.on("toggle_camera_stream")
-def handle_toggle_camera_stream():
+def handle_toggle_camera_stream(data=None):
     """Toggle camera streaming on/off."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     global camera_streaming  # pylint: disable=global-statement
 
     if not camera or not camera_enabled:
@@ -1294,6 +1313,8 @@ def _get_trigger_status() -> dict:
 def handle_connect():
     """Handle client connection."""
     print("Client connected")
+    if request.remote_addr in ("127.0.0.1", "::1"):
+        socketio.emit("admin_token", {"token": _ADMIN_TOKEN}, to=request.sid)
     if monitor:
         stats = monitor.get_session_stats()
         shots = [shot_to_dict(s) for s in monitor.get_shots()]
@@ -1328,6 +1349,8 @@ def handle_get_trigger_status():
 @socketio.on("set_club")
 def handle_set_club(data):
     """Handle club selection change."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     club_name = data.get("club", "driver")
     try:
         club = ClubType(club_name)
@@ -1339,8 +1362,10 @@ def handle_set_club(data):
 
 
 @socketio.on("clear_session")
-def handle_clear_session():
+def handle_clear_session(data=None):
     """Clear all recorded shots."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     if monitor:
         monitor.clear_session()
         socketio.emit("session_cleared")
@@ -1349,8 +1374,10 @@ def handle_clear_session():
 
 
 @socketio.on("get_session")
-def handle_get_session():
+def handle_get_session(data=None):
     """Get current session data."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     if monitor:
         stats = monitor.get_session_stats()
         shots = [shot_to_dict(s) for s in monitor.get_shots()]
@@ -1358,17 +1385,21 @@ def handle_get_session():
 
 
 @socketio.on("simulate_shot")
-def handle_simulate_shot():
+def handle_simulate_shot(data=None):
     """Simulate a shot (only works in mock mode)."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     if monitor and isinstance(monitor, MockLaunchMonitor):
         monitor.simulate_shot()
 
 
 @socketio.on("toggle_debug")
-def handle_toggle_debug():
+def handle_toggle_debug(data=None):
     """Toggle debug mode on/off."""
     global debug_mode  # pylint: disable=global-statement
 
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     debug_mode = not debug_mode
 
     if debug_mode:
@@ -1426,6 +1457,9 @@ def handle_set_radar_config(data):
         # Update min speed filter
         if "min_speed" in data:
             new_min = int(data["min_speed"])
+            if not (0 <= new_min <= 200):
+                socketio.emit("radar_config_error", {"error": "min_speed out of range (0–200)"})
+                return
             monitor.radar.set_min_speed_filter(new_min)
             radar_config["min_speed"] = new_min
             print(f"Set min speed filter: {new_min} mph")
@@ -1433,6 +1467,9 @@ def handle_set_radar_config(data):
         # Update max speed filter
         if "max_speed" in data:
             new_max = int(data["max_speed"])
+            if not (10 <= new_max <= 300):
+                socketio.emit("radar_config_error", {"error": "max_speed out of range (10–300)"})
+                return
             monitor.radar.set_max_speed_filter(new_max)
             radar_config["max_speed"] = new_max
             print(f"Set max speed filter: {new_max} mph")
@@ -1440,6 +1477,9 @@ def handle_set_radar_config(data):
         # Update magnitude filter
         if "min_magnitude" in data:
             new_mag = int(data["min_magnitude"])
+            if not (0 <= new_mag <= 100):
+                socketio.emit("radar_config_error", {"error": "min_magnitude out of range (0–100)"})
+                return
             monitor.radar.set_magnitude_filter(min_mag=new_mag)
             radar_config["min_magnitude"] = new_mag
             print(f"Set min magnitude filter: {new_mag}")
@@ -1477,12 +1517,14 @@ def handle_set_radar_config(data):
             context={"stage": "set_radar_config", "requested": data},
             exc=e,
         )
-        socketio.emit("radar_config_error", {"error": str(e)})
+        socketio.emit("radar_config_error", {"error": "Failed to apply radar config"})
 
 
 @socketio.on("shutdown")
-def handle_shutdown():
+def handle_shutdown(data=None):
     """Cleanly shut down the server and all hardware."""
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
     logger.info("[SERVER] Shutdown requested from UI (WebSocket)")
     socketio.emit("shutdown_ack", {"message": "Shutting down..."})
     threading.Thread(target=_shutdown_process_after_delay, daemon=True).start()
@@ -2338,9 +2380,7 @@ def main():
         "--roboflow-model",
         help="Roboflow model ID (e.g., 'golfballdetector/10'). Uses Roboflow API instead of Hough.",
     )
-    parser.add_argument(
-        "--roboflow-api-key", help="Roboflow API key (can also use ROBOFLOW_API_KEY env var)"
-    )
+    # Roboflow API key must be set via ROBOFLOW_API_KEY env var (not CLI arg) to avoid ps leakage
     parser.add_argument(
         "--session-location",
         "-l",
@@ -2588,7 +2628,7 @@ def main():
         if init_camera(
             model_path=args.camera_model,
             roboflow_model_id=args.roboflow_model,
-            roboflow_api_key=args.roboflow_api_key,
+            roboflow_api_key=os.environ.get("ROBOFLOW_API_KEY"),
             imgsz=args.camera_imgsz,
             use_hough=use_hough,
             hough_param2=args.hough_param2,
@@ -2663,14 +2703,20 @@ def main():
         global ble_server  # pylint: disable=global-statement
         from .ble_server import BLEServer  # pylint: disable=import-outside-toplevel
 
-        ble_server = BLEServer(on_command=_handle_ble_command)
+        _ble_pin = f"{random.randint(0, 9999):04d}"
+        ble_server = BLEServer(on_command=_handle_ble_command, pin=_ble_pin)
         if ble_server.start():
-            print("Bluetooth LE server started — advertising as 'OpenFlight'")
+            print(f"Bluetooth LE server started — advertising as 'OpenFlight'")
+            print(f"  BLE PIN: {_ble_pin}")
         else:
             print("WARNING: Bluetooth LE server failed to start — continuing without BLE")
             ble_server = None
 
     print(f"Server starting at http://{args.host}:{args.web_port}")
+    _token_file = Path.home() / ".openflight_admin_token"
+    _token_file.write_text(_ADMIN_TOKEN)
+    _token_file.chmod(0o600)
+    print(f"  Admin token written to {_token_file} (chmod 600)")
     print()
 
     try:

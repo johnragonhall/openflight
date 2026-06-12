@@ -529,6 +529,9 @@ fi
 uv run $SERVER_CMD &
 SERVER_PID=$!
 
+# Restrict session log permissions so other system users can't read them
+chmod 600 ~/openflight_sessions/*.jsonl 2>/dev/null || true
+
 # Wait for server to be ready
 log "Waiting for server to start..."
 for i in {1..30}; do

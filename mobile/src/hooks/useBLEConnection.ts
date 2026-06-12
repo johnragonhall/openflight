@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
@@ -176,6 +177,20 @@ export function useBLEConnection(): BLEConnectionState {
       try {
         const connected = await device.connect({ timeout: 10000 });
         await connected.discoverAllServicesAndCharacteristics();
+
+        // Authenticate with BLE PIN before sending any commands
+        try {
+          const storedPin = await AsyncStorage.getItem('openflight.ble-pin');
+          if (storedPin) {
+            await connected.writeCharacteristicWithResponseForService(
+              OPENFLIGHT_SERVICE_UUID,
+              COMMAND_CHARACTERISTIC_UUID,
+              btoa(JSON.stringify({ cmd: 'auth', pin: storedPin }))
+            );
+          }
+        } catch {
+          // Auth may fail on older firmware — not fatal, commands will be rejected server-side
+        }
 
         // Request session history on connect
         try {
