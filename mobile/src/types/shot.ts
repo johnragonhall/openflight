@@ -29,8 +29,11 @@ export interface Shot {
 export function isValidShot(val: unknown): val is Shot {
   if (!val || typeof val !== 'object') return false;
   const s = val as Record<string, unknown>;
+  if (
+    typeof s.timestamp !== 'string' || s.timestamp.length >= 100 ||
+    !Number.isFinite(new Date(s.timestamp).getTime())
+  ) return false;
   return (
-    typeof s.timestamp === 'string' && s.timestamp.length < 100 &&
     typeof s.club === 'string' && s.club.length < 50 &&
     typeof s.ball_speed_mph === 'number' && Number.isFinite(s.ball_speed_mph) &&
     s.ball_speed_mph >= 0 && s.ball_speed_mph < 500 &&

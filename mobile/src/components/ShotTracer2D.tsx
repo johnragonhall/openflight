@@ -7,7 +7,7 @@ import { useUnitPreference } from '../state/useUnitPreference';
 
 interface Props { shot: Shot; height?: number }
 
-export function ShotTracer2D({ shot, height = 140 }: Props) {
+export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 140 }: Props) {
   const { width } = useWindowDimensions();
   const { unitSystem } = useUnitPreference();
   const W = width;
@@ -19,8 +19,11 @@ export function ShotTracer2D({ shot, height = 140 }: Props) {
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
-  const apex = shot.apex_height_yards ?? computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm) ?? carry * 0.12;
+  const carry = Math.max(shot.carry_spin_adjusted ?? shot.estimated_carry_yards, 1);
+  const apex = Math.max(
+    shot.apex_height_yards ?? computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm) ?? carry * 0.12,
+    1,
+  );
   const pts = computeTrajectoryPoints(carry, apex);
 
   const toSvgX = (x: number) => padL + (x / carry) * plotW;
@@ -87,7 +90,7 @@ export function ShotTracer2D({ shot, height = 140 }: Props) {
       </Svg>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { backgroundColor: '#0c1445' },

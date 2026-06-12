@@ -37,8 +37,11 @@ export function useSocketConnection(): SocketConnectionState {
   const [selectedClub, setSelectedClub] = useState('driver');
 
   const disconnect = useCallback(() => {
-    socketRef.current?.close();
-    socketRef.current = null;
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.close();
+      socketRef.current = null;
+    }
     setConnected(false);
   }, []);
 
@@ -56,24 +59,29 @@ export function useSocketConnection(): SocketConnectionState {
       socket.on('disconnect', () => setConnected(false));
 
       socket.on('shot', (data: unknown) => {
-        const payload = data as { shot?: unknown };
-        if (!payload || !isValidShot(payload.shot)) return;
-        setLatestShot(payload.shot);
-        setShots((prev) => [payload.shot!, ...prev].slice(0, 100));
+        if (!data || typeof data !== 'object') return;
+        const payload = data as Record<string, unknown>;
+        const shot = payload.shot;
+        if (!isValidShot(shot)) return;
+        setLatestShot(shot);
+        setShots((prev) => [shot, ...prev].slice(0, 100));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       });
 
       socket.on('session_state', (data: unknown) => {
-        const payload = data as { shots?: unknown[]; mock_mode?: boolean };
-        if (!payload || !Array.isArray(payload.shots)) return;
+        if (!data || typeof data !== 'object') return;
+        const payload = data as Record<string, unknown>;
+        if (!Array.isArray(payload.shots)) return;
         const ordered = payload.shots.filter(isValidShot).reverse();
         setShots(ordered);
-        if (ordered.length > 0) setLatestShot(ordered[0]);
+        if (ordered.length > 0) setLatestShot(ordered[0] ?? null);
         if (typeof payload.mock_mode === 'boolean') setMockMode(payload.mock_mode);
       });
 
-      socket.on('club_changed', (data: { club: string }) => {
-        setSelectedClub(data.club);
+      socket.on('club_changed', (data: unknown) => {
+        if (!data || typeof data !== 'object') return;
+        const { club } = data as Record<string, unknown>;
+        if (typeof club === 'string') setSelectedClub(club);
       });
 
       socket.on('session_cleared', () => {
@@ -86,7 +94,12 @@ export function useSocketConnection(): SocketConnectionState {
     [disconnect]
   );
 
-  useEffect(() => () => { socketRef.current?.close(); }, []);
+  useEffect(() => () => {
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.close();
+    }
+  }, []);
 
   const clearSession = useCallback(() => {
     socketRef.current?.emit('clear_session');

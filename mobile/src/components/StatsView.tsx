@@ -1,16 +1,26 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { computeStats, getUniqueClubs, type Shot } from '../types/shot';
+import React, { useMemo } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getUniqueClubs, type SessionStats, type Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
 import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
+import { PressableScale } from './PressableScale';
+import { C, R } from '../theme';
 
 interface StatsViewProps {
   shots: Shot[];
+  stats: SessionStats;
+  selectedClub: string | null;
+  onSelectClub: (club: string | null) => void;
   onClearSession: () => void;
 }
 
-export function StatsView({ shots, onClearSession }: StatsViewProps) {
-  const [selectedClub, setSelectedClub] = useState<string | null>(null);
+export const StatsView = React.memo(function StatsView({
+  shots,
+  stats,
+  selectedClub,
+  onSelectClub,
+  onClearSession,
+}: StatsViewProps) {
   const { unitSystem } = useUnitPreference();
   const speedUnit = getSpeedUnit(unitSystem);
   const distUnit = getDistanceUnit(unitSystem);
@@ -23,13 +33,6 @@ export function StatsView({ shots, onClearSession }: StatsViewProps) {
     return counts;
   }, [shots]);
 
-  const filtered = useMemo(
-    () => (selectedClub === null ? shots : shots.filter((s) => s.club === selectedClub)),
-    [shots, selectedClub]
-  );
-
-  const stats = useMemo(() => computeStats(filtered), [filtered]);
-
   if (shots.length === 0) {
     return (
       <View style={styles.empty}>
@@ -39,31 +42,31 @@ export function StatsView({ shots, onClearSession }: StatsViewProps) {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Club filter tabs */}
+    <View style={styles.container}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs}>
-        <TouchableOpacity
+        <PressableScale
           style={[styles.tab, selectedClub === null && styles.tabActive]}
-          onPress={() => setSelectedClub(null)}
+          onPress={() => onSelectClub(null)}
+          scale={0.94}
         >
           <Text style={[styles.tabText, selectedClub === null && styles.tabTextActive]}>
             All ({shots.length})
           </Text>
-        </TouchableOpacity>
+        </PressableScale>
         {availableClubs.map((club) => (
-          <TouchableOpacity
+          <PressableScale
             key={club}
             style={[styles.tab, selectedClub === club && styles.tabActive]}
-            onPress={() => setSelectedClub(club)}
+            onPress={() => onSelectClub(club)}
+            scale={0.94}
           >
             <Text style={[styles.tabText, selectedClub === club && styles.tabTextActive]}>
               {club.toUpperCase()} ({clubCounts[club] ?? 0})
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </ScrollView>
 
-      {/* Stats grid */}
       <View style={styles.grid}>
         <StatCard label="Shots" value={String(stats.shot_count)} />
         <StatCard
@@ -91,46 +94,85 @@ export function StatsView({ shots, onClearSession }: StatsViewProps) {
         )}
       </View>
 
-      <TouchableOpacity style={styles.clearBtn} onPress={onClearSession}>
+      <PressableScale style={styles.clearBtn} onPress={onClearSession} scale={0.97}>
         <Text style={styles.clearBtnText}>Clear Session</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      </PressableScale>
+    </View>
   );
-}
+});
 
-function StatCard({ label, value, primary }: { label: string; value: string; primary?: boolean }) {
+const StatCard = React.memo(function StatCard({
+  label,
+  value,
+  primary,
+}: {
+  label: string;
+  value: string;
+  primary?: boolean;
+}) {
   return (
     <View style={[styles.statCard, primary && styles.statCardPrimary]}>
       <Text style={[styles.statValue, primary && styles.statValuePrimary]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 40 },
+  container: { padding: 16 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { color: '#6b7280', fontSize: 15 },
+  emptyText: { color: C.sub, fontSize: 15 },
+
   tabs: { marginBottom: 16 },
   tab: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: '#1a1a1a', marginRight: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: R.pill,
+    backgroundColor: C.s2,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  tabActive: { backgroundColor: '#22c55e' },
-  tabText: { color: '#9ca3af', fontWeight: '600', fontSize: 13 },
-  tabTextActive: { color: '#0a0a0a' },
+  tabActive: { backgroundColor: C.accent, borderColor: C.accent },
+  tabText: { color: C.sub, fontWeight: '600', fontSize: 13 },
+  tabTextActive: { color: C.bg },
+
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
   statCard: {
-    backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16,
-    margin: 4, flex: 1, minWidth: 130,
+    backgroundColor: C.s1,
+    borderRadius: R.md,
+    padding: 16,
+    margin: 4,
+    flex: 1,
+    minWidth: 130,
+    borderWidth: 1,
+    borderColor: C.line,
   },
-  statCardPrimary: { backgroundColor: '#14532d' },
-  statValue: { color: '#ffffff', fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums' as const] },
-  statValuePrimary: { color: '#22c55e' },
-  statLabel: { color: '#6b7280', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginTop: 4 },
+  statCardPrimary: { backgroundColor: C.accentSurface, borderColor: C.accentMuted },
+  statValue: {
+    color: C.text,
+    fontSize: 28,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums' as const],
+  },
+  statValuePrimary: { color: C.accent },
+  statLabel: {
+    color: C.sub,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+
   clearBtn: {
-    marginTop: 24, backgroundColor: '#1f2937', borderRadius: 10,
-    padding: 14, alignItems: 'center',
+    marginTop: 24,
+    backgroundColor: C.s2,
+    borderRadius: R.md,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  clearBtnText: { color: '#9ca3af', fontWeight: '600', fontSize: 15 },
+  clearBtnText: { color: C.sub, fontWeight: '600', fontSize: 15 },
 });

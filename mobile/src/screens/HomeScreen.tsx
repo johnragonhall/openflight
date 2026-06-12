@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ClubPicker } from '../components/ClubPicker';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { PressableScale } from '../components/PressableScale';
 import { ShotDisplay } from '../components/ShotDisplay';
 import { ShotTracer2D } from '../components/ShotTracer2D';
 import { ShotTracer3D } from '../components/ShotTracer3D';
@@ -16,6 +17,7 @@ import type { Shot } from '../types/shot';
 import type { RootStackParamList, MainTabParamList } from '../types/navigation';
 import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
 import { exportSessionCSV } from '../utils/exportSession';
+import { C, R } from '../theme';
 
 type NavProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Live'>,
@@ -44,14 +46,22 @@ export function HomeScreen() {
   const activeError = exportError ?? errorMessage;
   const activeDismiss = exportError ? () => setExportError(null) : dismissError;
 
+  const renderItem = React.useCallback(
+    ({ item, index }: { item: Shot; index: number }) => {
+      if (index === 0) return null;
+      return <ShotListRow shot={item} />;
+    },
+    [],
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.logo}>OpenFlight</Text>
         <View style={styles.headerRight}>
-          {mockMode && <Text style={styles.mockBadge}>MOCK</Text>}
-          {malformedCount > 3 && <Text style={styles.warnBadge}>BLE⚠</Text>}
-          <TouchableOpacity
+          {mockMode && <View style={styles.mockBadge}><Text style={styles.mockBadgeText}>MOCK</Text></View>}
+          {malformedCount > 3 && <View style={styles.warnBadge}><Text style={styles.warnBadgeText}>BLE !</Text></View>}
+          <PressableScale
             style={[styles.statusBadge, connected ? styles.connectedBadge : styles.disconnectedBadge]}
             onPress={() => nav.navigate('Connection')}
           >
@@ -59,7 +69,7 @@ export function HomeScreen() {
             <Text style={[styles.statusText, connected ? styles.statusConnected : styles.statusDisconnected]}>
               {connected ? connectionLabel : 'Connect'}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
       </View>
 
@@ -68,37 +78,39 @@ export function HomeScreen() {
       {!connected ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not connected</Text>
-          <Text style={styles.emptySubtitle}>Tap Connect to link to your launch monitor</Text>
-          <TouchableOpacity style={styles.connectButton} onPress={() => nav.navigate('Connection')}>
+          <Text style={styles.emptySubtitle}>Link to your launch monitor to start tracking</Text>
+          <PressableScale style={styles.connectButton} onPress={() => nav.navigate('Connection')}>
             <Text style={styles.connectButtonText}>Connect</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
       ) : latestShot === null ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Waiting for shots…</Text>
-          <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+          <Text style={styles.emptyTitle}>Ready</Text>
+          <Text style={styles.emptySubtitle}>Waiting for shots…</Text>
+          <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
             <Text style={styles.clubChipText}>{selectedClub}</Text>
             <Text style={styles.clubChipCaret}>▾</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
       ) : (
         <FlatList<Shot>
           data={shots}
-          keyExtractor={(item) => item.timestamp}
+          keyExtractor={(item) => item.id ?? item.timestamp}
           ListHeaderComponent={
             <>
               <View style={styles.tracerWrap}>
                 <View style={styles.tracerToggle}>
                   {(['2d', '3d'] as TracerView[]).map((v) => (
-                    <TouchableOpacity
+                    <PressableScale
                       key={v}
                       style={[styles.tracerBtn, tracerView === v && styles.tracerBtnActive]}
                       onPress={() => setTracerView(v)}
+                      scale={0.94}
                     >
                       <Text style={[styles.tracerBtnText, tracerView === v && styles.tracerBtnTextActive]}>
                         {v.toUpperCase()}
                       </Text>
-                    </TouchableOpacity>
+                    </PressableScale>
                   ))}
                 </View>
                 {tracerView === '2d'
@@ -109,28 +121,30 @@ export function HomeScreen() {
               <ShotDisplay shot={latestShot} />
 
               <View style={styles.toolbarRow}>
-                <TouchableOpacity onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+                <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
                   <Text style={styles.clubChipText}>{selectedClub}</Text>
                   <Text style={styles.clubChipCaret}>▾</Text>
-                </TouchableOpacity>
+                </PressableScale>
                 <View style={styles.toolbarRight}>
                   {shots.length > 0 && (
-                    <TouchableOpacity onPress={handleExport} style={styles.toolbarBtn}>
+                    <PressableScale onPress={handleExport} style={styles.toolbarBtn}>
                       <Text style={styles.toolbarBtnText}>CSV</Text>
-                    </TouchableOpacity>
+                    </PressableScale>
                   )}
-                  <TouchableOpacity onPress={clearSession} style={styles.toolbarBtn}>
+                  <PressableScale onPress={clearSession} style={styles.toolbarBtn}>
                     <Text style={styles.toolbarBtnText}>Clear</Text>
-                  </TouchableOpacity>
+                  </PressableScale>
                 </View>
               </View>
-              <Text style={styles.historyLabel}>Session ({shots.length})</Text>
+              <View style={styles.historyLabelRow}>
+                <Text style={styles.historyLabel}>Session</Text>
+                <View style={styles.historyCount}>
+                  <Text style={styles.historyCountText}>{shots.length}</Text>
+                </View>
+              </View>
             </>
           }
-          renderItem={({ item, index }) => {
-            if (index === 0) return null;
-            return <ShotListRow shot={item} />;
-          }}
+          renderItem={renderItem}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -145,13 +159,15 @@ export function HomeScreen() {
   );
 }
 
-function ShotListRow({ shot }: { shot: Shot }) {
+const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
   const { unitSystem } = useUnitPreference();
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
   return (
     <View style={styles.shotRow}>
-      <View>
-        <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
+      <View style={styles.shotRowLeft}>
+        <View style={styles.shotRowClubPill}>
+          <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
+        </View>
         <Text style={styles.shotRowTime}>
           {new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
@@ -161,91 +177,170 @@ function ShotListRow({ shot }: { shot: Shot }) {
           <Text style={styles.shotRowValue}>{formatSpeed(shot.ball_speed_mph, unitSystem, 0)}</Text>
           <Text style={styles.shotRowUnit}>{getSpeedUnit(unitSystem)}</Text>
         </View>
-        <View style={styles.shotRowMetric}>
+        <View style={[styles.shotRowMetric, styles.shotRowMetricRight]}>
           <Text style={styles.shotRowValue}>{formatDistance(carry, unitSystem, 0)}</Text>
           <Text style={styles.shotRowUnit}>{getDistanceUnit(unitSystem)}</Text>
         </View>
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: C.bg },
+
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { color: '#22c55e', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+  logo: { color: C.accent, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+
   mockBadge: {
-    backgroundColor: '#7c3aed', color: '#fff', fontSize: 10, fontWeight: '700',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, letterSpacing: 1,
+    backgroundColor: '#3b0764',
+    borderRadius: R.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
+  mockBadgeText: { color: '#e879f9', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   warnBadge: {
-    backgroundColor: '#78350f', color: '#fbbf24', fontSize: 10, fontWeight: '700',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    backgroundColor: C.warnDim,
+    borderRadius: R.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
+  warnBadgeText: { color: C.warn, fontSize: 10, fontWeight: '700' },
+
   statusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: R.pill,
   },
-  connectedBadge: { backgroundColor: '#14532d' },
-  disconnectedBadge: { backgroundColor: '#1f2937' },
-  dot: { width: 7, height: 7, borderRadius: 3.5 },
-  dotConnected: { backgroundColor: '#22c55e' },
-  dotDisconnected: { backgroundColor: '#6b7280' },
+  connectedBadge: { backgroundColor: C.accentSurface, borderWidth: 1, borderColor: C.accentMuted },
+  disconnectedBadge: { backgroundColor: C.s2, borderWidth: 1, borderColor: C.lineMid },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  dotConnected: { backgroundColor: C.accent },
+  dotDisconnected: { backgroundColor: C.sub },
   statusText: { fontSize: 12, fontWeight: '600' },
-  statusConnected: { color: '#22c55e' },
-  statusDisconnected: { color: '#9ca3af' },
+  statusConnected: { color: C.accentBright },
+  statusDisconnected: { color: C.sub },
+
   tracerWrap: { position: 'relative' },
   tracerToggle: {
-    position: 'absolute', top: 8, right: 8, zIndex: 10,
-    flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 8, overflow: 'hidden',
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: R.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
   tracerBtn: { paddingHorizontal: 10, paddingVertical: 5 },
-  tracerBtnActive: { backgroundColor: '#22c55e' },
-  tracerBtnText: { color: '#9ca3af', fontSize: 11, fontWeight: '700' },
-  tracerBtnTextActive: { color: '#0a0a0a' },
+  tracerBtnActive: { backgroundColor: C.accent },
+  tracerBtnText: { color: C.sub, fontSize: 11, fontWeight: '700' },
+  tracerBtnTextActive: { color: C.bg },
+
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
-  emptyTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  emptySubtitle: { color: '#6b7280', fontSize: 15, textAlign: 'center' },
+  emptyTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  emptySubtitle: { color: C.sub, fontSize: 15, textAlign: 'center' },
   connectButton: {
-    marginTop: 16, backgroundColor: '#22c55e',
-    paddingHorizontal: 32, paddingVertical: 14, borderRadius: 10,
+    marginTop: 16,
+    backgroundColor: C.accent,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: R.lg,
   },
-  connectButtonText: { color: '#0a0a0a', fontWeight: '700', fontSize: 16 },
+  connectButtonText: { color: C.bg, fontWeight: '700', fontSize: 16 },
+
   toolbarRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   toolbarRight: { flexDirection: 'row', gap: 8 },
   toolbarBtn: {
-    backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: C.s2,
+    borderRadius: R.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  toolbarBtnText: { color: '#22c55e', fontWeight: '600', fontSize: 13 },
+  toolbarBtnText: { color: C.accent, fontWeight: '600', fontSize: 13 },
+
   clubChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.s2,
+    borderRadius: R.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  clubChipText: { color: '#fff', fontWeight: '700', fontSize: 14, textTransform: 'uppercase' },
-  clubChipCaret: { color: '#6b7280', fontSize: 12 },
-  historyLabel: {
-    color: '#6b7280', fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
-    letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+  clubChipText: { color: C.text, fontWeight: '700', fontSize: 13, textTransform: 'uppercase' },
+  clubChipCaret: { color: C.sub, fontSize: 11 },
+
+  historyLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 6,
   },
+  historyLabel: { color: C.sub, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  historyCount: {
+    backgroundColor: C.s3,
+    borderRadius: R.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+  },
+  historyCountText: { color: C.muted, fontSize: 10, fontWeight: '700' },
+
   listContent: { paddingBottom: 40 },
+
   shotRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginBottom: 4,
+    backgroundColor: C.s1,
+    borderRadius: R.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: C.line,
   },
-  shotRowClub: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  shotRowTime: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  shotRowLeft: { gap: 4 },
+  shotRowClubPill: {
+    backgroundColor: C.s3,
+    borderRadius: R.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  shotRowClub: { color: C.text, fontWeight: '700', fontSize: 11, letterSpacing: 0.8 },
+  shotRowTime: { color: C.sub, fontSize: 11 },
   shotRowMetrics: { flexDirection: 'row', gap: 20 },
   shotRowMetric: { alignItems: 'flex-end' },
-  shotRowValue: { color: '#fff', fontWeight: '700', fontSize: 18, fontVariant: ['tabular-nums' as const] },
-  shotRowUnit: { color: '#6b7280', fontSize: 11 },
+  shotRowMetricRight: {},
+  shotRowValue: { color: C.text, fontWeight: '700', fontSize: 18, fontVariant: ['tabular-nums' as const] },
+  shotRowUnit: { color: C.sub, fontSize: 10 },
 });

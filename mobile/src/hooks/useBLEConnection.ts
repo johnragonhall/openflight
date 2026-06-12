@@ -100,11 +100,14 @@ export function useBLEConnection(): BLEConnectionState {
   const reconnectCountRef = useRef(0);
   const lastDeviceRef = useRef<Device | null>(null);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectedDeviceRef = useRef<Device | null>(null);
 
   const handleError = useCallback((msg: string) => {
     setStatus('error');
     setErrorMessage(msg);
   }, []);
+  const handleErrorRef = useRef(handleError);
+  handleErrorRef.current = handleError;
 
   const _teardownSubscriptions = useCallback(() => {
     shotMonitorRef.current?.remove();
@@ -114,6 +117,8 @@ export function useBLEConnection(): BLEConnectionState {
     statusMonitorRef.current = null;
     disconnectSubRef.current = null;
   }, []);
+  const teardownRef = useRef(_teardownSubscriptions);
+  teardownRef.current = _teardownSubscriptions;
 
   const stopScan = useCallback(() => {
     manager.stopDeviceScan();
@@ -130,13 +135,13 @@ export function useBLEConnection(): BLEConnectionState {
 
     const permissionsOk = await requestAndroidBLEPermissions();
     if (!permissionsOk) {
-      handleError('Bluetooth permission denied. Please enable it in Settings.');
+      handleErrorRef.current('Bluetooth permission denied. Please enable it in Settings.');
       return;
     }
 
     const state = await manager.state();
     if (state !== BleState.PoweredOn) {
-      handleError('Bluetooth is off. Please enable Bluetooth and try again.');
+      handleErrorRef.current('Bluetooth is off. Please enable Bluetooth and try again.');
       return;
     }
 
@@ -149,7 +154,7 @@ export function useBLEConnection(): BLEConnectionState {
       { allowDuplicates: false },
       (error, device) => {
         if (error) {
-          handleError(`Scan error: ${error.message}`);
+          handleErrorRef.current(`Scan error: ${error.message}`);
           return;
         }
         if (!device) return;
@@ -172,7 +177,9 @@ export function useBLEConnection(): BLEConnectionState {
       manager.stopDeviceScan();
       setStatus((s) => (s === 'scanning' ? 'idle' : s));
     }, 15000);
-  }, [handleError]);
+  }, [stopScan]);
+
+  const doConnectRef = useRef<(device: Device) => Promise<void>>(async () => {});
 
   const connectToDevice = useCallback(
     async (device: Device) => {
@@ -180,15 +187,14 @@ export function useBLEConnection(): BLEConnectionState {
       setStatus('connecting');
       lastDeviceRef.current = device;
       reconnectCountRef.current = 0;
-      await _doConnect(device);
+      await doConnectRef.current(device);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [stopScan]
   );
 
   const _doConnect = useCallback(
     async (device: Device) => {
-      _teardownSubscriptions();
+      teardownRef.current();
 
       try {
         const connected = await device.connect({ timeout: 10000 });
@@ -288,7 +294,8 @@ export function useBLEConnection(): BLEConnectionState {
         );
 
         disconnectSubRef.current = connected.onDisconnected((_err, _dev) => {
-          _teardownSubscriptions();
+          teardownRef.current();
+          connectedDeviceRef.current = null;
           setConnectedDevice(null);
           setStatus('disconnected');
 
@@ -300,23 +307,27 @@ export function useBLEConnection(): BLEConnectionState {
             reconnectTimerRef.current = setTimeout(() => {
               if (lastDeviceRef.current) {
                 setStatus('connecting');
-                _doConnect(lastDeviceRef.current);
+                doConnectRef.current(lastDeviceRef.current);
               }
             }, delay);
           }
         });
 
         reconnectCountRef.current = 0;
+        connectedDeviceRef.current = connected;
         setConnectedDevice(connected);
         setStatus('connected');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        handleError(`Connection failed: ${msg}`);
+        handleErrorRef.current(`Connection failed: ${msg}`);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [_teardownSubscriptions, handleError]
+    // Intentionally empty — all external references go through stable refs (handleErrorRef,
+    // teardownRef, doConnectRef) so no reactive deps are needed.
+    [],
   );
+  doConnectRef.current = _doConnect;
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -324,52 +335,47 @@ export function useBLEConnection(): BLEConnectionState {
       reconnectTimerRef.current = null;
     }
     lastDeviceRef.current = null;
-    _teardownSubscriptions();
-    connectedDevice?.cancelConnection();
+    teardownRef.current();
+    connectedDeviceRef.current?.cancelConnection();
     setConnectedDevice(null);
     setStatus('idle');
     setErrorMessage(null);
-  }, [_teardownSubscriptions, connectedDevice]);
+  }, []);
 
   const clearSession = useCallback(() => {
     setShots([]);
     setLatestShot(null);
-    if (connectedDevice) {
-      connectedDevice
-        .writeCharacteristicWithResponseForService(
-          OPENFLIGHT_SERVICE_UUID,
-          COMMAND_CHARACTERISTIC_UUID,
-          btoa(JSON.stringify({ cmd: 'clear_session' }))
-        )
-        .catch(() => { /* not fatal — server will clear on its own timer */ });
-    }
-  }, [connectedDevice]);
+    connectedDeviceRef.current
+      ?.writeCharacteristicWithResponseForService(
+        OPENFLIGHT_SERVICE_UUID,
+        COMMAND_CHARACTERISTIC_UUID,
+        btoa(JSON.stringify({ cmd: 'clear_session' }))
+      )
+      .catch(() => { /* not fatal — server will clear on its own timer */ });
+  }, []);
 
-  const setClub = useCallback(
-    async (clubId: string) => {
-      setSelectedClub(clubId);
-      if (!connectedDevice) return;
-      try {
-        await connectedDevice.writeCharacteristicWithResponseForService(
-          OPENFLIGHT_SERVICE_UUID,
-          COMMAND_CHARACTERISTIC_UUID,
-          btoa(JSON.stringify({ cmd: 'set_club', club: clubId }))
-        );
-      } catch {
-        // not fatal — club label still updates locally via shot.club
-      }
-    },
-    [connectedDevice]
-  );
+  const setClub = useCallback(async (clubId: string) => {
+    setSelectedClub(clubId);
+    if (!connectedDeviceRef.current) return;
+    try {
+      await connectedDeviceRef.current.writeCharacteristicWithResponseForService(
+        OPENFLIGHT_SERVICE_UUID,
+        COMMAND_CHARACTERISTIC_UUID,
+        btoa(JSON.stringify({ cmd: 'set_club', club: clubId }))
+      );
+    } catch {
+      // not fatal — club label still updates locally via shot.club
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
-      _teardownSubscriptions();
+      teardownRef.current();
       manager.stopDeviceScan();
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
-  }, [_teardownSubscriptions]);
+  }, []);
 
   return {
     status,

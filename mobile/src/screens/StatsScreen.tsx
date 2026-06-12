@@ -5,6 +5,7 @@ import { useConnection } from '../state/ConnectionContext';
 import { StatsView } from '../components/StatsView';
 import { FittingRecommendations } from '../components/FittingRecommendations';
 import { computeStats, getUniqueClubs } from '../types/shot';
+import { C, R } from '../theme';
 
 export function StatsScreen() {
   const { shots, clearSession } = useConnection();
@@ -24,6 +25,9 @@ export function StatsScreen() {
   if (shots.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Stats</Text>
+        </View>
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No shots yet</Text>
           <Text style={styles.emptySub}>Hit some balls to see stats</Text>
@@ -36,10 +40,18 @@ export function StatsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Stats</Text>
-        <Text style={styles.headerSub}>{shots.length} shots this session</Text>
+        <View style={styles.headerCountPill}>
+          <Text style={styles.headerCountText}>{shots.length} shots</Text>
+        </View>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <StatsView shots={shots} onClearSession={clearSession} />
+        <StatsView
+          shots={shots}
+          stats={stats}
+          selectedClub={selectedClub}
+          onSelectClub={setSelectedClub}
+          onClearSession={clearSession}
+        />
         {fittingClub && (
           <View style={styles.fittingWrap}>
             <FittingRecommendations club={fittingClub} stats={stats} />
@@ -54,20 +66,34 @@ export function StatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
   },
-  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  headerSub: { color: '#6b7280', fontSize: 13, marginTop: 2 },
+  headerTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  headerCountPill: {
+    backgroundColor: C.s3,
+    borderRadius: R.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  headerCountText: { color: C.sub, fontSize: 12, fontWeight: '600' },
   scroll: { paddingBottom: 40 },
   fittingWrap: { paddingHorizontal: 16 },
   fittingHint: {
-    color: '#4b5563', fontSize: 12, textAlign: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
+    color: C.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  emptySub: { color: '#6b7280', fontSize: 14, textAlign: 'center', marginTop: 6 },
+  emptyTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  emptySub: { color: C.sub, fontSize: 14, textAlign: 'center', marginTop: 6 },
 });
