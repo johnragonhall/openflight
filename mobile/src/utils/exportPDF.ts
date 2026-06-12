@@ -2,6 +2,15 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { Shot } from '../types/shot';
 
+function h(s: string | number | null | undefined): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function row(shot: Shot, i: number): string {
   const carry = (shot.carry_spin_adjusted ?? shot.estimated_carry_yards).toFixed(0);
   const spin = shot.spin_rpm ? Math.round(shot.spin_rpm).toLocaleString() : '—';
@@ -10,9 +19,9 @@ function row(shot: Shot, i: number): string {
   const smash = shot.smash_factor ? shot.smash_factor.toFixed(2) : '—';
   const time = new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `<tr>
-    <td>${i + 1}</td><td>${time}</td><td>${shot.club.toUpperCase()}</td>
-    <td>${shot.ball_speed_mph.toFixed(1)}</td><td>${club}</td><td>${smash}</td>
-    <td>${carry}</td><td>${launch}</td><td>${spin}</td>
+    <td>${i + 1}</td><td>${h(time)}</td><td>${h(shot.club.toUpperCase())}</td>
+    <td>${h(shot.ball_speed_mph.toFixed(1))}</td><td>${h(club)}</td><td>${h(smash)}</td>
+    <td>${h(carry)}</td><td>${h(launch)}</td><td>${h(spin)}</td>
   </tr>`;
 }
 

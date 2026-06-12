@@ -1,5 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import {
@@ -8,14 +9,29 @@ import {
   type Subscription,
   State as BleState,
 } from 'react-native-ble-plx';
+import { isValidShot } from '../types/shot';
 import type { Shot } from '../types/shot';
 
-export const OPENFLIGHT_SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-export const SHOT_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
-export const COMMAND_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
-export const STATUS_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26aa';
+export const OPENFLIGHT_SERVICE_UUID       = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+export const SHOT_CHARACTERISTIC_UUID      = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+export const COMMAND_CHARACTERISTIC_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
+export const STATUS_CHARACTERISTIC_UUID    = 'beb5483e-36e1-4688-b7f5-ea07361b26aa';
+// Challenge characteristic: firmware writes a random nonce here on connect;
+// client reads it and responds with SHA-256(nonce + pin) for mutual auth.
+export const CHALLENGE_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26ab';
 
 const DEVICE_NAME = 'OpenFlight';
+const BLE_PIN_SECURE_KEY = 'openflight.ble-pin';
+
+// Derive an auth response from a server-supplied nonce.
+// Pi firmware computes the same hash and verifies it server-side.
+// This prevents replay attacks — each connection uses a fresh nonce.
+async function computeChallengeResponse(nonce: string, pin: string): Promise<string> {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `${nonce}:${pin}`,
+  );
+}
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAYS_MS = [3000, 6000, 12000];
 
@@ -178,15 +194,44 @@ export function useBLEConnection(): BLEConnectionState {
         const connected = await device.connect({ timeout: 10000 });
         await connected.discoverAllServicesAndCharacteristics();
 
-        // Authenticate with BLE PIN before sending any commands
+        // Challenge-response authentication (firmware >= 2.0).
+        // Firmware writes a random nonce to CHALLENGE_CHARACTERISTIC on connect;
+        // client responds with SHA-256(nonce + pin) so the PIN is never sent in
+        // the clear over BLE and each session uses a unique credential.
+        // Falls back to static-PIN auth for firmware < 2.0.
         try {
-          const storedPin = await AsyncStorage.getItem('openflight.ble-pin');
+          const storedPin = await SecureStore.getItemAsync(BLE_PIN_SECURE_KEY);
           if (storedPin) {
-            await connected.writeCharacteristicWithResponseForService(
-              OPENFLIGHT_SERVICE_UUID,
-              COMMAND_CHARACTERISTIC_UUID,
-              btoa(JSON.stringify({ cmd: 'auth', pin: storedPin }))
-            );
+            let authenticated = false;
+
+            // Attempt challenge-response (new firmware).
+            try {
+              const challengeChar = await connected.readCharacteristicForService(
+                OPENFLIGHT_SERVICE_UUID,
+                CHALLENGE_CHARACTERISTIC_UUID,
+              );
+              if (challengeChar?.value) {
+                const nonce = atob(challengeChar.value);
+                const response = await computeChallengeResponse(nonce, storedPin);
+                await connected.writeCharacteristicWithResponseForService(
+                  OPENFLIGHT_SERVICE_UUID,
+                  COMMAND_CHARACTERISTIC_UUID,
+                  btoa(JSON.stringify({ cmd: 'auth_challenge', response }))
+                );
+                authenticated = true;
+              }
+            } catch {
+              // CHALLENGE_CHARACTERISTIC not present on this firmware — fall through.
+            }
+
+            // Fallback: static-PIN auth for firmware < 2.0.
+            if (!authenticated) {
+              await connected.writeCharacteristicWithResponseForService(
+                OPENFLIGHT_SERVICE_UUID,
+                COMMAND_CHARACTERISTIC_UUID,
+                btoa(JSON.stringify({ cmd: 'auth', pin: storedPin }))
+              );
+            }
           }
         } catch {
           // Auth may fail on older firmware — not fatal, commands will be rejected server-side
@@ -210,9 +255,13 @@ export function useBLEConnection(): BLEConnectionState {
           (err, characteristic) => {
             if (err || !characteristic?.value) return;
             try {
-              const shot: Shot = JSON.parse(atob(characteristic.value));
-              setLatestShot(shot);
-              setShots((prev) => [shot, ...prev].slice(0, 100));
+              const parsed: unknown = JSON.parse(atob(characteristic.value));
+              if (!isValidShot(parsed)) {
+                setMalformedCount((n) => n + 1);
+                return;
+              }
+              setLatestShot(parsed);
+              setShots((prev) => [parsed, ...prev].slice(0, 100));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch {
               setMalformedCount((n) => n + 1);

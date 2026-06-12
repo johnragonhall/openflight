@@ -25,9 +25,26 @@ export async function requestLocationPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
+// 5 decimal places ≈ 1.1 m accuracy — sufficient for club-selection distances
+// (~1.2 yd error), while avoiding full sub-centimetre precision in storage.
+// Exports (CSV/PDF) apply a coarser 4dp truncation before data leaves the device.
+const COORD_PRECISION = 5;
+
 export async function getCurrentCoords(): Promise<GpsCoords> {
-  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-  return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+  return {
+    latitude:  parseFloat(loc.coords.latitude.toFixed(COORD_PRECISION)),
+    longitude: parseFloat(loc.coords.longitude.toFixed(COORD_PRECISION)),
+  };
+}
+
+// Use in exports only — 4dp ≈ 11 m identifies the course without revealing
+// the exact hole or shot position in shared files.
+export function truncateCoordsForExport(coords: GpsCoords): GpsCoords {
+  return {
+    latitude:  parseFloat(coords.latitude.toFixed(4)),
+    longitude: parseFloat(coords.longitude.toFixed(4)),
+  };
 }
 
 export function distanceYards(from: GpsCoords, to: GpsCoords): number {

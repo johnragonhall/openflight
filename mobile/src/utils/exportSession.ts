@@ -2,6 +2,14 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import type { Shot } from '../types/shot';
 
+function csvField(v: string | number | null | undefined): string {
+  const s = String(v ?? '');
+  // Prefix spreadsheet formula-injection characters to prevent execution in Excel/Sheets
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  // Wrap in quotes if the value contains commas, quotes, or newlines
+  return /[,"\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
 export async function exportSessionCSV(shots: Shot[]): Promise<void> {
   if (shots.length === 0) throw new Error('No shots to export');
 
@@ -22,7 +30,7 @@ export async function exportSessionCSV(shots: Shot[]): Promise<void> {
       s.launch_angle_vertical ?? '',
       s.spin_rpm ?? '',
       s.carry_spin_adjusted ?? '',
-    ].join(',')
+    ].map(csvField).join(',')
   );
 
   const csv = [headers, ...rows].join('\n');

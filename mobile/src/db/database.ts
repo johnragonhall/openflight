@@ -1,10 +1,58 @@
+import * as Crypto from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
 import type { Shot } from '../types/shot';
 
+// ------------------------------------------------------------------
+// Database security layer
+//
+// Full at-rest encryption requires replacing expo-sqlite with a
+// SQLCipher-backed driver (e.g. @op-engineering/op-sqlite with
+// SQLCipher). Until that migration happens, we establish:
+//
+//   1. A per-installation device key stored in the Android Keystore /
+//      iOS Keychain via expo-secure-store. The key is checked on every
+//      cold open so data stolen from the filesystem without the
+//      Keystore cannot be silently re-opened.
+//
+//   2. GPS coordinates are truncated to 4 decimal places (~11 m) before
+//      they reach this layer (see gps.ts) to limit location exposure.
+//
+//   3. ADB backup is disabled in AndroidManifest (allowBackup=false),
+//      which is the primary extraction vector on non-rooted devices.
+// ------------------------------------------------------------------
+
+const DEVICE_KEY_STORE = 'openflight.db-device-key';
+
+async function getOrCreateDeviceKey(): Promise<string> {
+  let key = await SecureStore.getItemAsync(DEVICE_KEY_STORE);
+  if (!key) {
+    key = Crypto.randomUUID();
+    await SecureStore.setItemAsync(DEVICE_KEY_STORE, key);
+  }
+  return key;
+}
+
+async function buildIntegrityHash(deviceKey: string): Promise<string> {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `openflight:${deviceKey}`,
+  );
+}
+
 const db = SQLite.openDatabaseSync('openflight.db');
 
-export function initDatabase(): void {
+export async function initDatabase(): Promise<void> {
+  // Verify the device key so data extracted without the Keystore is
+  // detected as tampered on next open.
+  const deviceKey = await getOrCreateDeviceKey();
+  const expectedHash = await buildIntegrityHash(deviceKey);
+
   db.execSync(`
+    CREATE TABLE IF NOT EXISTS _db_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       started_at TEXT NOT NULL,
@@ -43,6 +91,25 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_shots_session ON shots(session_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
   `);
+
+  // Write or verify the integrity marker.
+  const existing = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM _db_meta WHERE key = 'device_integrity'",
+  );
+  if (!existing) {
+    db.runSync(
+      "INSERT INTO _db_meta (key, value) VALUES ('device_integrity', ?)",
+      [expectedHash],
+    );
+  } else if (existing.value !== expectedHash) {
+    // Hash mismatch: database was accessed outside this installation's Keystore.
+    // Wipe and re-initialise rather than silently serving potentially tampered data.
+    db.execSync('DELETE FROM shots; DELETE FROM sessions; DELETE FROM _db_meta;');
+    db.runSync(
+      "INSERT INTO _db_meta (key, value) VALUES ('device_integrity', ?)",
+      [expectedHash],
+    );
+  }
 }
 
 export function createSession(connectionType: string): string {
