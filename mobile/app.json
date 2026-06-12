@@ -41,6 +41,12 @@
           "modes": ["central"],
           "bluetoothAlwaysPermission": "Allow OpenFlight to use Bluetooth to connect to your launch monitor"
         }
+      ],
+      [
+        "@op-engineering/op-sqlite",
+        {
+          "useSqlCipher": true
+        }
       ]
     ]
   }

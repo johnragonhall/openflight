@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { getFittingResults, type FitStatus } from '../data/fittingRanges';
 import type { SessionStats } from '../types/shot';
+import { C, R } from '../theme';
 
 const STATUS_COLOR: Record<FitStatus, string> = {
-  optimal: '#22c55e',
-  close: '#f59e0b',
-  out: '#ef4444',
-  'no-data': '#374151',
+  optimal: C.accent,
+  close: C.warn,
+  out: C.err,
+  'no-data': C.muted,
 };
 
 const STATUS_LABEL: Record<FitStatus, string> = {
@@ -22,12 +23,10 @@ interface Props {
   stats: SessionStats;
 }
 
-export function FittingRecommendations({ club, stats }: Props) {
-  const results = getFittingResults(
-    club,
-    stats.avg_launch_angle,
-    stats.avg_spin_rpm,
-    stats.avg_smash_factor,
+export const FittingRecommendations = React.memo(function FittingRecommendations({ club, stats }: Props) {
+  const results = useMemo(
+    () => getFittingResults(club, stats.avg_launch_angle, stats.avg_spin_rpm, stats.avg_smash_factor),
+    [club, stats.avg_launch_angle, stats.avg_spin_rpm, stats.avg_smash_factor],
   );
 
   if (results.length === 0) return null;
@@ -61,26 +60,38 @@ export function FittingRecommendations({ club, stats }: Props) {
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111', borderRadius: 12, padding: 14, marginTop: 12,
+    backgroundColor: C.s1,
+    borderRadius: R.md,
+    borderWidth: 1,
+    borderColor: C.line,
+    padding: 14,
+    marginTop: 12,
   },
   title: {
-    color: '#9ca3af', fontSize: 11, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
+    color: C.sub,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
   row: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: '#1f2937',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowRight: { alignItems: 'flex-end' },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  metric: { color: '#e5e7eb', fontSize: 13, fontWeight: '600' },
-  range: { color: '#6b7280', fontSize: 11, marginTop: 1 },
+  metric: { color: C.text, fontSize: 13, fontWeight: '600' },
+  range: { color: C.sub, fontSize: 11, marginTop: 1 },
   value: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums' as const] },
   status: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', marginTop: 1 },
 });

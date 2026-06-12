@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
 import {
@@ -10,6 +10,7 @@ import {
   getSpeedUnit,
 } from '../utils/units';
 import { MetricCard } from './MetricCard';
+import { C, R } from '../theme';
 
 function getLaunchQuality(confidence: number | null): 'high' | 'medium' | 'low' | null {
   if (confidence === null) return null;
@@ -24,10 +25,29 @@ function spinAxisLabel(deg: number): string {
   return 'straight';
 }
 
-export function ShotDisplay({ shot }: { shot: Shot }) {
+export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Shot }) {
   const { unitSystem } = useUnitPreference();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+
+  const entryAnim = useRef(new Animated.Value(0)).current;
+  const prevIdRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const currentId = shot.id ?? shot.timestamp;
+    if (prevIdRef.current !== currentId) {
+      prevIdRef.current = currentId;
+      entryAnim.setValue(0);
+      Animated.spring(entryAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 16,
+        bounciness: 2,
+      }).start();
+    }
+  }, [shot.id, shot.timestamp, entryAnim]);
+
+  const translateY = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
 
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
   const carrySubtext = shot.carry_spin_adjusted
@@ -57,30 +77,34 @@ export function ShotDisplay({ shot }: { shot: Shot }) {
     : null;
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[styles.container, { opacity: entryAnim, transform: [{ translateY }] }]}>
       <View style={styles.headerRow}>
-        <Text style={styles.club}>{shot.club.toUpperCase()}</Text>
+        <View style={styles.clubPill}>
+          <Text style={styles.club}>{shot.club.toUpperCase()}</Text>
+        </View>
         <Text style={styles.timestamp}>
           {new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
       </View>
 
-      {/* Primary — ball speed + carry always full width */}
       <View style={styles.primaryRow}>
         <MetricCard
           label="Ball Speed"
           value={formatSpeed(shot.ball_speed_mph, unitSystem, 1)}
           unit={getSpeedUnit(unitSystem)}
+          size="primary"
+          flex={1}
         />
         <MetricCard
           label="Carry"
           value={formatDistance(carry, unitSystem, 0)}
           unit={getDistanceUnit(unitSystem)}
           subtext={carrySubtext}
+          size="primary"
+          flex={1}
         />
       </View>
 
-      {/* Secondary — wrap into 2-col grid, conditional cards appear when data present */}
       <View style={[styles.secondaryGrid, isLandscape && styles.secondaryGridLandscape]}>
         <MetricCard
           label="Club Speed"
@@ -115,12 +139,12 @@ export function ShotDisplay({ shot }: { shot: Shot }) {
         {clubPath !== null && (
           <MetricCard label="Club Path" value={clubPath} unit="°" subtext="radar" />
         )}
-        {spinAxis !== null && (
+        {spinAxis !== null && shot.spin_axis_deg !== null && (
           <MetricCard
             label="Spin Axis"
             value={spinAxis}
             unit="°"
-            subtext={spinAxisLabel(shot.spin_axis_deg!)}
+            subtext={spinAxisLabel(shot.spin_axis_deg)}
           />
         )}
         {hLaunch !== null && (
@@ -133,9 +157,9 @@ export function ShotDisplay({ shot }: { shot: Shot }) {
           />
         )}
       </View>
-    </View>
+    </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 8, paddingTop: 8 },
@@ -143,12 +167,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
     paddingHorizontal: 4,
   },
-  club: { color: '#22c55e', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
-  timestamp: { color: '#6b7280', fontSize: 12 },
-  primaryRow: { flexDirection: 'row' },
+  clubPill: {
+    backgroundColor: C.accentSurface,
+    borderWidth: 1,
+    borderColor: C.accentMuted,
+    borderRadius: R.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  club: { color: C.accentBright, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  timestamp: { color: C.sub, fontSize: 12 },
+  primaryRow: { flexDirection: 'row', marginBottom: 2 },
   secondaryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   secondaryGridLandscape: { flexDirection: 'row', flexWrap: 'wrap' },
 });

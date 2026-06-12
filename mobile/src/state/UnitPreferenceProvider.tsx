@@ -5,15 +5,27 @@ import { UnitPreferenceContext } from './UnitPreferenceContext';
 
 const STORAGE_KEY = 'openflight.unit-system';
 
+// Cache the async read so remounts (e.g. Strict Mode double-invoke) don't
+// re-issue the I/O — the value is stable for the lifetime of the process.
+let cachedUnitSystem: UnitSystem | null = null;
+const unitSystemPromise: Promise<UnitSystem> = AsyncStorage.getItem(STORAGE_KEY)
+  .then((v) => {
+    cachedUnitSystem = v === 'metric' ? 'metric' : 'imperial';
+    return cachedUnitSystem;
+  })
+  .catch(() => {
+    cachedUnitSystem = 'imperial';
+    return cachedUnitSystem;
+  });
+
 export function UnitPreferenceProvider({ children }: { children: ReactNode }) {
-  const [unitSystem, setUnitSystemState] = useState<UnitSystem>('imperial');
+  const [unitSystem, setUnitSystemState] = useState<UnitSystem>(
+    () => cachedUnitSystem ?? 'imperial',
+  );
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((stored) => {
-        if (stored === 'metric') setUnitSystemState('metric');
-      })
-      .catch(() => { /* use default */ });
+    if (cachedUnitSystem !== null) return;
+    unitSystemPromise.then(setUnitSystemState).catch(() => {});
   }, []);
 
   const setUnitSystem = useCallback((next: UnitSystem) => {

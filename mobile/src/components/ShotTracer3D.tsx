@@ -22,16 +22,19 @@ function project(
   return { px, py, scale };
 }
 
-export function ShotTracer3D({ shot, height = 200 }: Props) {
+export const ShotTracer3D = React.memo(function ShotTracer3D({ shot, height = 200 }: Props) {
   const { width } = useWindowDimensions();
   const { unitSystem } = useUnitPreference();
   const W = width;
   const H = height;
 
-  const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
-  const apex = shot.apex_height_yards
-    ?? computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm)
-    ?? carry * 0.12;
+  const carry = Math.max(shot.carry_spin_adjusted ?? shot.estimated_carry_yards, 1);
+  const apex = Math.max(
+    shot.apex_height_yards
+      ?? computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm)
+      ?? carry * 0.12,
+    1,
+  );
   const lateral = shot.launch_angle_horizontal !== null
     ? carry * Math.tan(shot.launch_angle_horizontal * Math.PI / 180)
     : 0;
@@ -135,7 +138,7 @@ export function ShotTracer3D({ shot, height = 200 }: Props) {
       </Svg>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { backgroundColor: '#060d25' },

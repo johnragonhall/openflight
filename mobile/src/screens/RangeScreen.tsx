@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConnection } from '../state/ConnectionContext';
 import { DispersionChart } from '../components/DispersionChart';
 import { CameraStream } from '../components/CameraStream';
@@ -12,7 +11,9 @@ import {
   type GpsCoords, requestLocationPermission, getCurrentCoords, distanceYards,
 } from '../utils/gps';
 import { useUnitPreference } from '../state/useUnitPreference';
-import { CAMERA_URL_KEY, DEFAULT_CAMERA_URL } from './SettingsScreen';
+import { cameraUrlPromise, DEFAULT_CAMERA_URL } from './SettingsScreen';
+import { PressableScale } from '../components/PressableScale';
+import { C, R } from '../theme';
 
 type Tab = 'dispersion' | 'targets' | 'gps' | 'camera';
 
@@ -52,8 +53,9 @@ function GPSTab() {
       const c = await getCurrentCoords();
       setPinCoords(c);
       setCurrentCoords(c);
-    } catch { /* ignore */ }
-    setLoading(false);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
   };
 
   const yardage = pinCoords && currentCoords
@@ -84,19 +86,17 @@ function GPSTab() {
         </View>
       )}
       {!pinCoords && (
-        <View style={gpsStyles.hint}>
-          <Text style={gpsStyles.hintText}>Walk to the pin, then tap "Set Pin"</Text>
-        </View>
+        <Text style={gpsStyles.hint}>Walk to the pin, then tap Set Pin</Text>
       )}
-      <TouchableOpacity
-        style={gpsStyles.setBtn}
+      <PressableScale
+        style={[gpsStyles.setBtn, (loading || permGranted !== true) && gpsStyles.setBtnDisabled]}
         onPress={handleSetPin}
         disabled={loading || permGranted !== true}
       >
         {loading
-          ? <ActivityIndicator color="#0a0a0a" />
+          ? <ActivityIndicator color={C.bg} />
           : <Text style={gpsStyles.setBtnText}>{pinCoords ? 'Reset Pin' : 'Set Pin Here'}</Text>}
-      </TouchableOpacity>
+      </PressableScale>
       {currentCoords && (
         <Text style={gpsStyles.coords}>
           {currentCoords.latitude.toFixed(5)}, {currentCoords.longitude.toFixed(5)}
@@ -109,58 +109,74 @@ function GPSTab() {
 const gpsStyles = StyleSheet.create({
   container: { padding: 16, gap: 16, paddingBottom: 40 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  emptySub: { color: '#6b7280', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  emptyText: { color: C.text, fontSize: 16, fontWeight: '600' },
+  emptySub: { color: C.sub, fontSize: 13, marginTop: 6, textAlign: 'center' },
   distanceCard: {
-    backgroundColor: '#0d2010', borderRadius: 16, padding: 24,
-    alignItems: 'center', borderWidth: 1, borderColor: '#14532d',
+    backgroundColor: C.accentSurface,
+    borderRadius: R.lg,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.accentMuted,
   },
-  distLabel: { color: '#4ade80', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  distValue: { color: '#22c55e', fontSize: 56, fontWeight: '800', fontVariant: ['tabular-nums' as const], marginTop: 4 },
-  hint: { alignItems: 'center' },
-  hintText: { color: '#6b7280', fontSize: 14 },
+  distLabel: { color: C.accentBright, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  distValue: {
+    color: C.accent,
+    fontSize: 60,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums' as const],
+    marginTop: 4,
+    letterSpacing: -2,
+  },
+  hint: { color: C.sub, fontSize: 14, textAlign: 'center' },
   setBtn: {
-    backgroundColor: '#22c55e', borderRadius: 12, paddingVertical: 14,
+    backgroundColor: C.accent,
+    borderRadius: R.lg,
+    paddingVertical: 16,
     alignItems: 'center',
   },
-  setBtnText: { color: '#0a0a0a', fontSize: 16, fontWeight: '700' },
-  coords: { color: '#374151', fontSize: 11, textAlign: 'center' },
+  setBtnDisabled: { opacity: 0.4 },
+  setBtnText: { color: C.bg, fontSize: 16, fontWeight: '700' },
+  coords: { color: C.muted, fontSize: 11, textAlign: 'center' },
 });
+
+const TARGETS = [50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 400, 450];
+const TARGET_RADIUS_YDS = 10;
 
 // ── Targets Tab ──────────────────────────────────────────────────────────
 function TargetsTab() {
   const { shots } = useConnection();
   const { unitSystem } = useUnitPreference();
-  const targets = [50, 75, 100, 125, 150, 175, 200, 225, 250];
   const [target, setTarget] = useState(150);
-  const radius = 10;
+  const radius = TARGET_RADIUS_YDS;
 
-  const filtered = useMemo(() => {
-    return shots.map((s) => {
-      const carry = (s.carry_spin_adjusted ?? s.estimated_carry_yards) *
-        (unitSystem === 'metric' ? 0.9144 : 1);
-      const t = target * (unitSystem === 'metric' ? 0.9144 : 1);
-      return Math.abs(carry - t) <= radius;
-    });
-  }, [shots, target, unitSystem, radius]);
-
-  const inCount = filtered.filter(Boolean).length;
+  const inCount = useMemo(() => {
+    const convFactor = unitSystem === 'metric' ? 0.9144 : 1;
+    const t = target * convFactor;
+    let count = 0;
+    for (const s of shots) {
+      const carry = (s.carry_spin_adjusted ?? s.estimated_carry_yards) * convFactor;
+      if (Math.abs(carry - t) <= radius) count++;
+    }
+    return count;
+  }, [shots, target, unitSystem]);
   const unit = unitSystem === 'metric' ? 'm' : 'yds';
 
   return (
     <ScrollView contentContainerStyle={tgtStyles.container}>
       <Text style={tgtStyles.label}>Target Distance</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tgtStyles.chips}>
-        {targets.map((t) => (
-          <TouchableOpacity
+        {TARGETS.map((t) => (
+          <PressableScale
             key={t}
             style={[tgtStyles.chip, target === t && tgtStyles.chipActive]}
             onPress={() => setTarget(t)}
+            scale={0.94}
           >
             <Text style={[tgtStyles.chipText, target === t && tgtStyles.chipTextActive]}>
               {unitSystem === 'metric' ? `${(t * 0.9144).toFixed(0)}${unit}` : `${t}${unit}`}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         ))}
       </ScrollView>
       <View style={tgtStyles.resultCard}>
@@ -178,37 +194,64 @@ function TargetsTab() {
 
 const tgtStyles = StyleSheet.create({
   container: { padding: 16, gap: 16, paddingBottom: 40 },
-  label: { color: '#9ca3af', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  chips: { marginBottom: 8 },
+  label: { color: C.sub, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  chips: { marginBottom: 4 },
   chip: {
-    backgroundColor: '#1a1a1a', borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 9, marginRight: 8,
+    backgroundColor: C.s2,
+    borderRadius: R.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  chipActive: { backgroundColor: '#22c55e' },
-  chipText: { color: '#9ca3af', fontWeight: '600', fontSize: 14 },
-  chipTextActive: { color: '#0a0a0a' },
+  chipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  chipText: { color: C.sub, fontWeight: '600', fontSize: 14 },
+  chipTextActive: { color: C.bg },
   resultCard: {
-    backgroundColor: '#111', borderRadius: 14, padding: 24, alignItems: 'center',
-    borderWidth: 1, borderColor: '#1f2937',
+    backgroundColor: C.s1,
+    borderRadius: R.lg,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.line,
   },
-  resultLabel: { color: '#6b7280', fontSize: 13 },
-  resultValue: { color: '#22c55e', fontSize: 48, fontWeight: '800', fontVariant: ['tabular-nums' as const] },
-  resultPct: { color: '#9ca3af', fontSize: 14, marginTop: 4 },
+  resultLabel: { color: C.sub, fontSize: 13 },
+  resultValue: {
+    color: C.accent,
+    fontSize: 52,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums' as const],
+    letterSpacing: -1,
+  },
+  resultPct: { color: C.sub, fontSize: 14, marginTop: 4 },
 });
 
 // ── Camera Tab ───────────────────────────────────────────────────────────
 function CameraTab() {
   const [url, setUrl] = useState(DEFAULT_CAMERA_URL);
   useEffect(() => {
-    AsyncStorage.getItem(CAMERA_URL_KEY).then((v) => { if (v) setUrl(v); }).catch(() => {});
+    cameraUrlPromise.then(setUrl).catch(() => {});
   }, []);
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <Text style={{ color: '#6b7280', fontSize: 12, marginBottom: 10 }}>{url}</Text>
+    <View style={camStyles.container}>
+      <Text style={camStyles.url} numberOfLines={1}>{url}</Text>
       <CameraStream streamUrl={url} height={280} />
     </View>
   );
 }
+
+const camStyles = StyleSheet.create({
+  container: { flex: 1, padding: 16 },
+  url: { color: C.muted, fontSize: 11, marginBottom: 10 },
+});
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'dispersion', label: 'Dispersion' },
+  { key: 'targets', label: 'Targets' },
+  { key: 'gps', label: 'GPS' },
+  { key: 'camera', label: 'Camera' },
+];
 
 // ── Main ─────────────────────────────────────────────────────────────────
 export function RangeScreen() {
@@ -217,27 +260,26 @@ export function RangeScreen() {
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const clubs = useMemo(() => getUniqueClubs(shots), [shots]);
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'dispersion', label: 'Dispersion' },
-    { key: 'targets', label: 'Targets' },
-    { key: 'gps', label: 'GPS' },
-    { key: 'camera', label: 'Camera' },
-  ];
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Range</Text>
       </View>
+
       <View style={styles.tabBar}>
         {TABS.map((t) => (
-          <TouchableOpacity
+          <PressableScale
             key={t.key}
-            style={[styles.tab, activeTab === t.key && styles.tabActive]}
+            style={styles.tabWrap}
             onPress={() => setActiveTab(t.key)}
+            scale={0.94}
           >
-            <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>{t.label}</Text>
-          </TouchableOpacity>
+            <View style={[styles.tab, activeTab === t.key && styles.tabActive]}>
+              <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>
+                {t.label}
+              </Text>
+            </View>
+          </PressableScale>
         ))}
       </View>
 
@@ -245,22 +287,24 @@ export function RangeScreen() {
         <ScrollView contentContainerStyle={styles.scroll}>
           {clubs.length > 1 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.clubChips}>
-              <TouchableOpacity
+              <PressableScale
                 style={[styles.clubChip, !selectedClub && styles.clubChipActive]}
                 onPress={() => setSelectedClub(null)}
+                scale={0.94}
               >
                 <Text style={[styles.clubChipText, !selectedClub && styles.clubChipTextActive]}>All</Text>
-              </TouchableOpacity>
+              </PressableScale>
               {clubs.map((c) => (
-                <TouchableOpacity
+                <PressableScale
                   key={c}
                   style={[styles.clubChip, selectedClub === c && styles.clubChipActive]}
                   onPress={() => setSelectedClub(c)}
+                  scale={0.94}
                 >
                   <Text style={[styles.clubChipText, selectedClub === c && styles.clubChipTextActive]}>
                     {c.toUpperCase()}
                   </Text>
-                </TouchableOpacity>
+                </PressableScale>
               ))}
             </ScrollView>
           )}
@@ -277,28 +321,55 @@ export function RangeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: C.bg },
+
   header: {
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
   },
-  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  headerTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+
   tabBar: {
-    flexDirection: 'row', backgroundColor: '#111',
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row',
+    backgroundColor: C.s0,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    gap: 2,
   },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: '#22c55e' },
-  tabText: { color: '#6b7280', fontWeight: '600', fontSize: 14 },
-  tabTextActive: { color: '#22c55e' },
+  tabWrap: { flex: 1 },
+  tab: {
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    borderRadius: R.sm,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginBottom: 6,
+  },
+  tabActive: {
+    backgroundColor: C.s2,
+    borderColor: C.lineMid,
+  },
+  tabText: { color: C.muted, fontWeight: '600', fontSize: 13 },
+  tabTextActive: { color: C.text },
+
   scroll: { paddingVertical: 12, paddingBottom: 40 },
-  clubChips: { paddingHorizontal: 16, marginBottom: 8 },
+  clubChips: { paddingHorizontal: 16, marginBottom: 10 },
   clubChip: {
-    backgroundColor: '#1a1a1a', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 7, marginRight: 8,
+    backgroundColor: C.s2,
+    borderRadius: R.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: C.lineMid,
   },
-  clubChipActive: { backgroundColor: '#22c55e' },
-  clubChipText: { color: '#9ca3af', fontWeight: '600', fontSize: 13 },
-  clubChipTextActive: { color: '#0a0a0a' },
+  clubChipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  clubChipText: { color: C.sub, fontWeight: '600', fontSize: 13 },
+  clubChipTextActive: { color: C.bg },
   chartWrap: { paddingHorizontal: 16 },
 });
