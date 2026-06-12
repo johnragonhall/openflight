@@ -58,6 +58,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # Global state
 monitor = None
+ble_server = None
 mock_mode: bool = False
 debug_mode: bool = False
 debug_log_file = None
@@ -1343,6 +1344,8 @@ def handle_clear_session():
     if monitor:
         monitor.clear_session()
         socketio.emit("session_cleared")
+        if ble_server is not None:
+            ble_server.notify_event({"event": "session_cleared"})
 
 
 @socketio.on("get_session")
@@ -1888,6 +1891,8 @@ def on_shot_detected(shot: Shot):
         shot_data = shot_to_dict(shot)
         stats = monitor.get_session_stats() if monitor else {}
         socketio.emit("shot", {"shot": shot_data, "stats": stats})
+        if ble_server is not None:
+            ble_server.notify_shot(shot_data)
 
         # Log shot info
         angle_str = ""
@@ -2247,6 +2252,30 @@ class MockLaunchMonitor:
         self._current_club = club
 
 
+def _handle_ble_command(cmd: dict) -> None:
+    """Dispatch commands received from BLE central devices."""
+    command = cmd.get("cmd")
+    if command == "get_session" and monitor:
+        shots_list = [shot_to_dict(s) for s in monitor.get_shots()]
+        for shot_data in shots_list:
+            if ble_server is not None:
+                ble_server.notify_shot(shot_data)
+            time.sleep(0.05)
+    elif command == "clear_session" and monitor:
+        monitor.clear_session()
+        socketio.emit("session_cleared")
+        if ble_server is not None:
+            ble_server.notify_event({"event": "session_cleared"})
+    elif command == "set_club":
+        club_name = cmd.get("club", "")
+        try:
+            club = ClubType(club_name)
+            if monitor:
+                monitor.set_club(club)
+        except ValueError:
+            pass
+
+
 def main():
     """Run the server."""
     import argparse  # pylint: disable=import-outside-toplevel
@@ -2322,6 +2351,11 @@ def main():
         "--log-dir", help="Directory for session logs (default: ~/openflight_sessions)"
     )
     parser.add_argument("--no-logging", action="store_true", help="Disable session logging")
+    parser.add_argument(
+        "--ble",
+        action="store_true",
+        help="Enable Bluetooth LE GATT server (Pi only, requires bless package)",
+    )
     parser.add_argument(
         "--ballistics",
         action="store_true",
@@ -2624,6 +2658,17 @@ def main():
     if args.mock:
         print("Running in MOCK mode - no radar required")
         print("Simulate shots via WebSocket or API")
+
+    if args.ble:
+        global ble_server  # pylint: disable=global-statement
+        from .ble_server import BLEServer  # pylint: disable=import-outside-toplevel
+
+        ble_server = BLEServer(on_command=_handle_ble_command)
+        if ble_server.start():
+            print("Bluetooth LE server started — advertising as 'OpenFlight'")
+        else:
+            print("WARNING: Bluetooth LE server failed to start — continuing without BLE")
+            ble_server = None
 
     print(f"Server starting at http://{args.host}:{args.web_port}")
     print()

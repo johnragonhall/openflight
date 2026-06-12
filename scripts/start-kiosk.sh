@@ -43,6 +43,7 @@ EXPERIMENTAL_KLD7_HORIZONTAL_IMPACT_ENERGY=""
 EXPERIMENTAL_KLD7_HORIZONTAL_RETRY_IMPACT_ENERGY=""
 EXPERIMENTAL_KLD7_HORIZONTAL_ANGLE_LIMIT=""
 BALLISTICS=false
+BLE=false
 
 # Buffer split presets (pre/post trigger segments out of 32 total)
 # At 20ksps: each segment = 6.4ms, total buffer = 204.8ms
@@ -203,6 +204,10 @@ while [[ $# -gt 0 ]]; do
             BALLISTICS=true
             shift
             ;;
+        --ble)
+            BLE=true
+            shift
+            ;;
         --port|-p)
             PORT="$2"
             shift 2
@@ -330,6 +335,10 @@ if [ "$BALLISTICS" = true ]; then
     SERVER_CMD="$SERVER_CMD --ballistics"
 fi
 
+if [ "$BLE" = true ]; then
+    SERVER_CMD="$SERVER_CMD --ble"
+fi
+
 if [ -n "$TRIGGER" ]; then
     SERVER_CMD="$SERVER_CMD --trigger $TRIGGER"
 fi
@@ -432,6 +441,26 @@ fi
 uv sync --quiet
 
 configure_kld7_latency
+
+# When BLE is requested, wait for BlueZ to be fully powered on (up to 10s).
+# bluetoothd may not be ready immediately after boot, causing bless to silently fail.
+if [ "$BLE" = true ] && command -v bluetoothctl >/dev/null 2>&1; then
+    log "Waiting for Bluetooth to be ready..."
+    bt_ready=false
+    for _i in $(seq 1 10); do
+        if bluetoothctl show 2>/dev/null | grep -q "Powered: yes"; then
+            bt_ready=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "$bt_ready" = true ]; then
+        log "Bluetooth ready"
+    else
+        warn "Bluetooth not powered on after 10s — BLE advertising may fail"
+        warn "  Run: sudo systemctl start bluetooth && sudo bluetoothctl power on"
+    fi
+fi
 
 # Check if UI is built
 if [ ! -d "ui/dist" ]; then

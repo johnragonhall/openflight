@@ -1,0 +1,21 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+
+<!--
+  mDNS advertisement for OpenFlight launch monitor.
+
+  Install:
+    sudo cp scripts/setup/openflight-avahi.service /etc/avahi/services/openflight.service
+    sudo systemctl restart avahi-daemon
+
+  The mobile app can then discover the Pi at openflight.local:8080
+  instead of requiring manual IP entry.
+-->
+<service-group>
+  <name replace-wildcards="yes">OpenFlight on %h</name>
+  <service>
+    <type>_openflight._tcp</type>
+    <port>8080</port>
+    <txt-record>version=1</txt-record>
+  </service>
+</service-group>
