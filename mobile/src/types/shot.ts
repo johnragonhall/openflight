@@ -26,6 +26,18 @@ export interface Shot {
   is_mishit?: boolean;
 }
 
+export function isValidShot(val: unknown): val is Shot {
+  if (!val || typeof val !== 'object') return false;
+  const s = val as Record<string, unknown>;
+  return (
+    typeof s.timestamp === 'string' && s.timestamp.length < 100 &&
+    typeof s.club === 'string' && s.club.length < 50 &&
+    typeof s.ball_speed_mph === 'number' && Number.isFinite(s.ball_speed_mph) &&
+    s.ball_speed_mph >= 0 && s.ball_speed_mph < 500 &&
+    typeof s.estimated_carry_yards === 'number' && Number.isFinite(s.estimated_carry_yards)
+  );
+}
+
 export function computeStats(shots: Shot[]): SessionStats {
   if (shots.length === 0) {
     return {

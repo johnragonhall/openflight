@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -122,12 +123,12 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
   const [pin, setPin] = useState('');
 
   useEffect(() => {
-    AsyncStorage.getItem(BLE_PIN_KEY).then((v) => { if (v) setPin(v); }).catch(() => {});
+    SecureStore.getItemAsync(BLE_PIN_KEY).then((v) => { if (v) setPin(v); }).catch(() => {});
   }, []);
 
   const savePin = (v: string) => {
     setPin(v);
-    AsyncStorage.setItem(BLE_PIN_KEY, v).catch(() => {});
+    SecureStore.setItemAsync(BLE_PIN_KEY, v).catch(() => {});
   };
 
   return (

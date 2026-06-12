@@ -11,18 +11,13 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const safeUrl = encodeURI(streamUrl.replace(/['"<>\\]/g, ''));
+  // Allow only http/https URLs with a safe host:port/path — blocks javascript: and data: URIs.
+  const VALID_STREAM_RE = /^https?:\/\/[\w.-]+(:\d{1,5})?(\/[\w.%/=?&+-]*)?$/;
+  const validatedUrl = VALID_STREAM_RE.test(streamUrl.trim()) ? streamUrl.trim() : null;
 
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  * { margin:0; padding:0; }
-  body { background:#000; display:flex; align-items:center; justify-content:center; height:100vh; }
-  img { max-width:100%; max-height:100vh; object-fit:contain; }
-</style></head>
-<body><img src="${safeUrl}" onerror="document.body.innerHTML='<p style=color:#ef4444;font-family:sans-serif;text-align:center;padding:20px>Stream unavailable</p>'" /></body>
-</html>`;
+  const html = validatedUrl
+    ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>* { margin:0; padding:0; } body { background:#000; display:flex; align-items:center; justify-content:center; height:100vh; } img { max-width:100%; max-height:100vh; object-fit:contain; }</style></head><body><img src="${validatedUrl}" /></body></html>`
+    : `<!DOCTYPE html><html><body style="background:#000;display:flex;align-items:center;justify-content:center;height:100vh"><p style="color:#ef4444;font-family:sans-serif;text-align:center;padding:20px">Invalid stream URL</p></body></html>`;
 
   if (error) {
     return (
@@ -49,7 +44,8 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
         onLoad={() => setLoading(false)}
         onError={() => { setLoading(false); setError(true); }}
         scrollEnabled={false}
-        javaScriptEnabled
+        javaScriptEnabled={false}
+        originWhitelist={[]}
       />
     </View>
   );

@@ -1,0 +1,2 @@
+app_identifier "com.openflight.mobile"
+# apple_id and team_id sourced from FASTLANE_APPLE_ID and APPLE_TEAM_ID env vars — never commit credentials here

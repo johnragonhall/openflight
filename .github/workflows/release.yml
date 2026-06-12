@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  # Manual trigger only — human must initiate signing and store uploads.
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'ios or android or both'
+        required: true
+        default: both
+      release_tag:
+        description: 'Release tag (e.g. v1.2.3)'
+        required: true
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # iOS TestFlight via EAS Build (recommended for Expo) or Fastlane
+  # Requires human approval via GitHub Environments (ios-release)
+  # ---------------------------------------------------------------------------
+  release-ios:
+    if: contains(github.event.inputs.platform, 'ios')
+    runs-on: macos-latest
+    environment: ios-release  # Configure approval in GitHub → Settings → Environments
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - run: npm install
+
+      # Option A: EAS Build (recommended for Expo projects)
+      # Required CI secrets: EXPO_TOKEN
+      - name: Run EAS Build + Submit (TestFlight)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli build --platform ios --profile production --non-interactive
+          npx eas-cli submit --platform ios --latest --non-interactive
+
+      # Option B: Fastlane (uncomment if using bare workflow after expo prebuild)
+      # Required CI secrets: APPLE_ID, FASTLANE_APP_SPECIFIC_PASSWORD,
+      #   MATCH_PASSWORD, MATCH_GIT_URL
+      # - name: Expo prebuild
+      #   run: npx expo prebuild --platform ios --clean --no-install
+      # - run: cd ios && pod install
+      # - uses: ruby/setup-ruby@v1
+      # - name: Run Fastlane beta
+      #   env:
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}
+      #     FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APP_SPECIFIC_PASSWORD }}
+      #     MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      #     MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+      #   run: bundle exec fastlane beta
+
+  # ---------------------------------------------------------------------------
+  # Android Play Store via EAS Build (recommended for Expo) or Fastlane
+  # Requires human approval via GitHub Environments (android-release)
+  # ---------------------------------------------------------------------------
+  release-android:
+    if: contains(github.event.inputs.platform, 'android')
+    runs-on: ubuntu-latest
+    environment: android-release  # Configure approval in GitHub → Settings → Environments
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - run: npm install
+
+      # Option A: EAS Build (recommended for Expo projects)
+      # Required CI secrets: EXPO_TOKEN
+      - name: Run EAS Build + Submit (Play Store)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli build --platform android --profile production --non-interactive
+          npx eas-cli submit --platform android --latest --non-interactive
+
+      # Option B: Fastlane (uncomment if using bare workflow after expo prebuild)
+      # Required CI secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      #   ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
+      # - uses: actions/setup-java@v4
+      #   with:
+      #     distribution: temurin
+      #     java-version: 17
+      # - name: Expo prebuild
+      #   run: npx expo prebuild --platform android --clean --no-install
+      # - name: Decode Keystore
+      #   run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.jks
+      # - name: Run Fastlane play_beta
+      #   env:
+      #     GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      #   run: bundle exec fastlane play_beta
+      # - if: always()
+      #   run: rm -f android/app/release.jks

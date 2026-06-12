@@ -1,0 +1,45 @@
+# Fastlane is an alternative to EAS Build for bare workflow builds.
+# For Expo managed workflow, prefer: npx eas-cli build / eas-cli submit
+# Run expo prebuild --clean before using these lanes.
+
+default_platform :ios
+
+platform :ios do
+  desc "Build and upload OpenFlight iOS to TestFlight"
+  lane :beta do
+    # Certificates and profiles managed via Fastlane Match.
+    # MATCH_GIT_URL and MATCH_PASSWORD must be set as env vars.
+    match(type: "appstore", readonly: true)
+    build_app(
+      workspace: "mobile/ios/OpenFlight.xcworkspace",
+      scheme: "OpenFlight"
+    )
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+end
+
+platform :android do
+  desc "Build and upload OpenFlight Android AAB to Play Internal Testing"
+  lane :play_beta do
+    # Keystore credentials are sourced from CI env vars — never hardcode.
+    # Required: ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+    gradle(
+      task: "bundle",
+      build_type: "Release",
+      project_dir: "mobile/android",
+      properties: {
+        "android.injected.signing.store.file"     => ENV.fetch("ANDROID_KEYSTORE_PATH"),
+        "android.injected.signing.store.password" => ENV.fetch("ANDROID_KEYSTORE_PASSWORD"),
+        "android.injected.signing.key.alias"      => ENV.fetch("ANDROID_KEY_ALIAS"),
+        "android.injected.signing.key.password"   => ENV.fetch("ANDROID_KEY_PASSWORD"),
+      }
+    )
+    supply(
+      track: "internal",
+      aab: "mobile/android/app/build/outputs/bundle/release/app-release.aab"
+      # json_key is read from SUPPLY_JSON_KEY or GOOGLE_PLAY_SERVICE_ACCOUNT_JSON env var
+    )
+  end
+end
