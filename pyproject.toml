@@ -53,6 +53,10 @@ camera = [
     # "picamera2>=0.3.0; sys_platform == 'linux'",
     # "inference-sdk>=0.9.0",  # Roboflow inference API
 ]
+# Bluetooth LE GATT server for mobile app connectivity (Pi only, requires BlueZ)
+ble = [
+    "bless>=0.2.2",
+]
 # Analysis tools for I/Q capture data
 analysis = [
     "numpy>=1.20.0",
