@@ -7,14 +7,16 @@ interface CameraFeedProps {
   cameraStatus: CameraStatus;
   onToggleCamera: () => void;
   onToggleStream: () => void;
+  streamToken?: string;
 }
 
-const STREAM_URL = `${getServerOrigin()}/camera/stream`;
-
-export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream }: CameraFeedProps) {
+export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream, streamToken }: CameraFeedProps) {
   const [streamError, setStreamError] = useState(false);
   const [prevStreaming, setPrevStreaming] = useState(false);
   const { available, enabled, streaming, ball_detected, ball_confidence } = cameraStatus;
+  const streamUrl = streamToken
+    ? `${getServerOrigin()}/camera/stream?token=${encodeURIComponent(streamToken)}`
+    : `${getServerOrigin()}/camera/stream`;
 
   // Reset error when streaming starts
   if (streaming && !prevStreaming) {
@@ -86,7 +88,7 @@ export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream }: Cam
         ) : (
           <div className="camera-feed__stream">
             <img
-              src={STREAM_URL}
+              src={streamUrl}
               alt="Camera Feed"
               className="camera-feed__video"
               onError={() => setStreamError(true)}

@@ -89,8 +89,15 @@ class BLEServer:
         is the parsed JSON dict, e.g. {"cmd": "get_session"}.
     """
 
-    def __init__(self, on_command: Optional[Callable[[dict], None]] = None) -> None:
+    def __init__(
+        self,
+        on_command: Optional[Callable[[dict], None]] = None,
+        pin: Optional[str] = None,
+    ) -> None:
         self._on_command = on_command
+        self._pin = pin
+        self._authenticated: bool = pin is None  # no PIN → always authenticated
+        self._auth_expiry: float = float("inf") if pin is None else 0.0
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server = None
         self._thread: Optional[threading.Thread] = None
@@ -274,6 +281,21 @@ class BLEServer:
             cmd = json.loads(bytes(value).decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             logger.warning("BLE: malformed command payload")
+            return
+
+        # Handle PIN auth before checking general auth state
+        if cmd.get("cmd") == "auth":
+            provided = cmd.get("pin", "")
+            if self._pin is not None and provided == self._pin:
+                self._authenticated = True
+                self._auth_expiry = time.monotonic() + 3600.0
+                logger.info("BLE: client authenticated")
+            else:
+                logger.warning("BLE: auth failed (wrong PIN)")
+            return
+
+        if not self._authenticated or time.monotonic() > self._auth_expiry:
+            logger.warning("BLE: command rejected — not authenticated")
             return
 
         if self._on_command is not None:
