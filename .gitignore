@@ -69,6 +69,9 @@ htmlcov/
 # Ephemeral working notes (see CLAUDE.md)
 scratchpad/
 
+# Superpowers design specs (local planning docs, not for source control)
+docs/superpowers/
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -76,6 +79,21 @@ scratchpad/
 ui/node_modules/
 mobile/node_modules/
 mobile/.expo/
+
+# Android build outputs and generated files
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/local.properties
+mobile/android/**/.cxx/
+
+# patch-package patches targeting build artifacts (not source)
+mobile/patches/
+
+# Claude Code enforcement / CI artifacts
+.github/workflows/claude-lint.yml
+claude-enforcement.md
+scripts/ci/
 
 # AI / dev-tool directories (Claude, Codex, agent skills, superpowers)
 .claude/
