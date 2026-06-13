@@ -54,13 +54,13 @@ export async function initDatabase(): Promise<void> {
   _db = open({ name: 'openflight.db', encryptionKey: deviceKey });
   const db = _db;
 
-  db.execute(
+  await db.execute(
     `CREATE TABLE IF NOT EXISTS _db_meta (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`,
   );
-  db.execute(
+  await db.execute(
     `CREATE TABLE IF NOT EXISTS sessions (
       id              TEXT PRIMARY KEY,
       started_at      TEXT NOT NULL,
@@ -69,7 +69,7 @@ export async function initDatabase(): Promise<void> {
       shot_count      INTEGER NOT NULL DEFAULT 0
     )`,
   );
-  db.execute(
+  await db.execute(
     `CREATE TABLE IF NOT EXISTS shots (
       id                      TEXT PRIMARY KEY,
       session_id              TEXT NOT NULL,
@@ -99,16 +99,16 @@ export async function initDatabase(): Promise<void> {
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     )`,
   );
-  db.execute(`CREATE INDEX IF NOT EXISTS idx_shots_session ON shots(session_id)`);
-  db.execute(`CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_shots_session ON shots(session_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)`);
 
-  const rows = db.execute(
+  const metaResult = await db.execute(
     "SELECT value FROM _db_meta WHERE key = 'device_integrity'",
-  ).rows as Array<{ value: string }>;
-  const existing = rows[0];
+  );
+  const existing = (metaResult.rows?._array as Array<{ value: string }> | undefined)?.[0];
 
   if (!existing) {
-    db.execute(
+    await db.execute(
       "INSERT INTO _db_meta (key, value) VALUES ('device_integrity', ?)",
       [expectedHash],
     );
@@ -116,35 +116,42 @@ export async function initDatabase(): Promise<void> {
     // Encrypted file opened with correct SQLCipher key but integrity stamp
     // doesn't match this Keystore — e.g. restored to a different device.
     // Wipe and re-stamp so callers never see another installation's data.
-    db.execute('DELETE FROM shots');
-    db.execute('DELETE FROM sessions');
-    db.execute('DELETE FROM _db_meta');
-    db.execute(
-      "INSERT INTO _db_meta (key, value) VALUES ('device_integrity', ?)",
-      [expectedHash],
-    );
+    await db.execute('BEGIN');
+    try {
+      await db.execute('DELETE FROM shots');
+      await db.execute('DELETE FROM sessions');
+      await db.execute('DELETE FROM _db_meta');
+      await db.execute(
+        "INSERT INTO _db_meta (key, value) VALUES ('device_integrity', ?)",
+        [expectedHash],
+      );
+      await db.execute('COMMIT');
+    } catch (txErr) {
+      await db.execute('ROLLBACK');
+      throw txErr;
+    }
   }
 }
 
-export function createSession(connectionType: string): string {
+export async function createSession(connectionType: string): Promise<string> {
   const id = `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  getDb().execute(
+  await getDb().execute(
     'INSERT INTO sessions (id, started_at, connection_type) VALUES (?, ?, ?)',
     [id, new Date().toISOString(), connectionType],
   );
   return id;
 }
 
-export function endSession(id: string): void {
-  getDb().execute(
+export async function endSession(id: string): Promise<void> {
+  await getDb().execute(
     'UPDATE sessions SET ended_at = ? WHERE id = ?',
     [new Date().toISOString(), id],
   );
 }
 
-export function saveShot(sessionId: string, shot: Shot): void {
+export async function saveShot(sessionId: string, shot: Shot): Promise<void> {
   const shotId = `sh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  getDb().execute(
+  await getDb().execute(
     `INSERT OR IGNORE INTO shots (
       id, session_id, recorded_at, club, ball_speed_mph, club_speed_mph,
       smash_factor, estimated_carry_yards, carry_spin_adjusted,
@@ -168,7 +175,7 @@ export function saveShot(sessionId: string, shot: Shot): void {
       shot.face_to_path_deg ?? null, shot.is_mishit ? 1 : 0,
     ],
   );
-  getDb().execute(
+  await getDb().execute(
     'UPDATE sessions SET shot_count = shot_count + 1 WHERE id = ?',
     [sessionId],
   );
@@ -182,17 +189,19 @@ export interface SessionRow {
   shot_count: number;
 }
 
-export function getSessions(): SessionRow[] {
-  return getDb().execute(
+export async function getSessions(): Promise<SessionRow[]> {
+  const result = await getDb().execute(
     'SELECT * FROM sessions ORDER BY started_at DESC LIMIT 100',
-  ).rows as SessionRow[];
+  );
+  return (result.rows?._array ?? []) as SessionRow[];
 }
 
-export function getShotsForSession(sessionId: string): Shot[] {
-  const rows = getDb().execute(
+export async function getShotsForSession(sessionId: string): Promise<Shot[]> {
+  const result = await getDb().execute(
     'SELECT * FROM shots WHERE session_id = ? ORDER BY recorded_at ASC',
     [sessionId],
-  ).rows as Record<string, unknown>[];
+  );
+  const rows = (result.rows?._array ?? []) as Record<string, unknown>[];
   return rows.map(rowToShot);
 }
 
@@ -218,16 +227,16 @@ function rowToShot(r: Record<string, unknown>): Shot {
     launch_angle_vertical: (r.launch_angle_vertical as number | null) ?? null,
     launch_angle_horizontal: (r.launch_angle_horizontal as number | null) ?? null,
     launch_angle_confidence: (r.launch_angle_confidence as number | null) ?? null,
-    angle_source: (rawAngleSource && VALID_ANGLE_SOURCES.has(rawAngleSource)
-      ? rawAngleSource as Shot['angle_source']
+    angle_source: (rawAngleSource && VALID_ANGLE_SOURCES.has(rawAngleSource.toLowerCase())
+      ? rawAngleSource.toLowerCase() as Shot['angle_source']
       : null),
     club_angle_deg: (r.club_angle_deg as number | null) ?? null,
     club_path_deg: (r.club_path_deg as number | null) ?? null,
     spin_axis_deg: (r.spin_axis_deg as number | null) ?? null,
     spin_rpm: (r.spin_rpm as number | null) ?? null,
     spin_confidence: (r.spin_confidence as number | null) ?? null,
-    spin_quality: (rawSpinQuality && VALID_SPIN_QUALITIES.has(rawSpinQuality)
-      ? rawSpinQuality as Shot['spin_quality']
+    spin_quality: (rawSpinQuality && VALID_SPIN_QUALITIES.has(rawSpinQuality.toLowerCase())
+      ? rawSpinQuality.toLowerCase() as Shot['spin_quality']
       : null),
     apex_height_yards: (r.apex_height_yards as number | null) ?? null,
     total_distance_yards: (r.total_distance_yards as number | null) ?? null,

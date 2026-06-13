@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
 import {
@@ -25,10 +25,14 @@ function spinAxisLabel(deg: number): string {
   return 'straight';
 }
 
+// Format a signed degree value with a leading '+' for positives (e.g. "+1.5", "-2.0").
+function signedDegrees(value: number | null): string | null {
+  if (value === null) return null;
+  return (value >= 0 ? '+' : '') + value.toFixed(1);
+}
+
 export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Shot }) {
   const { unitSystem } = useUnitPreference();
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
 
   const entryAnim = useRef(new Animated.Value(0)).current;
   const prevIdRef = useRef<string | undefined>(undefined);
@@ -59,18 +63,9 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
     shot.launch_angle_vertical !== null
       ? shot.launch_angle_vertical.toFixed(1)
       : null;
-  const hLaunch =
-    shot.launch_angle_horizontal !== null
-      ? (shot.launch_angle_horizontal >= 0 ? '+' : '') + shot.launch_angle_horizontal.toFixed(1)
-      : null;
-  const clubPath =
-    shot.club_path_deg !== null
-      ? (shot.club_path_deg >= 0 ? '+' : '') + shot.club_path_deg.toFixed(1)
-      : null;
-  const spinAxis =
-    shot.spin_axis_deg !== null
-      ? (shot.spin_axis_deg >= 0 ? '+' : '') + shot.spin_axis_deg.toFixed(1)
-      : null;
+  const hLaunch = signedDegrees(shot.launch_angle_horizontal);
+  const clubPath = signedDegrees(shot.club_path_deg);
+  const spinAxis = signedDegrees(shot.spin_axis_deg);
   const spin = shot.spin_rpm !== null ? Math.round(shot.spin_rpm).toLocaleString() : null;
   const clubSpeed = shot.club_speed_mph !== null
     ? formatSpeed(shot.club_speed_mph, unitSystem, 1)
@@ -94,6 +89,8 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
           unit={getSpeedUnit(unitSystem)}
           size="primary"
           flex={1}
+          animateRawValue={shot.ball_speed_mph}
+          animateFormatter={(v) => formatSpeed(v, unitSystem, 1)}
         />
         <MetricCard
           label="Carry"
@@ -102,10 +99,12 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
           subtext={carrySubtext}
           size="primary"
           flex={1}
+          animateRawValue={carry}
+          animateFormatter={(v) => formatDistance(v, unitSystem, 0)}
         />
       </View>
 
-      <View style={[styles.secondaryGrid, isLandscape && styles.secondaryGridLandscape]}>
+      <View style={styles.secondaryGrid}>
         <MetricCard
           label="Club Speed"
           value={clubSpeed}
@@ -182,5 +181,4 @@ const styles = StyleSheet.create({
   timestamp: { color: C.sub, fontSize: 12 },
   primaryRow: { flexDirection: 'row', marginBottom: 2 },
   secondaryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  secondaryGridLandscape: { flexDirection: 'row', flexWrap: 'wrap' },
 });

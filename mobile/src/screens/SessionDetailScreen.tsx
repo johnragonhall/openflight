@@ -26,13 +26,12 @@ export function SessionDetailScreen() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    try {
-      const loaded = getShotsForSession(sessionId);
-      setShots(loaded);
-      if (loaded.length > 0) setSelected(loaded[loaded.length - 1] ?? null);
-    } catch {
-      // DB read failure — show empty state rather than crashing
-    }
+    getShotsForSession(sessionId)
+      .then((loaded) => {
+        setShots(loaded);
+        if (loaded.length > 0) setSelected(loaded[loaded.length - 1] ?? null);
+      })
+      .catch(() => { /* DB read failure — show empty state */ });
   }, [sessionId]);
 
   const handleExportCSV = async () => {

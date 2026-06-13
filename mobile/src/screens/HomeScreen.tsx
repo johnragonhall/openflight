@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
@@ -8,6 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ClubPicker } from '../components/ClubPicker';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { PressableScale } from '../components/PressableScale';
+import { RadarPulse } from '../components/RadarPulse';
 import { ShotDisplay } from '../components/ShotDisplay';
 import { ShotTracer2D } from '../components/ShotTracer2D';
 import { ShotTracer3D } from '../components/ShotTracer3D';
@@ -26,6 +27,109 @@ type NavProp = CompositeNavigationProp<
 
 type TracerView = '2d' | '3d';
 
+// ── Pulsing connection dot ───────────────────────────────────────────────────
+function PulsingDot({ active }: { active: boolean }) {
+  const ringAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!active) { ringAnim.setValue(0); return; }
+    const loop = Animated.loop(
+      Animated.timing(ringAnim, {
+        toValue: 1,
+        duration: 1800,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [active]);
+
+  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.6] });
+  const ringOpacity = ringAnim.interpolate({
+    inputRange: [0, 0.25, 1],
+    outputRange: [0.7, 0.4, 0],
+  });
+
+  return (
+    <View style={pulseStyles.wrap}>
+      {active && (
+        <Animated.View
+          style={[
+            pulseStyles.ring,
+            { transform: [{ scale: ringScale }], opacity: ringOpacity },
+          ]}
+        />
+      )}
+      <View style={[pulseStyles.dot, { backgroundColor: active ? C.accent : C.sub }]} />
+    </View>
+  );
+}
+
+const pulseStyles = StyleSheet.create({
+  wrap: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' },
+  ring: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: C.accent,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+});
+
+// ── Shot list row with entry animation ──────────────────────────────────────
+const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
+  const { unitSystem } = useUnitPreference();
+  const entryAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(entryAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 18,
+      bounciness: 2,
+    }).start();
+  }, []);
+
+  const translateY = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
+
+  const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
+  return (
+    <Animated.View style={{ opacity: entryAnim, transform: [{ translateY }] }}>
+      <View style={styles.shotRow}>
+        <View style={styles.shotRowLeft}>
+          <View style={styles.shotRowClubPill}>
+            <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
+          </View>
+          <Text style={styles.shotRowTime}>
+            {new Date(shot.timestamp).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+        </View>
+        <View style={styles.shotRowMetrics}>
+          <View style={styles.shotRowMetric}>
+            <Text style={styles.shotRowValue}>
+              {formatSpeed(shot.ball_speed_mph, unitSystem, 0)}
+            </Text>
+            <Text style={styles.shotRowUnit}>{getSpeedUnit(unitSystem)}</Text>
+          </View>
+          <View style={styles.shotRowMetric}>
+            <Text style={styles.shotRowValue}>
+              {formatDistance(carry, unitSystem, 0)}
+            </Text>
+            <Text style={styles.shotRowUnit}>{getDistanceUnit(unitSystem)}</Text>
+          </View>
+        </View>
+      </View>
+    </Animated.View>
+  );
+});
+
+// ── Main screen ──────────────────────────────────────────────────────────────
 export function HomeScreen() {
   const nav = useNavigation<NavProp>();
   const {
@@ -38,10 +142,10 @@ export function HomeScreen() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [tracerView, setTracerView] = useState<TracerView>('2d');
 
-  const handleExport = async () => {
+  const handleExport = React.useCallback(async () => {
     try { await exportSessionCSV(shots); }
     catch (e) { setExportError(e instanceof Error ? e.message : 'Export failed'); }
-  };
+  }, [shots]);
 
   const activeError = exportError ?? errorMessage;
   const activeDismiss = exportError ? () => setExportError(null) : dismissError;
@@ -54,19 +158,94 @@ export function HomeScreen() {
     [],
   );
 
+  const ListHeader = React.useCallback(() => {
+    if (!latestShot) return null;
+    return (
+      <>
+        <View style={styles.tracerWrap}>
+          <View style={styles.tracerToggle}>
+            {(['2d', '3d'] as TracerView[]).map((v) => (
+              <PressableScale
+                key={v}
+                style={[styles.tracerBtn, tracerView === v && styles.tracerBtnActive]}
+                onPress={() => setTracerView(v)}
+                scale={0.94}
+              >
+                <Text
+                  style={[
+                    styles.tracerBtnText,
+                    tracerView === v && styles.tracerBtnTextActive,
+                  ]}
+                >
+                  {v.toUpperCase()}
+                </Text>
+              </PressableScale>
+            ))}
+          </View>
+          {tracerView === '2d'
+            ? <ShotTracer2D shot={latestShot} />
+            : <ShotTracer3D shot={latestShot} />}
+        </View>
+
+        <ShotDisplay shot={latestShot} />
+
+        <View style={styles.toolbarRow}>
+          <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+            <Text style={styles.clubChipText}>{selectedClub}</Text>
+            <Text style={styles.clubChipCaret}>▾</Text>
+          </PressableScale>
+          <View style={styles.toolbarRight}>
+            {shots.length > 0 && (
+              <PressableScale onPress={handleExport} style={styles.toolbarBtn}>
+                <Text style={styles.toolbarBtnText}>CSV</Text>
+              </PressableScale>
+            )}
+            <PressableScale onPress={clearSession} style={styles.toolbarBtn}>
+              <Text style={styles.toolbarBtnText}>Clear</Text>
+            </PressableScale>
+          </View>
+        </View>
+
+        <View style={styles.historyLabelRow}>
+          <Text style={styles.historyLabel}>Session</Text>
+          <View style={styles.historyCount}>
+            <Text style={styles.historyCountText}>{shots.length}</Text>
+          </View>
+        </View>
+      </>
+    );
+  }, [latestShot, tracerView, shots, selectedClub, handleExport, clearSession]);
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.logo}>OpenFlight</Text>
         <View style={styles.headerRight}>
-          {mockMode && <View style={styles.mockBadge}><Text style={styles.mockBadgeText}>MOCK</Text></View>}
-          {malformedCount > 3 && <View style={styles.warnBadge}><Text style={styles.warnBadgeText}>BLE !</Text></View>}
+          {mockMode && (
+            <View style={styles.mockBadge}>
+              <Text style={styles.mockBadgeText}>MOCK</Text>
+            </View>
+          )}
+          {malformedCount > 3 && (
+            <View style={styles.warnBadge}>
+              <Text style={styles.warnBadgeText}>BLE !</Text>
+            </View>
+          )}
           <PressableScale
-            style={[styles.statusBadge, connected ? styles.connectedBadge : styles.disconnectedBadge]}
+            style={[
+              styles.statusBadge,
+              connected ? styles.connectedBadge : styles.disconnectedBadge,
+            ]}
             onPress={() => nav.navigate('Connection')}
           >
-            <View style={[styles.dot, connected ? styles.dotConnected : styles.dotDisconnected]} />
-            <Text style={[styles.statusText, connected ? styles.statusConnected : styles.statusDisconnected]}>
+            <PulsingDot active={connected} />
+            <Text
+              style={[
+                styles.statusText,
+                connected ? styles.statusConnected : styles.statusDisconnected,
+              ]}
+            >
               {connected ? connectionLabel : 'Connect'}
             </Text>
           </PressableScale>
@@ -75,19 +254,27 @@ export function HomeScreen() {
 
       {activeError && <ErrorBanner message={activeError} onDismiss={activeDismiss} />}
 
+      {/* States */}
       {!connected ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not connected</Text>
-          <Text style={styles.emptySubtitle}>Link to your launch monitor to start tracking</Text>
-          <PressableScale style={styles.connectButton} onPress={() => nav.navigate('Connection')}>
+          <Text style={styles.emptySubtitle}>
+            Link to your launch monitor to start tracking
+          </Text>
+          <PressableScale
+            style={styles.connectButton}
+            onPress={() => nav.navigate('Connection')}
+          >
             <Text style={styles.connectButtonText}>Connect</Text>
           </PressableScale>
         </View>
       ) : latestShot === null ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Ready</Text>
-          <Text style={styles.emptySubtitle}>Waiting for shots…</Text>
-          <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+          <RadarPulse size={140} label="Waiting for shot" />
+          <PressableScale
+            onPress={() => setClubPickerVisible(true)}
+            style={[styles.clubChip, styles.clubChipCentered]}
+          >
             <Text style={styles.clubChipText}>{selectedClub}</Text>
             <Text style={styles.clubChipCaret}>▾</Text>
           </PressableScale>
@@ -96,54 +283,7 @@ export function HomeScreen() {
         <FlatList<Shot>
           data={shots}
           keyExtractor={(item) => item.id ?? item.timestamp}
-          ListHeaderComponent={
-            <>
-              <View style={styles.tracerWrap}>
-                <View style={styles.tracerToggle}>
-                  {(['2d', '3d'] as TracerView[]).map((v) => (
-                    <PressableScale
-                      key={v}
-                      style={[styles.tracerBtn, tracerView === v && styles.tracerBtnActive]}
-                      onPress={() => setTracerView(v)}
-                      scale={0.94}
-                    >
-                      <Text style={[styles.tracerBtnText, tracerView === v && styles.tracerBtnTextActive]}>
-                        {v.toUpperCase()}
-                      </Text>
-                    </PressableScale>
-                  ))}
-                </View>
-                {tracerView === '2d'
-                  ? <ShotTracer2D shot={latestShot} />
-                  : <ShotTracer3D shot={latestShot} />}
-              </View>
-
-              <ShotDisplay shot={latestShot} />
-
-              <View style={styles.toolbarRow}>
-                <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
-                  <Text style={styles.clubChipText}>{selectedClub}</Text>
-                  <Text style={styles.clubChipCaret}>▾</Text>
-                </PressableScale>
-                <View style={styles.toolbarRight}>
-                  {shots.length > 0 && (
-                    <PressableScale onPress={handleExport} style={styles.toolbarBtn}>
-                      <Text style={styles.toolbarBtnText}>CSV</Text>
-                    </PressableScale>
-                  )}
-                  <PressableScale onPress={clearSession} style={styles.toolbarBtn}>
-                    <Text style={styles.toolbarBtnText}>Clear</Text>
-                  </PressableScale>
-                </View>
-              </View>
-              <View style={styles.historyLabelRow}>
-                <Text style={styles.historyLabel}>Session</Text>
-                <View style={styles.historyCount}>
-                  <Text style={styles.historyCountText}>{shots.length}</Text>
-                </View>
-              </View>
-            </>
-          }
+          ListHeaderComponent={ListHeader}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
         />
@@ -158,33 +298,6 @@ export function HomeScreen() {
     </SafeAreaView>
   );
 }
-
-const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
-  const { unitSystem } = useUnitPreference();
-  const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
-  return (
-    <View style={styles.shotRow}>
-      <View style={styles.shotRowLeft}>
-        <View style={styles.shotRowClubPill}>
-          <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
-        </View>
-        <Text style={styles.shotRowTime}>
-          {new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      </View>
-      <View style={styles.shotRowMetrics}>
-        <View style={styles.shotRowMetric}>
-          <Text style={styles.shotRowValue}>{formatSpeed(shot.ball_speed_mph, unitSystem, 0)}</Text>
-          <Text style={styles.shotRowUnit}>{getSpeedUnit(unitSystem)}</Text>
-        </View>
-        <View style={[styles.shotRowMetric, styles.shotRowMetricRight]}>
-          <Text style={styles.shotRowValue}>{formatDistance(carry, unitSystem, 0)}</Text>
-          <Text style={styles.shotRowUnit}>{getDistanceUnit(unitSystem)}</Text>
-        </View>
-      </View>
-    </View>
-  );
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
@@ -224,11 +337,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: R.pill,
   },
-  connectedBadge: { backgroundColor: C.accentSurface, borderWidth: 1, borderColor: C.accentMuted },
-  disconnectedBadge: { backgroundColor: C.s2, borderWidth: 1, borderColor: C.lineMid },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  dotConnected: { backgroundColor: C.accent },
-  dotDisconnected: { backgroundColor: C.sub },
+  connectedBadge: {
+    backgroundColor: C.accentSurface,
+    borderWidth: 1,
+    borderColor: C.accentMuted,
+  },
+  disconnectedBadge: {
+    backgroundColor: C.s2,
+    borderWidth: 1,
+    borderColor: C.lineMid,
+  },
   statusText: { fontSize: 12, fontWeight: '600' },
   statusConnected: { color: C.accentBright },
   statusDisconnected: { color: C.sub },
@@ -251,11 +369,22 @@ const styles = StyleSheet.create({
   tracerBtnText: { color: C.sub, fontSize: 11, fontWeight: '700' },
   tracerBtnTextActive: { color: C.bg },
 
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
-  emptyTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    padding: 40,
+  },
+  emptyTitle: {
+    color: C.text,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
   emptySubtitle: { color: C.sub, fontSize: 15, textAlign: 'center' },
   connectButton: {
-    marginTop: 16,
+    marginTop: 8,
     backgroundColor: C.accent,
     paddingHorizontal: 32,
     paddingVertical: 14,
@@ -293,7 +422,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.lineMid,
   },
-  clubChipText: { color: C.text, fontWeight: '700', fontSize: 13, textTransform: 'uppercase' },
+  clubChipCentered: { alignSelf: 'center' },
+  clubChipText: {
+    color: C.text,
+    fontWeight: '700',
+    fontSize: 13,
+    textTransform: 'uppercase',
+  },
   clubChipCaret: { color: C.sub, fontSize: 11 },
 
   historyLabelRow: {
@@ -304,7 +439,13 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 6,
   },
-  historyLabel: { color: C.sub, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  historyLabel: {
+    color: C.sub,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
   historyCount: {
     backgroundColor: C.s3,
     borderRadius: R.pill,
@@ -340,7 +481,11 @@ const styles = StyleSheet.create({
   shotRowTime: { color: C.sub, fontSize: 11 },
   shotRowMetrics: { flexDirection: 'row', gap: 20 },
   shotRowMetric: { alignItems: 'flex-end' },
-  shotRowMetricRight: {},
-  shotRowValue: { color: C.text, fontWeight: '700', fontSize: 18, fontVariant: ['tabular-nums' as const] },
+  shotRowValue: {
+    color: C.text,
+    fontWeight: '700',
+    fontSize: 18,
+    fontVariant: ['tabular-nums' as const],
+  },
   shotRowUnit: { color: C.sub, fontSize: 10 },
 });

@@ -35,13 +35,10 @@ export function HistoryScreen() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
-    try {
-      setSessions(getSessions());
-    } catch {
-      // DB not ready yet; ignore
-    } finally {
-      setLoading(false);
-    }
+    getSessions()
+      .then(setSessions)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);

@@ -2706,7 +2706,7 @@ def main():
         _ble_pin = f"{random.randint(0, 9999):04d}"
         ble_server = BLEServer(on_command=_handle_ble_command, pin=_ble_pin)
         if ble_server.start():
-            print(f"Bluetooth LE server started — advertising as 'OpenFlight'")
+            print("Bluetooth LE server started — advertising as 'OpenFlight'")
             print(f"  BLE PIN: {_ble_pin}")
         else:
             print("WARNING: Bluetooth LE server failed to start — continuing without BLE")

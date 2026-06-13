@@ -12,6 +12,7 @@ import {
 } from '../utils/gps';
 import { useUnitPreference } from '../state/useUnitPreference';
 import { cameraUrlPromise, DEFAULT_CAMERA_URL } from './SettingsScreen';
+import { convertDistanceFromYards, formatDistance, getDistanceUnit } from '../utils/units';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
 
@@ -63,9 +64,7 @@ function GPSTab() {
     : null;
 
   const displayDist = yardage !== null
-    ? unitSystem === 'metric'
-      ? `${(yardage * 0.9144).toFixed(0)} m`
-      : `${yardage.toFixed(0)} yds`
+    ? `${formatDistance(yardage, unitSystem, 0)} ${getDistanceUnit(unitSystem)}`
     : null;
 
   if (permGranted === false) {
@@ -148,19 +147,21 @@ function TargetsTab() {
   const { shots } = useConnection();
   const { unitSystem } = useUnitPreference();
   const [target, setTarget] = useState(150);
-  const radius = TARGET_RADIUS_YDS;
-
   const inCount = useMemo(() => {
-    const convFactor = unitSystem === 'metric' ? 0.9144 : 1;
-    const t = target * convFactor;
+    const targetConverted = convertDistanceFromYards(target, unitSystem);
+    const radiusConverted = convertDistanceFromYards(TARGET_RADIUS_YDS, unitSystem);
     let count = 0;
     for (const s of shots) {
-      const carry = (s.carry_spin_adjusted ?? s.estimated_carry_yards) * convFactor;
-      if (Math.abs(carry - t) <= radius) count++;
+      const carry = convertDistanceFromYards(
+        s.carry_spin_adjusted ?? s.estimated_carry_yards,
+        unitSystem,
+      );
+      if (Math.abs(carry - targetConverted) <= radiusConverted) count++;
     }
     return count;
   }, [shots, target, unitSystem]);
-  const unit = unitSystem === 'metric' ? 'm' : 'yds';
+  const unit = getDistanceUnit(unitSystem);
+  const radiusDisplay = formatDistance(TARGET_RADIUS_YDS, unitSystem, 0);
 
   return (
     <ScrollView contentContainerStyle={tgtStyles.container}>
@@ -174,13 +175,13 @@ function TargetsTab() {
             scale={0.94}
           >
             <Text style={[tgtStyles.chipText, target === t && tgtStyles.chipTextActive]}>
-              {unitSystem === 'metric' ? `${(t * 0.9144).toFixed(0)}${unit}` : `${t}${unit}`}
+              {formatDistance(t, unitSystem, 0)}{unit}
             </Text>
           </PressableScale>
         ))}
       </ScrollView>
       <View style={tgtStyles.resultCard}>
-        <Text style={tgtStyles.resultLabel}>Within ±{radius}{unit} of target</Text>
+        <Text style={tgtStyles.resultLabel}>Within ±{radiusDisplay}{unit} of target</Text>
         <Text style={tgtStyles.resultValue}>{inCount} / {shots.length}</Text>
         {shots.length > 0 && (
           <Text style={tgtStyles.resultPct}>

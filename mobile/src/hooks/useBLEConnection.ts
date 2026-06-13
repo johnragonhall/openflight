@@ -337,6 +337,7 @@ export function useBLEConnection(): BLEConnectionState {
     lastDeviceRef.current = null;
     teardownRef.current();
     connectedDeviceRef.current?.cancelConnection();
+    connectedDeviceRef.current = null;
     setConnectedDevice(null);
     setStatus('idle');
     setErrorMessage(null);
@@ -345,13 +346,12 @@ export function useBLEConnection(): BLEConnectionState {
   const clearSession = useCallback(() => {
     setShots([]);
     setLatestShot(null);
-    connectedDeviceRef.current
-      ?.writeCharacteristicWithResponseForService(
-        OPENFLIGHT_SERVICE_UUID,
-        COMMAND_CHARACTERISTIC_UUID,
-        btoa(JSON.stringify({ cmd: 'clear_session' }))
-      )
-      .catch(() => { /* not fatal — server will clear on its own timer */ });
+    const writePromise = connectedDeviceRef.current?.writeCharacteristicWithResponseForService(
+      OPENFLIGHT_SERVICE_UUID,
+      COMMAND_CHARACTERISTIC_UUID,
+      btoa(JSON.stringify({ cmd: 'clear_session' }))
+    );
+    writePromise?.catch(() => { /* not fatal — server will clear on its own timer */ });
   }, []);
 
   const setClub = useCallback(async (clubId: string) => {

@@ -4,8 +4,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-
 import { useBLEConnection } from './src/hooks/useBLEConnection';
 import { useSocketConnection } from './src/hooks/useSocketConnection';
 import { UnitPreferenceProvider } from './src/state/UnitPreferenceProvider';
@@ -19,9 +17,8 @@ import { RangeScreen } from './src/screens/RangeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ConnectionScreen } from './src/screens/ConnectionScreen';
 import { SessionDetailScreen } from './src/screens/SessionDetailScreen';
+import { AnimatedTabBar } from './src/components/AnimatedTabBar';
 import type { RootStackParamList, MainTabParamList } from './src/types/navigation';
-
-try { initDatabase(); } catch { /* noop */ }
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -40,30 +37,11 @@ const NAV_THEME = {
   },
 };
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
-
-const TAB_ICONS: Record<string, { on: IoniconName; off: IoniconName }> = {
-  Live:     { on: 'radio',        off: 'radio-outline' },
-  History:  { on: 'time',         off: 'time-outline' },
-  Stats:    { on: 'stats-chart',  off: 'stats-chart-outline' },
-  Range:    { on: 'flag',         off: 'flag-outline' },
-  Settings: { on: 'settings',     off: 'settings-outline' },
-};
-
 function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: { backgroundColor: '#111111', borderTopColor: '#1a1a1a' },
-        tabBarActiveTintColor: '#22c55e',
-        tabBarInactiveTintColor: '#6b7280',
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons = TAB_ICONS[route.name];
-          const name = focused ? icons?.on : icons?.off;
-          return name ? <Ionicons name={name} size={size} color={color} /> : null;
-        },
-      })}
+      tabBar={(props) => <AnimatedTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Live" component={HomeScreen} />
       <Tab.Screen name="History" component={HistoryScreen} />
@@ -78,6 +56,7 @@ export default function App() {
   const socket = useSocketConnection();
   const ble = useBLEConnection();
   const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const [dbReady, setDbReady] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const prevShotTsRef = useRef<string | null>(null);
 
@@ -89,26 +68,37 @@ export default function App() {
   const connectionLabel = wifiActive ? 'Wi-Fi' : 'BLE';
   const selectedClub = wifiActive ? socket.selectedClub : ble.selectedClub;
 
-  // Start DB session on first connect
   useEffect(() => {
-    if (connected && !sessionIdRef.current) {
-      try { sessionIdRef.current = createSession(connectionLabel); } catch { /* noop */ }
-    }
-  }, [connected, connectionLabel]);
+    initDatabase()
+      .then(() => setDbReady(true))
+      .catch(() => { /* DB unavailable — shots remain in-memory only */ });
+  }, []);
+
+  // Start DB session on first connect, but only after DB is ready
+  useEffect(() => {
+    if (!dbReady || !connected || sessionIdRef.current) return;
+    createSession(connectionLabel)
+      .then((id) => { sessionIdRef.current = id; })
+      .catch(() => {});
+  }, [connected, connectionLabel, dbReady]);
 
   // Persist each new shot
   useEffect(() => {
     if (!latestShot || latestShot.timestamp === prevShotTsRef.current) return;
     prevShotTsRef.current = latestShot.timestamp;
     if (!sessionIdRef.current) return;
-    try { saveShot(sessionIdRef.current, enrichShot(latestShot)); } catch { /* noop */ }
+    saveShot(sessionIdRef.current, enrichShot(latestShot)).catch(() => {});
   }, [latestShot]);
 
   const clearSession = () => {
-    try {
-      if (sessionIdRef.current) endSession(sessionIdRef.current);
-      sessionIdRef.current = connected ? createSession(connectionLabel) : null;
-    } catch { /* noop */ }
+    const oldId = sessionIdRef.current;
+    sessionIdRef.current = null;
+    if (oldId) endSession(oldId).catch(() => {});
+    if (connected) {
+      createSession(connectionLabel)
+        .then((id) => { sessionIdRef.current = id; })
+        .catch(() => {});
+    }
     (wifiActive ? socket.clearSession : ble.clearSession)();
   };
 

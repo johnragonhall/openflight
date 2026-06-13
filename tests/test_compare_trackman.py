@@ -154,7 +154,7 @@ class TestLoadTrackman:
             "5/6/2026 6:58:02 PM,7 Iron,118.5,17.2,-1.5\r\n"
             "5/6/2026 6:59:00 PM,Driver,165.0,11.0,0.5\r\n"
         )
-        path.write_text(content, encoding="utf-8")
+        path.write_bytes(content.encode("utf-8"))
         shots = ct.load_trackman(path)
         assert len(shots) == 2
         assert shots[0].club == "7-iron"

@@ -63,9 +63,28 @@ test_camera.jpg
 .coverage
 htmlcov/
 
+# Linter / formatter caches
+.ruff_cache/
+
+# Ephemeral working notes (see CLAUDE.md)
+scratchpad/
+
 # Jupyter
 .ipynb_checkpoints/
 
-# UI (Node.js)
+# UI / Mobile (Node.js)
 ui/node_modules/
+mobile/node_modules/
+mobile/.expo/
+
+# AI / dev-tool directories (Claude, Codex, agent skills, superpowers)
+.claude/
+.agents/
+.codex/
+.superpowers/
+skills-lock.json
+
+# Dev notes and large local installers
+claude_efficiency_and_project_prompt.md
+anthropic.claude-code-*.vsix
 ui/dist/autoresearch-results.tsv

@@ -86,7 +86,7 @@ function WiFiPanel({
 }) {
   return (
     <View style={styles.panel}>
-      <Text style={styles.hint}>Enter your Pi's IP address and port (default 8080)</Text>
+      <Text style={styles.hint}>Enter your Pi&apos;s IP address and port (default 8080)</Text>
       <TextInput
         style={styles.input}
         value={hostAndPort}

@@ -54,9 +54,10 @@ export const PressableScale = React.memo(function PressableScale({
       activeOpacity={1}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
+      style={style}
       {...rest}
     >
-      <Animated.View style={[{ transform: [{ scale: anim }] }, style]}>
+      <Animated.View style={{ transform: [{ scale: anim }] }}>
         {children}
       </Animated.View>
     </TouchableOpacity>

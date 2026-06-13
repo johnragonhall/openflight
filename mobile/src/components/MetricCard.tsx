@@ -1,5 +1,6 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { AnimatedNumber } from './AnimatedNumber';
 import { C, R } from '../theme';
 
 interface MetricCardProps {
@@ -11,16 +12,21 @@ interface MetricCardProps {
   confidence?: 'high' | 'medium' | 'low' | null;
   size?: 'primary' | 'default';
   flex?: number;
+  /** Raw numeric value — when provided, the display animates to this number */
+  animateRawValue?: number | null;
+  /** Formatter applied to the animating raw value */
+  animateFormatter?: (v: number) => string;
 }
 
 const DOT_INDICES = [0, 1, 2] as const;
+const FILLED_DOTS: Record<'high' | 'medium' | 'low', number> = { high: 3, medium: 2, low: 1 };
 
 const ConfidenceDots = React.memo(function ConfidenceDots({
   level,
 }: {
   level: 'high' | 'medium' | 'low';
 }) {
-  const filled = level === 'high' ? 3 : level === 'medium' ? 2 : 1;
+  const filled = FILLED_DOTS[level];
   return (
     <View style={styles.dotsRow}>
       {DOT_INDICES.map((i) => (
@@ -40,42 +46,80 @@ export const MetricCard = React.memo(function MetricCard({
   confidence,
   size = 'default',
   flex,
+  animateRawValue,
+  animateFormatter,
 }: MetricCardProps) {
   const isEmpty = value === null || value === undefined;
   const display = isEmpty ? '—' : String(value);
   const isPrimary = size === 'primary';
 
+  // Flash highlight on primary card when value updates
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!isPrimary || isEmpty) return;
+    flashAnim.setValue(1);
+    Animated.timing(flashAnim, {
+      toValue: 0,
+      duration: 700,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, animateRawValue]);
+
+  const borderColor = flashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [C.line, C.accentMuted],
+  });
+
   return (
-    <View
+    <Animated.View
       style={[
         styles.card,
         isPrimary ? styles.cardPrimary : styles.cardDefault,
         dim && styles.cardDim,
         flex !== undefined && { flex },
+        isPrimary && { borderColor },
       ]}
     >
       <Text style={[styles.label, isPrimary && styles.labelPrimary]}>{label}</Text>
+
       <View style={styles.valueRow}>
-        <Text
-          style={[
-            styles.value,
-            isPrimary ? styles.valuePrimary : styles.valueDefault,
-            isEmpty && styles.valueEmpty,
-          ]}
-          numberOfLines={1}
-          adjustsFontSizeToFit={isPrimary}
-        >
-          {display}
-        </Text>
+        {/* Animated value for primary cards when raw number is provided */}
+        {isPrimary && animateRawValue != null && !isEmpty ? (
+          <AnimatedNumber
+            value={animateRawValue}
+            formatter={animateFormatter}
+            style={[styles.value, styles.valuePrimary]}
+            numberOfLines={1}
+          />
+        ) : (
+          <Text
+            style={[
+              styles.value,
+              isPrimary ? styles.valuePrimary : styles.valueDefault,
+              isEmpty && styles.valueEmpty,
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit={isPrimary}
+          >
+            {display}
+          </Text>
+        )}
+
         {unit != null && !isEmpty && (
           <Text style={[styles.unit, isPrimary && styles.unitPrimary]}>{unit}</Text>
         )}
       </View>
+
       {subtext != null && !isEmpty && (
         <Text style={styles.subtext} numberOfLines={1}>{subtext}</Text>
       )}
       {confidence != null && !isEmpty && <ConfidenceDots level={confidence} />}
-    </View>
+    </Animated.View>
   );
 });
 

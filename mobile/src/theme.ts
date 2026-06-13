@@ -38,3 +38,20 @@ export const R = {
   xl: 20,
   pill: 999,
 } as const;
+
+export const Glow = {
+  green:       'rgba(34, 197, 94, 0.18)',
+  greenMid:    'rgba(34, 197, 94, 0.10)',
+  greenFaint:  'rgba(34, 197, 94, 0.05)',
+  greenBright: 'rgba(74, 222, 128, 0.30)',
+  amber:       'rgba(245, 158, 11, 0.20)',
+} as const;
+
+export const Anim = {
+  fast:   160,
+  normal: 300,
+  slow:   480,
+  draw:   900,
+  spring: { speed: 18, bounciness: 3 },
+  springSnappy: { speed: 24, bounciness: 2 },
+} as const;

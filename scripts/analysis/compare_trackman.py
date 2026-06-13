@@ -312,9 +312,17 @@ def load_trackman(path: Path) -> List[Shot]:
         # Note: utf-8-sig only strips ONE BOM and Trackman exports have
         # been seen with TWO, so strip any leading BOMs explicitly.
         first_pos = fh.tell()
-        first_line = fh.readline().lstrip("\ufeff").lstrip()
+        first_line = fh.readline().lstrip("\ufeff").strip()
         if not first_line.lower().startswith("sep="):
             fh.seek(first_pos)
+        else:
+            # readline() with newline="" stops at bare \r (old-Mac endings).
+            # If a \n follows immediately (i.e. the file uses \r\n), consume
+            # it so csv.DictReader does not see a spurious empty first row.
+            after_pos = fh.tell()
+            ch = fh.read(1)
+            if ch != "\n":
+                fh.seek(after_pos)
         reader = csv.DictReader(fh)
         if reader.fieldnames is None:
             return shots
