@@ -7,6 +7,7 @@
   <a href="https://buymeacoffee.com/colemangolfs">
     <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white" alt="Buy Me a Coffee" />
   </a>
+  <a href="https://app.codspeed.io/johnragonhall/openflight?utm_source=badge"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed"/></a>
 </p>
 
 > [!WARNING]
