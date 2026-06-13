@@ -4,6 +4,7 @@ import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient, Stop, P
 import type { Shot } from '../types/shot';
 import { computeApexHeight, computeTrajectoryPoints } from '../utils/ballistics';
 import { useUnitPreference } from '../state/useUnitPreference';
+import { C } from '../theme';
 
 interface Props { shot: Shot; height?: number }
 
@@ -91,8 +92,8 @@ export const ShotTracer3D = React.memo(function ShotTracer3D({ shot, height = 20
             <Stop offset="100%" stopColor="#0d2218" />
           </LinearGradient>
           <LinearGradient id="ground3d" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor="#14532d" />
-            <Stop offset="100%" stopColor="#052e16" />
+            <Stop offset="0%" stopColor="#1a1810" />
+            <Stop offset="100%" stopColor="#0e0c08" />
           </LinearGradient>
         </Defs>
         {/* Sky */}
@@ -117,15 +118,15 @@ export const ShotTracer3D = React.memo(function ShotTracer3D({ shot, height = 20
         })}
 
         {/* Trajectory glow */}
-        <Path d={pathD} stroke="rgba(34,197,94,0.2)" strokeWidth={8} fill="none" />
+        <Path d={pathD} stroke="rgba(212,175,55,0.2)" strokeWidth={8} fill="none" />
         {/* Trajectory */}
-        <Path d={pathD} stroke="#22c55e" strokeWidth={2.5} fill="none" strokeLinecap="round" />
+        <Path d={pathD} stroke={C.accent} strokeWidth={2.5} fill="none" strokeLinecap="round" />
 
         {/* Tee */}
         <Circle cx={tee.px} cy={tee.py} r={4} fill="#9ca3af" />
 
         {/* Apex */}
-        <Circle cx={apexPt.px} cy={apexPt.py} r={3} fill="#22c55e" />
+        <Circle cx={apexPt.px} cy={apexPt.py} r={3} fill={C.accent} />
 
         {/* Landing */}
         <Circle cx={landing.px} cy={landing.py} r={5} fill="#f59e0b" />

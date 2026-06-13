@@ -1,26 +1,26 @@
 export const C = {
-  // Backgrounds — layered depth
-  bg: '#080808',
-  s0: '#0e0e0e',
-  s1: '#141414',
-  s2: '#1c1c1e',
-  s3: '#232325',
+  // Backgrounds — layered depth (matches kiosk: slightly blue-dark)
+  bg: '#0a0a0f',
+  s0: '#0e0e14',
+  s1: '#12121a',
+  s2: '#1a1a24',
+  s3: '#222230',
 
   // Borders
-  line: '#1e1e1e',
-  lineMid: '#282828',
+  line: '#1c1820',
+  lineMid: '#28241e',
 
-  // Accent — electric green (brand)
-  accent: '#22c55e',
-  accentDim: '#052e16',
-  accentSurface: '#0a2318',
-  accentBright: '#4ade80',
-  accentMuted: '#166534',
+  // Accent — premium gold (matches kiosk --color-gold)
+  accent: '#d4af37',
+  accentDim: '#2a2010',
+  accentSurface: '#1a1408',
+  accentBright: '#f4cf47',
+  accentMuted: '#6b5520',
 
-  // Text
-  text: '#f0f0f0',
-  sub: '#8a8a96',
-  muted: '#3e3e46',
+  // Text — cream family (matches kiosk --color-cream)
+  text: '#f5f0e6',
+  sub: '#b5afa4',
+  muted: '#7a7068',
 
   // Semantic
   warn: '#f59e0b',
@@ -28,6 +28,11 @@ export const C = {
   err: '#ef4444',
   errDim: '#450a0a',
   errText: '#fca5a5',
+
+  // Connected/success stays green (semantic meaning, not brand)
+  ok: '#4ade80',
+  okSurface: '#0a2318',
+  okMuted: '#166534',
 } as const;
 
 export const R = {
@@ -40,11 +45,11 @@ export const R = {
 } as const;
 
 export const Glow = {
-  green:       'rgba(34, 197, 94, 0.18)',
-  greenMid:    'rgba(34, 197, 94, 0.10)',
-  greenFaint:  'rgba(34, 197, 94, 0.05)',
-  greenBright: 'rgba(74, 222, 128, 0.30)',
-  amber:       'rgba(245, 158, 11, 0.20)',
+  gold:       'rgba(212, 175, 55, 0.18)',
+  goldMid:    'rgba(212, 175, 55, 0.10)',
+  goldFaint:  'rgba(212, 175, 55, 0.05)',
+  goldBright: 'rgba(244, 207, 71, 0.30)',
+  amber:      'rgba(245, 158, 11, 0.20)',
 } as const;
 
 export const Anim = {

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import re
 import secrets
 import statistics
 import sys
@@ -55,14 +56,18 @@ except ImportError:
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIST_DIR), static_url_path="")
 
-_LOCAL_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:8080",
-]
-CORS(app, origins=_LOCAL_ORIGINS)
-socketio = SocketIO(app, cors_allowed_origins=_LOCAL_ORIGINS, async_mode="threading")
+# Restrict CORS to RFC 1918 private ranges and localhost only.
+# Flask-SocketIO inherits this when cors_allowed_origins is omitted.
+# React Native clients that omit Origin entirely are not subject to CORS (no browser).
+_LAN_ORIGIN_RE = re.compile(
+    r"^https?://(localhost|127\.0\.0\.1"
+    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3})"
+    r"(:\d{1,5})?$"
+)
+CORS(app, origins=_LAN_ORIGIN_RE.pattern)
+socketio = SocketIO(app, async_mode="threading")
 
 # Generated at startup; printed to console for operator use
 _ADMIN_TOKEN: str = secrets.token_hex(16)

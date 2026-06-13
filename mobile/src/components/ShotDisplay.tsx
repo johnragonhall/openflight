@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  club: { color: C.accentBright, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  club: { color: C.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
   timestamp: { color: C.sub, fontSize: 12 },
   primaryRow: { flexDirection: 'row', marginBottom: 2 },
   secondaryGrid: { flexDirection: 'row', flexWrap: 'wrap' },

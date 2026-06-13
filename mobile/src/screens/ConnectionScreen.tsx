@@ -13,6 +13,7 @@ import {
 import type { Device } from 'react-native-ble-plx';
 import type { BLEConnectionState } from '../hooks/useBLEConnection';
 import type { SocketConnectionState } from '../hooks/useSocketConnection';
+import { C } from '../theme';
 
 const STORAGE_KEY = 'openflight.last-host';
 const DEFAULT_HOST = '192.168.1.';
@@ -207,39 +208,40 @@ function DeviceRow({ device, onPress }: { device: Device; onPress: () => void })
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', padding: 20 },
-  title: { color: '#ffffff', fontSize: 22, fontWeight: '700', marginBottom: 24 },
+  container: { flex: 1, backgroundColor: C.bg, padding: 20 },
+  title: { color: C.text, fontSize: 22, fontWeight: '700', marginBottom: 24 },
   tabs: {
-    flexDirection: 'row', backgroundColor: '#1a1a1a',
+    flexDirection: 'row', backgroundColor: C.s2,
     borderRadius: 10, padding: 4, marginBottom: 24,
   },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
-  activeTab: { backgroundColor: '#22c55e' },
-  tabText: { color: '#6b7280', fontWeight: '600', fontSize: 15 },
-  activeTabText: { color: '#0a0a0a' },
+  activeTab: { backgroundColor: C.accent },
+  tabText: { color: C.sub, fontWeight: '600', fontSize: 15 },
+  activeTabText: { color: C.bg },
   panel: { gap: 14 },
-  hint: { color: '#6b7280', fontSize: 13 },
+  hint: { color: C.sub, fontSize: 13 },
   input: {
-    backgroundColor: '#1a1a1a', borderRadius: 10, padding: 14,
-    color: '#ffffff', fontSize: 16, fontFamily: 'monospace',
+    backgroundColor: C.s2, borderRadius: 10, padding: 14,
+    color: C.text, fontSize: 16, fontFamily: 'monospace',
   },
-  button: { backgroundColor: '#22c55e', borderRadius: 10, padding: 16, alignItems: 'center' },
-  activeButton: { backgroundColor: '#16a34a' },
-  dangerButton: { backgroundColor: '#374151' },
-  buttonText: { color: '#0a0a0a', fontWeight: '700', fontSize: 16 },
+  button: { backgroundColor: C.accent, borderRadius: 10, padding: 16, alignItems: 'center' },
+  activeButton: { backgroundColor: C.accentMuted },
+  dangerButton: { backgroundColor: C.s3 },
+  buttonText: { color: C.bg, fontWeight: '700', fontSize: 16 },
   scanningRow: { flexDirection: 'row', alignItems: 'center' },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#14532d', padding: 12, borderRadius: 10,
+    backgroundColor: C.okSurface, padding: 12, borderRadius: 10,
   },
-  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' },
-  statusText: { color: '#22c55e', fontWeight: '600' },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.ok },
+  statusText: { color: C.ok, fontWeight: '600' },
   errorText: { color: '#ef4444', fontSize: 13 },
   deviceList: { maxHeight: 300 },
   deviceRow: {
-    backgroundColor: '#1a1a1a', borderRadius: 10, padding: 14,
+    backgroundColor: C.s2, borderRadius: 10, padding: 14,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
+    borderWidth: 1, borderColor: C.line,
   },
-  deviceName: { color: '#ffffff', fontWeight: '600', fontSize: 15 },
-  deviceRssi: { color: '#6b7280', fontSize: 13 },
+  deviceName: { color: C.text, fontWeight: '600', fontSize: 15 },
+  deviceRssi: { color: C.sub, fontSize: 13 },
 });

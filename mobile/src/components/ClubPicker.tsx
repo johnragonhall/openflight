@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CLUBS_BY_TYPE } from '../data/clubs';
+import { C } from '../theme';
 
 interface ClubPickerProps {
   visible: boolean;
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1a1a1a',
   },
   title: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
-  doneButton: { color: '#22c55e', fontSize: 16, fontWeight: '600' },
+  doneButton: { color: C.accent, fontSize: 16, fontWeight: '600' },
   scrollContent: { padding: 20, paddingBottom: 40 },
   group: { marginBottom: 24 },
   groupLabel: {
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
     minWidth: 58,
     alignItems: 'center',
   },
-  clubButtonSelected: { backgroundColor: '#22c55e' },
+  clubButtonSelected: { backgroundColor: C.accent },
   clubLabel: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
   clubLabelSelected: { color: '#0a0a0a' },
 });

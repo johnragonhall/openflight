@@ -6,6 +6,7 @@ import Svg, {
 import type { Shot } from '../types/shot';
 import { computeApexHeight, computeTrajectoryPoints } from '../utils/ballistics';
 import { useUnitPreference } from '../state/useUnitPreference';
+import { C } from '../theme';
 
 // Animated SVG path — strokeDashoffset drives the draw-on animation
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -180,7 +181,7 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
         {/* Main line */}
         <AnimatedPath
           d={d}
-          stroke="#22c55e"
+          stroke={C.accent}
           strokeWidth={2}
           fill="none"
           strokeLinecap="round"
@@ -193,13 +194,13 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
           cx={toX(carry / 2)}
           cy={toY(apex)}
           r={2.5}
-          fill="#22c55e"
+          fill={C.accent}
           fillOpacity={0.7}
         />
         <SvgText
           x={toX(carry / 2)}
           y={toY(apex) - 7}
-          fill="#4ade80"
+          fill={C.accentBright}
           fontSize={8.5}
           textAnchor="middle"
           fontWeight="700"

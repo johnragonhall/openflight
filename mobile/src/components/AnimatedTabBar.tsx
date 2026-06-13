@@ -121,9 +121,9 @@ export function AnimatedTabBar({ state, navigation }: BottomTabBarProps) {
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: '#0e0e0e',
+    backgroundColor: C.s0,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: C.line,
     position: 'relative',
   },
   indicator: {

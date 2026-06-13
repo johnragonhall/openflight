@@ -61,7 +61,7 @@ function PulsingDot({ active }: { active: boolean }) {
           ]}
         />
       )}
-      <View style={[pulseStyles.dot, { backgroundColor: active ? C.accent : C.sub }]} />
+      <View style={[pulseStyles.dot, { backgroundColor: active ? C.ok : C.sub }]} />
     </View>
   );
 }
@@ -74,7 +74,7 @@ const pulseStyles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     borderWidth: 1,
-    borderColor: C.accent,
+    borderColor: C.ok,
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
 });
@@ -338,9 +338,9 @@ const styles = StyleSheet.create({
     borderRadius: R.pill,
   },
   connectedBadge: {
-    backgroundColor: C.accentSurface,
+    backgroundColor: C.okSurface,
     borderWidth: 1,
-    borderColor: C.accentMuted,
+    borderColor: C.okMuted,
   },
   disconnectedBadge: {
     backgroundColor: C.s2,
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
     borderColor: C.lineMid,
   },
   statusText: { fontSize: 12, fontWeight: '600' },
-  statusConnected: { color: C.accentBright },
+  statusConnected: { color: C.ok },
   statusDisconnected: { color: C.sub },
 
   tracerWrap: { position: 'relative' },

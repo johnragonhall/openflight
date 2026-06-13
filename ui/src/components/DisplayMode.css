@@ -1,5 +1,5 @@
 .display-mode {
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   padding: clamp(1rem, 2vw, 2rem);
   background:

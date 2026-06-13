@@ -115,9 +115,10 @@
 
 /* Default: value fully visible, no animation */
 .speed-gauge__value {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 5rem;
-  font-weight: 400;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--color-gold);
   line-height: 1;
   text-shadow: 0 0 30px var(--color-gold-glow);
@@ -131,7 +132,7 @@
 @keyframes value-pop {
   0% {
     opacity: 0;
-    transform: scale(0.8);
+    transform: scale(0.95);
   }
   100% {
     opacity: 1;
@@ -170,26 +171,32 @@
   flex: 1;
   text-align: center;
   transition: all var(--transition-smooth);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .metric-card--primary {
   background: rgba(212, 175, 55, 0.08);
   border-color: rgba(212, 175, 55, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(212, 175, 55, 0.12),
+    0 2px 12px rgba(212, 175, 55, 0.08);
 }
 
 .metric-card--secondary {
-  background: rgba(96, 165, 250, 0.05);
-  border-color: rgba(96, 165, 250, 0.15);
+  background: rgba(245, 240, 230, 0.04);
+  border-color: rgba(245, 240, 230, 0.12);
 }
 
 .metric-card--spin {
-  background: rgba(168, 85, 247, 0.08);
-  border-color: rgba(168, 85, 247, 0.25);
+  background: rgba(212, 175, 55, 0.05);
+  border-color: rgba(212, 175, 55, 0.15);
 }
 
 .metric-card--spin .metric-card__value {
-  color: #c084fc;
-  text-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+  color: var(--color-gold-bright);
+  text-shadow: 0 0 15px var(--color-gold-glow);
 }
 
 .metric-card__value-row {
@@ -200,9 +207,10 @@
 
 /* Default: metric value fully visible, no animation */
 .metric-card__value {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 5rem;
-  font-weight: 400;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   color: var(--color-cream);
 }
@@ -218,7 +226,7 @@
 }
 
 .metric-card--secondary .metric-card__value {
-  color: var(--color-info);
+  color: var(--color-cream-dim);
 }
 
 .metric-card__unit {
@@ -260,13 +268,13 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(168, 85, 247, 0.2);
+  background: rgba(212, 175, 55, 0.15);
   transition: all 0.3s ease;
 }
 
 .metric-card__confidence-dots .dot.filled {
-  background: #c084fc;
-  box-shadow: 0 0 6px rgba(168, 85, 247, 0.5);
+  background: var(--color-gold);
+  box-shadow: 0 0 6px var(--color-gold-glow);
 }
 
 .metric-card__confidence-label {
@@ -278,11 +286,11 @@
 }
 
 .metric-card__confidence--high .metric-card__confidence-label {
-  color: #a855f7;
+  color: var(--color-gold);
 }
 
 .metric-card__confidence--medium .metric-card__confidence-label {
-  color: #c084fc;
+  color: var(--color-gold-dim);
 }
 
 .metric-card__confidence--low .metric-card__confidence-label {
@@ -492,5 +500,35 @@
   .golf-ball-indicator__dimple {
     width: 5px;
     height: 5px;
+  }
+}
+
+/* Accessibility: disable motion-heavy animations */
+@media (prefers-reduced-motion: reduce) {
+  .golf-ball-indicator__ball {
+    animation: none;
+  }
+
+  .golf-ball-indicator__shadow {
+    animation: none;
+    opacity: 0.4;
+  }
+
+  .shot-display--animate {
+    animation: none;
+  }
+
+  /* Arc stays at final filled position without animating */
+  .shot-display--animate .speed-gauge__value-arc {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  /* Values appear instantly instead of popping */
+  .shot-display--animate .speed-gauge__value,
+  .shot-display--animate .metric-card__value {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }

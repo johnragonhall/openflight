@@ -1,4 +1,4 @@
-import { useMemo, useState, memo } from 'react';
+import React, { useMemo, useState, memo } from 'react';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
 import type { UnitSystem } from '../utils/units';
@@ -16,11 +16,12 @@ interface ShotRowProps {
   shotNumber: number;
   unitSystem: UnitSystem;
   distanceUnit: string;
+  index: number;
 }
 
-const ShotRow = memo(function ShotRow({ shot, shotNumber, unitSystem, distanceUnit }: ShotRowProps) {
+const ShotRow = memo(function ShotRow({ shot, shotNumber, unitSystem, distanceUnit, index }: ShotRowProps) {
   return (
-    <div className="shot-row">
+    <div className="shot-row" style={{ '--i': index } as React.CSSProperties}>
       <span className="shot-row__number">#{shotNumber}</span>
       <span className="shot-row__club">{shot.club}</span>
       <span className="shot-row__stat">
@@ -80,6 +81,7 @@ export function ShotList({ shots }: ShotListProps) {
             shotNumber={shots.length - startIndex - index}
             unitSystem={unitSystem}
             distanceUnit={distanceUnit}
+            index={index}
           />
         ))}
       </div>

@@ -7,8 +7,8 @@
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
   background: var(--color-bg-deep);
 }
@@ -203,6 +203,7 @@
   height: 100%;
   gap: var(--space-sm);
   position: relative;
+  animation: view-enter 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Shot Impact Animation */
@@ -210,23 +211,24 @@
   position: absolute;
   inset: -1rem;
   border-radius: var(--radius-xl);
-  animation: shot-impact 0.6s ease-out forwards;
   pointer-events: none;
   z-index: 10;
+  background: radial-gradient(circle at center, rgba(212, 175, 55, 0.28) 0%, transparent 65%);
+  animation: shot-impact 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes shot-impact {
   0% {
-    background: radial-gradient(circle at center, var(--color-gold) 0%, transparent 0%);
     opacity: 1;
+    transform: scale(0.35);
   }
-  50% {
-    background: radial-gradient(circle at center, var(--color-gold) 0%, transparent 70%);
+  55% {
     opacity: 0.6;
+    transform: scale(1);
   }
   100% {
-    background: radial-gradient(circle at center, transparent 0%, transparent 100%);
     opacity: 0;
+    transform: scale(1.08);
   }
 }
 
@@ -263,9 +265,9 @@
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .power-button:hover {
@@ -276,11 +278,13 @@
 .shutdown-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: view-enter 0.15s ease-out;
 }
 
 .shutdown-dialog {
@@ -290,11 +294,26 @@
   padding: 2rem;
   text-align: center;
   min-width: 280px;
+  box-shadow:
+    inset 0 1px 0 rgba(212, 175, 55, 0.08),
+    0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: dialog-enter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .shutdown-dialog p {
   font-size: 1.125rem;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0 0 1.5rem;
 }
 
@@ -324,7 +343,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 0.9375rem;
   cursor: pointer;
 }
@@ -376,5 +395,24 @@
     padding: var(--space-sm);
     min-height: 40px;
     font-size: 0.875rem;
+  }
+}
+
+/* Accessibility: disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .nav__recording-dot,
+  .nav__ball-dot {
+    animation: none;
+  }
+
+  .shot-flash {
+    animation: none;
+    display: none;
+  }
+
+  .live-view,
+  .shutdown-overlay,
+  .shutdown-dialog {
+    animation: none;
   }
 }

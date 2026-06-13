@@ -1,4 +1,7 @@
 /* OpenFlight - Premium Golf Tech Design System */
+/* TODO: Self-host Outfit for offline Pi field use. Download from fonts.google.com,
+   place woff2 files in ui/public/fonts/, and replace this CDN import with @font-face
+   rules. Without internet, the Pi falls back to system-ui (acceptable but not ideal). */
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&display=swap');
 
 * {
@@ -85,7 +88,7 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button {
@@ -108,6 +111,18 @@ button {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 175, 55, 0.5);
+}
+
+/* Global keyframes */
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Utility classes */

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { C } from '../theme';
 
 interface Props {
   streamUrl: string;
@@ -35,7 +36,7 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
     <View style={[styles.container, { height }]}>
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator color="#22c55e" />
+          <ActivityIndicator color={C.accent} />
         </View>
       )}
       <WebView
@@ -64,5 +65,5 @@ const styles = StyleSheet.create({
   errorText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
   errorSub: { color: '#4b5563', fontSize: 11 },
   retryBtn: { backgroundColor: '#1f2937', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  retryText: { color: '#22c55e', fontWeight: '600' },
+  retryText: { color: C.accent, fontWeight: '600' },
 });
