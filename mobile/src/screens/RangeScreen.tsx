@@ -32,12 +32,18 @@ function GPSTab() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
+  const prevCoordsRef = useRef<GpsCoords | null>(null);
   const startTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     const refresh = async () => {
       try {
         const c = await getCurrentCoords();
-        setCurrentCoords(c);
+        // Skip re-render when position hasn't changed at 5dp precision.
+        const prev = prevCoordsRef.current;
+        if (!prev || prev.latitude !== c.latitude || prev.longitude !== c.longitude) {
+          prevCoordsRef.current = c;
+          setCurrentCoords(c);
+        }
       } catch { /* GPS unavailable */ }
     };
     refresh();
@@ -91,6 +97,8 @@ function GPSTab() {
         style={[gpsStyles.setBtn, (loading || permGranted !== true) && gpsStyles.setBtnDisabled]}
         onPress={handleSetPin}
         disabled={loading || permGranted !== true}
+        accessibilityLabel={pinCoords ? 'Reset pin location to current position' : 'Set pin at current GPS position'}
+        accessibilityState={{ disabled: loading || permGranted !== true, busy: loading }}
       >
         {loading
           ? <ActivityIndicator color={C.bg} />
@@ -173,6 +181,9 @@ function TargetsTab() {
             style={[tgtStyles.chip, target === t && tgtStyles.chipActive]}
             onPress={() => setTarget(t)}
             scale={0.94}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: target === t }}
+            accessibilityLabel={`${formatDistance(t, unitSystem, 0)} ${unit}`}
           >
             <Text style={[tgtStyles.chipText, target === t && tgtStyles.chipTextActive]}>
               {formatDistance(t, unitSystem, 0)}{unit}
@@ -288,6 +299,9 @@ export function RangeScreen() {
             style={styles.tabWrap}
             onPress={() => setActiveTab(t.key)}
             scale={0.94}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === t.key }}
+            accessibilityLabel={t.label}
           >
             <View style={[styles.tab, activeTab === t.key && styles.tabActive]}>
               <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>
@@ -306,6 +320,9 @@ export function RangeScreen() {
                 style={[styles.clubChip, !selectedClub && styles.clubChipActive]}
                 onPress={() => setSelectedClub(null)}
                 scale={0.94}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: !selectedClub }}
+                accessibilityLabel="All clubs"
               >
                 <Text style={[styles.clubChipText, !selectedClub && styles.clubChipTextActive]}>All</Text>
               </PressableScale>
@@ -315,6 +332,9 @@ export function RangeScreen() {
                   style={[styles.clubChip, selectedClub === c && styles.clubChipActive]}
                   onPress={() => setSelectedClub(c)}
                   scale={0.94}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: selectedClub === c }}
+                  accessibilityLabel={c}
                 >
                   <Text style={[styles.clubChipText, selectedClub === c && styles.clubChipTextActive]}>
                     {c.toUpperCase()}

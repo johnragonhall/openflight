@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { ClubPicker } from '../components/ClubPicker';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { PressableScale } from '../components/PressableScale';
@@ -31,9 +32,10 @@ type TracerView = '2d' | '3d';
 // ── Pulsing connection dot ───────────────────────────────────────────────────
 function PulsingDot({ active }: { active: boolean }) {
   const ringAnim = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
-    if (!active) { ringAnim.setValue(0); return; }
+    if (!active || reduceMotion) { ringAnim.setValue(0); return; }
     const loop = Animated.loop(
       Animated.timing(ringAnim, {
         toValue: 1,
@@ -44,7 +46,7 @@ function PulsingDot({ active }: { active: boolean }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [active]);
+  }, [active, reduceMotion]);
 
   const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.6] });
   const ringOpacity = ringAnim.interpolate({
@@ -83,16 +85,18 @@ const pulseStyles = StyleSheet.create({
 // ── Shot list row with entry animation ──────────────────────────────────────
 const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
   const { unitSystem } = useUnitPreference();
-  const entryAnim = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
+  const entryAnim = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
 
   useEffect(() => {
+    if (reduceMotion) return;
     Animated.spring(entryAnim, {
       toValue: 1,
       useNativeDriver: true,
       speed: 18,
       bounciness: 2,
     }).start();
-  }, []);
+  }, [reduceMotion]);
 
   const translateY = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
 
@@ -174,6 +178,9 @@ export function HomeScreen() {
                 style={[styles.tracerBtn, tracerView === v && styles.tracerBtnActive]}
                 onPress={() => setTracerView(v)}
                 scale={0.94}
+                accessibilityLabel={v === '2d' ? '2D tracer view' : '3D tracer view'}
+                accessibilityState={{ selected: tracerView === v }}
+                hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
               >
                 <Text
                   style={[
@@ -194,17 +201,29 @@ export function HomeScreen() {
         <ShotDisplay shot={latestShot} />
 
         <View style={styles.toolbarRow}>
-          <PressableScale onPress={() => setClubPickerVisible(true)} style={styles.clubChip}>
+          <PressableScale
+            onPress={() => setClubPickerVisible(true)}
+            style={styles.clubChip}
+            accessibilityLabel={`Selected club: ${selectedClub}. Tap to change.`}
+          >
             <Text style={styles.clubChipText}>{selectedClub}</Text>
-            <Text style={styles.clubChipCaret}>▾</Text>
+            <Text style={styles.clubChipCaret} accessibilityElementsHidden>▾</Text>
           </PressableScale>
           <View style={styles.toolbarRight}>
             {shots.length > 0 && (
-              <PressableScale onPress={handleExport} style={styles.toolbarBtn}>
+              <PressableScale
+                onPress={handleExport}
+                style={styles.toolbarBtn}
+                accessibilityLabel="Export session as CSV"
+              >
                 <Text style={styles.toolbarBtnText}>CSV</Text>
               </PressableScale>
             )}
-            <PressableScale onPress={clearSession} style={styles.toolbarBtn}>
+            <PressableScale
+              onPress={clearSession}
+              style={styles.toolbarBtn}
+              accessibilityLabel="Clear session"
+            >
               <Text style={styles.toolbarBtnText}>Clear</Text>
             </PressableScale>
           </View>
@@ -246,6 +265,12 @@ export function HomeScreen() {
               connected ? styles.connectedBadge : styles.disconnectedBadge,
             ]}
             onPress={() => nav.navigate('Connection')}
+            accessibilityLabel={
+              connected
+                ? `Connected via ${connectionLabel}. Tap to manage connection.`
+                : 'Not connected. Tap to connect.'
+            }
+            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
           >
             <PulsingDot active={connected} />
             <Text
@@ -253,6 +278,7 @@ export function HomeScreen() {
                 styles.statusText,
                 connected ? styles.statusConnected : styles.statusDisconnected,
               ]}
+              accessibilityElementsHidden
             >
               {connected ? connectionLabel : 'Connect'}
             </Text>
