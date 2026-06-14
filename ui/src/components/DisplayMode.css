@@ -271,3 +271,126 @@
     min-height: 16rem;
   }
 }
+
+/* ── TV / 10-foot Layout ─────────────────────────────────────────────────
+   Activated when .tv class is on <html> (Tizen, webOS, or ?tv=1).
+   Safe zone: 5% insets all edges (TV overscan + bezel clearance).
+   Typography: scaled for 2.5-4m viewing distance.
+   Focus: D-pad navigation via keyboard arrow keys.
+   ─────────────────────────────────────────────────────────────────────── */
+.tv .display-mode {
+  padding: 5vh 5vw;
+  overflow: hidden;
+}
+
+/* Larger hero grid gap for breathing room at distance */
+.tv .display-mode__hero {
+  gap: clamp(2rem, 3vw, 4rem);
+  min-height: calc(100dvh - 12rem);
+}
+
+/* Eyebrow legible at 3m */
+.tv .display-mode__eyebrow {
+  font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+  letter-spacing: 0.12em;
+}
+
+/* Club name in large display type — visible across the room */
+.tv .display-mode__title {
+  font-size: clamp(4rem, 7vw, 9rem);
+}
+
+/* Featured metrics (ball speed, carry) — the hero numbers */
+.tv .display-metric--featured .display-metric__value {
+  font-size: clamp(6rem, 10vw, 13rem);
+  letter-spacing: -0.02em;
+}
+
+.tv .display-metric--featured {
+  min-height: clamp(14rem, 22vh, 22rem);
+}
+
+/* Secondary metric values — still legible from couch */
+.tv .display-metric__value {
+  font-size: clamp(3rem, 5vw, 6.5rem);
+}
+
+.tv .display-metric__label {
+  font-size: clamp(1rem, 1.5vw, 1.4rem);
+  letter-spacing: 0.08em;
+}
+
+.tv .display-metric__unit {
+  font-size: clamp(1.2rem, 1.8vw, 2rem);
+}
+
+.tv .display-metric {
+  min-height: clamp(10rem, 16vh, 16rem);
+  padding: clamp(1.25rem, 2vw, 2rem);
+}
+
+/* Status row: glass overlay on camera for TV */
+.tv .display-mode__status-row {
+  left: 1.5rem;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  gap: 0.75rem;
+}
+
+.tv .display-mode__status {
+  font-size: clamp(1rem, 1.4vw, 1.3rem);
+  padding: 0.6rem 1.1rem;
+  /* Glass treatment: blurs camera feed behind status chip */
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  background: rgba(10, 10, 15, 0.80);
+  border-color: rgba(212, 175, 55, 0.18);
+}
+
+/* Recent shot chips: focusable for D-pad navigation */
+.tv .display-mode__recent {
+  gap: clamp(1rem, 1.5vw, 1.5rem);
+  margin-top: clamp(1.25rem, 2vw, 2rem);
+}
+
+.tv .display-shot-chip {
+  min-height: clamp(7rem, 10vh, 10rem);
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
+              box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* D-pad focus: scale up focused chip like tvOS parallax */
+.tv .display-shot-chip:focus,
+.tv .display-shot-chip:focus-visible {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px var(--color-gold), 0 0 24px rgba(212, 175, 55, 0.30);
+  outline: none;
+}
+
+.tv .display-shot-chip__number,
+.tv .display-shot-chip__club {
+  font-size: clamp(1.1rem, 1.6vw, 1.6rem);
+}
+
+.tv .display-shot-chip__stat {
+  font-size: clamp(1rem, 1.4vw, 1.4rem);
+}
+
+.tv .display-mode__empty-strip {
+  font-size: clamp(1.4rem, 2vw, 2rem);
+  min-height: clamp(7rem, 10vh, 10rem);
+}
+
+/* Accessibility: TV chip focus scale and transition */
+@media (prefers-reduced-motion: reduce) {
+  .tv .display-shot-chip {
+    transition: none;
+  }
+
+  .tv .display-shot-chip:focus,
+  .tv .display-shot-chip:focus-visible {
+    transform: none;
+  }
+}

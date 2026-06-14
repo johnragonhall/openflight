@@ -1,10 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CameraStatus } from '../hooks/useSocket';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
 import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
 import { getServerOrigin } from '../utils/serverOrigin';
 import './DisplayMode.css';
+
+function useTVMode() {
+  const [isTV, setIsTV] = useState(false);
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    const tv =
+      /Tizen/i.test(ua) ||
+      /Web0S|webOS/i.test(ua) ||
+      new URLSearchParams(window.location.search).has('tv');
+    setIsTV(tv);
+    if (tv) document.documentElement.classList.add('tv');
+    return () => { document.documentElement.classList.remove('tv'); };
+  }, []);
+  return isTV;
+}
 
 interface DisplayModeProps {
   connected: boolean;
@@ -118,10 +133,34 @@ function DisplayMetricCard({ metric, featured = false }: { metric: DisplayMetric
 export function DisplayMode({ connected, cameraStatus, latestShot, shots }: DisplayModeProps) {
   const [failedCameraKey, setFailedCameraKey] = useState<string | null>(null);
   const { unitSystem } = useUnitPreference();
+  const isTV = useTVMode();
+  const recentRef = useRef<HTMLElement>(null);
   const metrics = buildMetrics(latestShot, unitSystem);
   const recentShots = shots.slice(-RECENT_SHOT_COUNT).reverse();
   const cameraKey = `${cameraStatus.available}-${cameraStatus.streaming}`;
   const cameraError = failedCameraKey === cameraKey;
+
+  // D-pad left/right navigation across shot chips in TV mode
+  useEffect(() => {
+    if (!isTV) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const chips = recentRef.current?.querySelectorAll<HTMLElement>('[data-shot-chip]');
+      if (!chips?.length) return;
+      const focused = Array.from(chips).findIndex((el) => el === document.activeElement);
+      if (e.key === 'ArrowRight' && focused < chips.length - 1) {
+        chips[focused + 1]?.focus();
+        e.preventDefault();
+      } else if (e.key === 'ArrowLeft' && focused > 0) {
+        chips[focused - 1]?.focus();
+        e.preventDefault();
+      } else if (e.key === 'ArrowRight' && focused === -1) {
+        chips[0]?.focus();
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isTV]);
 
   return (
     <main className="display-mode">
@@ -150,8 +189,8 @@ export function DisplayMode({ connected, cameraStatus, latestShot, shots }: Disp
           </div>
         </div>
 
-        <div className="display-mode__shot-panel">
-          <div className="display-mode__eyebrow">OpenFlight Display</div>
+        <div className="display-mode__shot-panel" aria-live="polite" aria-atomic="true">
+          <div className="display-mode__eyebrow" aria-hidden="true">OpenFlight Display</div>
           <h1 className="display-mode__title">{latestShot ? latestShot.club : 'Ready'}</h1>
           <div className="display-mode__primary-grid">
             <DisplayMetricCard metric={metrics[0]} featured />
@@ -165,12 +204,18 @@ export function DisplayMode({ connected, cameraStatus, latestShot, shots }: Disp
         </div>
       </section>
 
-      <section className="display-mode__recent" aria-label="Recent shots">
+      <section className="display-mode__recent" aria-label="Recent shots" ref={recentRef}>
         {recentShots.length === 0 ? (
           <div className="display-mode__empty-strip">Recent shots will appear here</div>
         ) : (
           recentShots.map((shot, index) => (
-            <div className="display-shot-chip" key={shot.timestamp}>
+            <div
+              className="display-shot-chip"
+              key={shot.timestamp}
+              data-shot-chip
+              tabIndex={isTV ? 0 : undefined}
+              aria-label={`Shot ${shots.length - index}: ${shot.club}, ${formatSpeed(shot.ball_speed_mph, unitSystem, 0)} ${getSpeedUnit(unitSystem)}`}
+            >
               <span className="display-shot-chip__number">#{shots.length - index}</span>
               <span className="display-shot-chip__club">{shot.club}</span>
               <span className="display-shot-chip__stat">
