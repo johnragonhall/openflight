@@ -5,6 +5,7 @@ Provides Shot, ClubType, and carry distance estimation used by
 RollingBufferMonitor and the Flask server.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -66,6 +67,18 @@ _OPTIMAL_LAUNCH = {
     ClubType.SW: 32.0,
     ClubType.LW: 35.0,
     ClubType.UNKNOWN: 18.0,
+}
+
+# Roll percentage by club (carry × roll = total distance)
+_ROLL_PCT_BY_CLUB = {
+    ClubType.DRIVER: 0.22, ClubType.WOOD_3: 0.18, ClubType.WOOD_5: 0.15,
+    ClubType.WOOD_7: 0.13, ClubType.HYBRID_3: 0.12, ClubType.HYBRID_5: 0.11,
+    ClubType.HYBRID_7: 0.10, ClubType.HYBRID_9: 0.09,
+    ClubType.IRON_2: 0.08, ClubType.IRON_3: 0.08, ClubType.IRON_4: 0.07,
+    ClubType.IRON_5: 0.07, ClubType.IRON_6: 0.06, ClubType.IRON_7: 0.06,
+    ClubType.IRON_8: 0.05, ClubType.IRON_9: 0.05,
+    ClubType.PW: 0.03, ClubType.GW: 0.02, ClubType.SW: 0.01, ClubType.LW: 0.01,
+    ClubType.UNKNOWN: 0.08,
 }
 
 
@@ -365,3 +378,42 @@ class Shot:
         if self.spin_confidence >= 0.4:
             return "medium"
         return "low"
+
+    @property
+    def apex_height_yards(self) -> Optional[float]:
+        """Peak ball trajectory height in yards (simplified projectile model)."""
+        if self.launch_angle_vertical is None or self.launch_angle_vertical <= 0:
+            return None
+        v_ms = self.ball_speed_mph * 0.44704
+        v_y = v_ms * math.sin(math.radians(self.launch_angle_vertical))
+        h_m = (v_y ** 2) / (2 * 9.81)
+        return h_m * 1.0936  # metres → yards
+
+    @property
+    def total_distance_yards(self) -> Optional[float]:
+        """Estimated total distance including roll (club-specific roll factor)."""
+        carry = self.carry_spin_adjusted if self.carry_spin_adjusted is not None else self.estimated_carry_yards
+        return carry * (1 + _ROLL_PCT_BY_CLUB.get(self.club, 0.08))
+
+    @property
+    def carry_side_yards(self) -> Optional[float]:
+        """Lateral carry offset from aim direction (+R / −L)."""
+        if self.launch_angle_horizontal is None:
+            return None
+        carry = self.carry_spin_adjusted if self.carry_spin_adjusted is not None else self.estimated_carry_yards
+        return carry * math.sin(math.radians(self.launch_angle_horizontal))
+
+    @property
+    def curve_yards(self) -> Optional[float]:
+        """Lateral ball curvature from spin axis — Magnus effect approximation (+R / −L)."""
+        if self.spin_axis_deg is None:
+            return None
+        carry = self.carry_spin_adjusted if self.carry_spin_adjusted is not None else self.estimated_carry_yards
+        return carry * math.sin(math.radians(self.spin_axis_deg)) * 0.20
+
+    @property
+    def face_to_path_deg(self) -> Optional[float]:
+        """Face-to-path angle approximated from spin axis via D-plane relationship."""
+        if self.spin_axis_deg is None:
+            return None
+        return self.spin_axis_deg / 0.75
