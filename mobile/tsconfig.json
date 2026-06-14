@@ -10,5 +10,6 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "target": "ESNext"
-  }
+  },
+  "exclude": ["__tests__/**/*", "node_modules"]
 }
