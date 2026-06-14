@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.openflight.mobile",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "OpenFlight uses Bluetooth to connect to the launch monitor.",
-        "NSBluetoothPeripheralUsageDescription": "OpenFlight uses Bluetooth to connect to the launch monitor."
+        "NSBluetoothPeripheralUsageDescription": "OpenFlight uses Bluetooth to connect to the launch monitor.",
+        "NSLocationWhenInUseUsageDescription": "OpenFlight uses your location for GPS yardage to the pin."
       }
     },
     "android": {
@@ -30,10 +31,17 @@
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.BLUETOOTH_SCAN",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "OpenFlight uses your location for GPS yardage to the pin."
+        }
+      ],
       [
         "react-native-ble-plx",
         {
