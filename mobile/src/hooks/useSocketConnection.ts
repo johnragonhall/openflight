@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { isValidShot } from '../types/shot';
 import type { Shot, SessionStats } from '../types/shot';
+import { getAccessibilityPrefs } from '../state/accessibilitySettings';
 
 // RFC 1918 private ranges — allow cleartext HTTP only on local LAN.
 // External hosts must use HTTPS/WSS.
@@ -10,7 +11,7 @@ const LAN_RE = /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.
 
 function buildSecureUrl(hostAndPort: string): string {
   // Strip any existing scheme so we can apply the right one.
-  const stripped = hostAndPort.replace(/^https?:\/\//, '');
+  const stripped = hostAndPort.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
   const host = stripped.split('/')[0];
   const scheme = LAN_RE.test(host) ? 'http' : 'https';
   return `${scheme}://${stripped}`;
@@ -106,6 +107,9 @@ export function useSocketConnection(): SocketConnectionState {
       socket.on('connect', () => {
         setConnected(true);
         socket.emit('get_session');
+        getAccessibilityPrefs()
+          .then((a11y) => socket.emit('client_prefs', { accessibility: a11y }))
+          .catch(() => {});
       });
 
       socket.on('disconnect', () => setConnected(false));
