@@ -1,4 +1,5 @@
 import type { Shot } from '../types/shot';
+import { classifyShotShape } from './shotShape';
 
 const ROLL_FACTORS: Record<string, number> = {
   driver: 0.17,
@@ -53,12 +54,14 @@ export function isMishit(smash_factor: number | null, club: string): boolean {
 
 export function enrichShot(shot: Shot): Shot {
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
+  const face_to_path_deg = computeFaceToPath(shot.spin_axis_deg);
   return {
     ...shot,
     apex_height_yards: computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm),
     total_distance_yards: computeTotalDistance(carry, shot.club),
-    face_to_path_deg: computeFaceToPath(shot.spin_axis_deg),
+    face_to_path_deg,
     is_mishit: isMishit(shot.smash_factor, shot.club),
+    shot_shape: classifyShotShape(face_to_path_deg, shot.launch_angle_horizontal),
   };
 }
 
