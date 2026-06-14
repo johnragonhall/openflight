@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import type { DebugReading, RadarConfig, DebugShotLog, CameraStatus } from '../hooks/useSocket';
 import type { TriggerDiagnostic, TriggerStatus } from '../types/shot';
+import { PairingQR } from './PairingQR';
 import './DebugPanel.css';
 
 interface DebugPanelProps {
@@ -282,11 +283,13 @@ function LastTriggerCard({ diag }: { diag: TriggerDiagnostic | null }) {
   );
 }
 
-type DebugTab = 'status' | 'history' | 'tuning';
+type DebugTab = 'status' | 'history' | 'tuning' | 'pair';
 
 export function DebugPanel({
+  enabled,
   radarConfig,
   mockMode,
+  onToggle,
   onUpdateConfig,
   triggerDiagnostics,
   triggerStatus,
@@ -302,6 +305,15 @@ export function DebugPanel({
     <div className="debug-panel">
       <div className="debug-panel__header">
         <h3>Diagnostics</h3>
+        <button
+          className={`debug-record-btn ${enabled ? 'debug-record-btn--active' : ''}`}
+          onClick={onToggle}
+          aria-pressed={enabled}
+          aria-label={enabled ? 'Stop recording raw readings' : 'Start recording raw readings'}
+        >
+          <span className={`debug-record-btn__dot ${enabled ? 'debug-record-btn__dot--active' : ''}`} aria-hidden="true" />
+          {enabled ? 'Recording' : 'Record'}
+        </button>
       </div>
 
       <div className="debug-tabs">
@@ -324,6 +336,12 @@ export function DebugPanel({
           onClick={() => setActiveTab('tuning')}
         >
           Tuning
+        </button>
+        <button
+          className={`debug-tabs__tab ${activeTab === 'pair' ? 'debug-tabs__tab--active' : ''}`}
+          onClick={() => setActiveTab('pair')}
+        >
+          Pair
         </button>
       </div>
 
@@ -388,6 +406,12 @@ export function DebugPanel({
               />
             </div>
             <p className="debug-panel__hint">TX Power: 0 = max range, 7 = min range</p>
+          </div>
+        )}
+
+        {activeTab === 'pair' && (
+          <div className="debug-panel__section">
+            <PairingQR />
           </div>
         )}
       </div>
