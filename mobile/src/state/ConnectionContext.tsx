@@ -13,6 +13,8 @@ export interface ConnectionContextValue {
   setClub: (clubId: string) => void;
   clearSession: () => void;
   dismissError: () => void;
+  startDemo: () => void;
+  stopDemo: () => void;
 }
 
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);

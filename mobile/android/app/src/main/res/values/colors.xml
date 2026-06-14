@@ -1,5 +1,7 @@
 <resources>
-  <color name="splashscreen_background">#FFFFFF</color>
-  <color name="iconBackground">#0a0a0a</color>
-  <color name="colorPrimary">#023c69</color>
+  <!-- Base backgrounds — matches C.bg / C.s1 in theme.ts -->
+  <color name="splashscreen_background">#0a0a0f</color>
+  <color name="iconBackground">#0a0a0f</color>
+  <!-- Accent gold — matches C.accent in theme.ts -->
+  <color name="colorPrimary">#d4af37</color>
 </resources>

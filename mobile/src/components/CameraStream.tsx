@@ -40,7 +40,7 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
         </View>
       )}
       <WebView
-        style={{ flex: 1, backgroundColor: '#000' }}
+        style={{ flex: 1, backgroundColor: C.bg }}
         source={{ html }}
         onLoad={() => setLoading(false)}
         onError={() => { setLoading(false); setError(true); }}
@@ -53,17 +53,17 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#000', overflow: 'hidden', borderRadius: 10 },
+  container: { backgroundColor: C.bg, overflow: 'hidden', borderRadius: 10 },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', zIndex: 1,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, zIndex: 1,
   },
   errorBox: {
-    backgroundColor: '#0a0a0a', borderRadius: 10,
+    backgroundColor: C.bg, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  errorText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
-  errorSub: { color: '#4b5563', fontSize: 11 },
-  retryBtn: { backgroundColor: '#1f2937', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  errorText: { color: C.err, fontSize: 14, fontWeight: '600' },
+  errorSub: { color: C.muted, fontSize: 11 },
+  retryBtn: { backgroundColor: C.s3, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
   retryText: { color: C.accent, fontWeight: '600' },
 });

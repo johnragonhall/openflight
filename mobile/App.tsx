@@ -19,6 +19,7 @@ import { ConnectionScreen } from './src/screens/ConnectionScreen';
 import { SessionDetailScreen } from './src/screens/SessionDetailScreen';
 import { AnimatedTabBar } from './src/components/AnimatedTabBar';
 import type { RootStackParamList, MainTabParamList } from './src/types/navigation';
+import { C } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -26,8 +27,8 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const NAV_THEME = {
   dark: true,
   colors: {
-    primary: '#22c55e', background: '#0a0a0a', card: '#111111',
-    text: '#ffffff', border: '#1a1a1a', notification: '#22c55e',
+    primary: C.accent, background: C.bg, card: C.s1,
+    text: C.text, border: C.line, notification: C.accent,
   },
   fonts: {
     regular: { fontFamily: 'System', fontWeight: '400' as const },
@@ -115,6 +116,8 @@ export default function App() {
     errorMessage: displayedError, malformedCount: ble.malformedCount,
     setClub, clearSession,
     dismissError: () => setDismissedError(ble.errorMessage),
+    startDemo: socket.startDemo,
+    stopDemo: socket.stopDemo,
   };
 
   return (
@@ -129,8 +132,8 @@ export default function App() {
                 name="Connection"
                 options={{
                   headerShown: true, title: 'Connect',
-                  headerStyle: { backgroundColor: '#111111' },
-                  headerTintColor: '#22c55e',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
                 }}
               >
                 {() => <ConnectionScreen socket={socket} ble={ble} />}

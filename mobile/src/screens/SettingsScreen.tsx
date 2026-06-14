@@ -6,6 +6,7 @@ import { useUnitPreference } from '../state/useUnitPreference';
 import type { UnitSystem } from '../utils/units';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
+import { OPENFLIGHT_SERVICE_UUID } from '../hooks/useBLEConnection';
 
 export const CAMERA_URL_KEY = 'camera_url';
 export const DEFAULT_CAMERA_URL = 'http://openflight.local:8080/stream';
@@ -70,7 +71,7 @@ export function SettingsScreen() {
 
         <Section title="About">
           <InfoRow label="App Version" value="1.0.0" />
-          <InfoRow label="BLE Service UUID" value="4fafc201…" mono />
+          <InfoRow label="BLE Service UUID" value={OPENFLIGHT_SERVICE_UUID} mono />
         </Section>
       </ScrollView>
     </SafeAreaView>

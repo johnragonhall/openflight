@@ -142,5 +142,5 @@ export const ShotTracer3D = React.memo(function ShotTracer3D({ shot, height = 20
 });
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#060d25' },
+  container: { backgroundColor: C.canvas3d },
 });

@@ -65,7 +65,7 @@ export function ClubPicker({ visible, selectedClub, onSelect, onClose }: ClubPic
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -73,14 +73,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: C.line,
   },
-  title: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
+  title: { color: C.text, fontSize: 18, fontWeight: '700' },
   doneButton: { color: C.accent, fontSize: 16, fontWeight: '600' },
   scrollContent: { padding: 20, paddingBottom: 40 },
   group: { marginBottom: 24 },
   groupLabel: {
-    color: '#6b7280',
+    color: C.muted,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   },
   clubRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   clubButton: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: C.s2,
     borderRadius: 10,
     paddingHorizontal: 18,
     paddingVertical: 12,
@@ -97,6 +97,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   clubButtonSelected: { backgroundColor: C.accent },
-  clubLabel: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
-  clubLabelSelected: { color: '#0a0a0a' },
+  clubLabel: { color: C.text, fontWeight: '700', fontSize: 15 },
+  clubLabelSelected: { color: C.bg },
 });

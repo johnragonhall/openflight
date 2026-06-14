@@ -42,6 +42,8 @@ export function ConnectionScreen({ socket, ble }: ConnectionScreenProps) {
     socket.connect(hostAndPort);
   };
 
+  const inDemo = socket.mockMode && !socket.connected;
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Connect to Launch Monitor</Text>
@@ -70,6 +72,20 @@ export function ConnectionScreen({ socket, ble }: ConnectionScreenProps) {
       ) : (
         <BLEPanel ble={ble} />
       )}
+
+      <View style={styles.demoSection}>
+        <View style={styles.divider} />
+        {inDemo ? (
+          <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={socket.stopDemo}>
+            <Text style={[styles.buttonText, { color: C.text }]}>Stop Demo</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.demoButton} onPress={socket.startDemo}>
+            <Text style={styles.demoButtonText}>Try Demo Mode</Text>
+            <Text style={styles.demoHint}>Simulates shots without hardware</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -100,7 +116,7 @@ function WiFiPanel({
       />
       {socket.connected ? (
         <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={socket.disconnect}>
-          <Text style={[styles.buttonText, { color: '#ffffff' }]}>Disconnect</Text>
+          <Text style={[styles.buttonText, { color: C.text }]}>Disconnect</Text>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity style={styles.button} onPress={onConnect}>
@@ -155,7 +171,7 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
             </Text>
           </View>
           <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={ble.disconnect}>
-            <Text style={[styles.buttonText, { color: '#ffffff' }]}>Disconnect</Text>
+            <Text style={[styles.buttonText, { color: C.text }]}>Disconnect</Text>
           </TouchableOpacity>
         </>
       ) : (
@@ -235,7 +251,7 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.ok },
   statusText: { color: C.ok, fontWeight: '600' },
-  errorText: { color: '#ef4444', fontSize: 13 },
+  errorText: { color: C.err, fontSize: 13 },
   deviceList: { maxHeight: 300 },
   deviceRow: {
     backgroundColor: C.s2, borderRadius: 10, padding: 14,
@@ -244,4 +260,12 @@ const styles = StyleSheet.create({
   },
   deviceName: { color: C.text, fontWeight: '600', fontSize: 15 },
   deviceRssi: { color: C.sub, fontSize: 13 },
+  demoSection: { marginTop: 24 },
+  divider: { height: 1, backgroundColor: C.line, marginBottom: 20 },
+  demoButton: {
+    borderRadius: 10, padding: 16, alignItems: 'center',
+    borderWidth: 1, borderColor: C.accentMuted, backgroundColor: C.accentSurface,
+  },
+  demoButtonText: { color: C.accent, fontWeight: '700', fontSize: 15 },
+  demoHint: { color: C.muted, fontSize: 12, marginTop: 4 },
 });

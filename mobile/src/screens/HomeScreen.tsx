@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
@@ -61,22 +61,22 @@ function PulsingDot({ active }: { active: boolean }) {
           ]}
         />
       )}
-      <View style={[pulseStyles.dot, { backgroundColor: active ? C.ok : C.sub }]} />
+      <View style={[pulseStyles.dot, { backgroundColor: active ? C.ok : C.accent }]} />
     </View>
   );
 }
 
 const pulseStyles = StyleSheet.create({
-  wrap: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' },
+  wrap: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
   ring: {
     position: 'absolute',
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: C.ok,
   },
-  dot: { width: 6, height: 6, borderRadius: 3 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });
 
 // ── Shot list row with entry animation ──────────────────────────────────────
@@ -220,7 +220,11 @@ export function HomeScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.logo}>OpenFlight</Text>
+        <Image
+          source={require('../../assets/openflightlogo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <View style={styles.headerRight}>
           {mockMode && (
             <View style={styles.mockBadge}>
@@ -312,15 +316,15 @@ const styles = StyleSheet.create({
     borderBottomColor: C.line,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { color: C.accent, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+  logo: { width: 120, height: 36 },
 
   mockBadge: {
-    backgroundColor: '#3b0764',
+    backgroundColor: C.mockSurface,
     borderRadius: R.xs,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  mockBadgeText: { color: '#e879f9', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  mockBadgeText: { color: C.mockText, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   warnBadge: {
     backgroundColor: C.warnDim,
     borderRadius: R.xs,
@@ -343,13 +347,13 @@ const styles = StyleSheet.create({
     borderColor: C.okMuted,
   },
   disconnectedBadge: {
-    backgroundColor: C.s2,
+    backgroundColor: C.accentSurface,
     borderWidth: 1,
-    borderColor: C.lineMid,
+    borderColor: C.accentMuted,
   },
-  statusText: { fontSize: 12, fontWeight: '600' },
+  statusText: { fontSize: 12, fontWeight: '700' },
   statusConnected: { color: C.ok },
-  statusDisconnected: { color: C.sub },
+  statusDisconnected: { color: C.accent },
 
   tracerWrap: { position: 'relative' },
   tracerToggle: {

@@ -244,5 +244,5 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
 });
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#050b1a', overflow: 'hidden' },
+  container: { backgroundColor: C.canvas2d, overflow: 'hidden' },
 });

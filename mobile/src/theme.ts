@@ -33,6 +33,14 @@ export const C = {
   ok: '#4ade80',
   okSurface: '#0a2318',
   okMuted: '#166534',
+
+  // Mock/demo mode badge (purple — distinct from brand palette)
+  mockSurface: '#3b0764',
+  mockText: '#e879f9',
+
+  // Tracer canvas backgrounds (intentionally blue-tinted for sky feel)
+  canvas2d: '#050b1a',
+  canvas3d: '#060d25',
 } as const;
 
 export const R = {
