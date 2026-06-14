@@ -1,3 +1,24 @@
+export type ShotShape =
+  | 'straight' | 'draw' | 'fade' | 'hook' | 'slice'
+  | 'push' | 'pull' | 'push-slice' | 'pull-hook';
+
+export interface ClubLifetimeStat {
+  club: string;
+  shot_count: number;
+  avg_carry: number;
+  avg_total: number | null;
+  min_carry: number;
+  max_carry: number;
+  std_dev_carry: number | null;
+}
+
+export interface ClubSessionPoint {
+  session_date: string;
+  avg_carry: number;
+  avg_total: number | null;
+  shot_count: number;
+}
+
 export interface Shot {
   id?: string;
   ball_speed_mph: number;
@@ -24,6 +45,8 @@ export interface Shot {
   total_distance_yards?: number | null;
   face_to_path_deg?: number | null;
   is_mishit?: boolean;
+  // computed on load via enrichShot, not stored in SQLite
+  shot_shape?: ShotShape | null;
 }
 
 export function isValidShot(val: unknown): val is Shot {
@@ -41,37 +64,6 @@ export function isValidShot(val: unknown): val is Shot {
   );
 }
 
-export function computeStats(shots: Shot[]): SessionStats {
-  if (shots.length === 0) {
-    return {
-      shot_count: 0, avg_ball_speed: 0, max_ball_speed: 0, min_ball_speed: 0,
-      avg_club_speed: null, avg_smash_factor: null, avg_carry_est: 0,
-      avg_launch_angle: null, avg_spin_rpm: null,
-    };
-  }
-  const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
-  const ballSpeeds = shots.map((s) => s.ball_speed_mph);
-  const clubSpeeds = shots.map((s) => s.club_speed_mph).filter((v): v is number => v !== null);
-  const smashFactors = shots.map((s) => s.smash_factor).filter((v): v is number => v !== null);
-  const launchAngles = shots.map((s) => s.launch_angle_vertical).filter((v): v is number => v !== null);
-  const spinRpms = shots.map((s) => s.spin_rpm).filter((v): v is number => v !== null);
-  return {
-    shot_count: shots.length,
-    avg_ball_speed: mean(ballSpeeds),
-    max_ball_speed: Math.max(...ballSpeeds),
-    min_ball_speed: Math.min(...ballSpeeds),
-    avg_club_speed: clubSpeeds.length > 0 ? mean(clubSpeeds) : null,
-    avg_smash_factor: smashFactors.length > 0 ? mean(smashFactors) : null,
-    avg_carry_est: mean(shots.map((s) => s.estimated_carry_yards)),
-    avg_launch_angle: launchAngles.length > 0 ? mean(launchAngles) : null,
-    avg_spin_rpm: spinRpms.length > 0 ? mean(spinRpms) : null,
-  };
-}
-
-export function getUniqueClubs(shots: Shot[]): string[] {
-  return Array.from(new Set(shots.map((s) => s.club)));
-}
-
 export interface SessionStats {
   shot_count: number;
   avg_ball_speed: number;
@@ -82,4 +74,46 @@ export interface SessionStats {
   avg_carry_est: number;
   avg_launch_angle: number | null;
   avg_spin_rpm: number | null;
+  std_dev_carry: number | null;
+  std_dev_ball_speed: number | null;
+}
+
+export function computeStats(shots: Shot[]): SessionStats {
+  if (shots.length === 0) {
+    return {
+      shot_count: 0, avg_ball_speed: 0, max_ball_speed: 0, min_ball_speed: 0,
+      avg_club_speed: null, avg_smash_factor: null, avg_carry_est: 0,
+      avg_launch_angle: null, avg_spin_rpm: null,
+      std_dev_carry: null, std_dev_ball_speed: null,
+    };
+  }
+  const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const stdDev = (arr: number[]): number | null => {
+    if (arr.length < 2) return null;
+    const m = mean(arr);
+    return Math.sqrt(arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / arr.length);
+  };
+  const ballSpeeds = shots.map((s) => s.ball_speed_mph);
+  const clubSpeeds = shots.map((s) => s.club_speed_mph).filter((v): v is number => v !== null);
+  const smashFactors = shots.map((s) => s.smash_factor).filter((v): v is number => v !== null);
+  const launchAngles = shots.map((s) => s.launch_angle_vertical).filter((v): v is number => v !== null);
+  const spinRpms = shots.map((s) => s.spin_rpm).filter((v): v is number => v !== null);
+  const carries = shots.map((s) => s.carry_spin_adjusted ?? s.estimated_carry_yards);
+  return {
+    shot_count: shots.length,
+    avg_ball_speed: mean(ballSpeeds),
+    max_ball_speed: Math.max(...ballSpeeds),
+    min_ball_speed: Math.min(...ballSpeeds),
+    avg_club_speed: clubSpeeds.length > 0 ? mean(clubSpeeds) : null,
+    avg_smash_factor: smashFactors.length > 0 ? mean(smashFactors) : null,
+    avg_carry_est: mean(carries),
+    avg_launch_angle: launchAngles.length > 0 ? mean(launchAngles) : null,
+    avg_spin_rpm: spinRpms.length > 0 ? mean(spinRpms) : null,
+    std_dev_carry: stdDev(carries),
+    std_dev_ball_speed: stdDev(ballSpeeds),
+  };
+}
+
+export function getUniqueClubs(shots: Shot[]): string[] {
+  return Array.from(new Set(shots.map((s) => s.club)));
 }
