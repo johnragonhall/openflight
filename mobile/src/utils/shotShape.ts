@@ -19,6 +19,8 @@ export const BAG_ORDER: string[] = [
  * launch_angle_horizontal: positive = starts right (push), negative = starts left (pull)
  *
  * Returns null when both inputs are null (no K-LD7 data).
+ * When only one input is null, the null is treated as 0 (no lateral/curve contribution).
+ * pull-draw collapses to 'draw' by design; push-fade collapses to 'fade'.
  */
 export function classifyShotShape(
   face_to_path_deg: number | null | undefined,
@@ -60,7 +62,6 @@ export function shotShapeColor(shape: ShotShape | null | undefined, C: {
   switch (shape) {
     case 'draw':
     case 'pull-hook':
-      return C.ok;
     case 'hook':
       return C.ok;
     case 'straight':
