@@ -10,6 +10,9 @@ import { ClubPicker } from './components/ClubPicker';
 import { ClubSelectScreen } from './components/ClubSelectScreen';
 import { BallDetectionIndicator } from './components/BallDetectionIndicator';
 import { DisplayMode } from './components/DisplayMode';
+import { AccessibilityPanel, AccessibilityTrigger } from './components/AccessibilityPanel';
+import { HistoryView } from './components/HistoryView';
+import { useAccessibilitySettings } from './state/useAccessibilitySettings';
 import {
   LaunchDaddyProvider,
   useLaunchDaddy,
@@ -26,7 +29,7 @@ import Logo from './logo/Logo';
 
 import './App.css';
 
-type View = 'live' | 'stats' | 'shots' | 'camera' | 'debug';
+type View = 'live' | 'stats' | 'shots' | 'history' | 'camera' | 'debug';
 
 // Navigation icons as inline SVGs for better control
 const Icons = {
@@ -53,6 +56,11 @@ const Icons = {
       <circle cx="12" cy="13" r="4" />
     </svg>
   ),
+  history: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path d="M12 8v4l3 3M3.05 11a9 9 0 1 0 .5-3M3 4v4h4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   debug: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
       <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
@@ -72,6 +80,7 @@ function AppContent() {
     cameraStatus,
     triggerDiagnostics,
     triggerStatus,
+    remoteA11yPrefs,
     clearSession,
     setClub,
     simulateShot,
@@ -81,6 +90,9 @@ function AppContent() {
     toggleCameraStream,
     shutdown,
   } = useSocket();
+
+  const { prefs: a11yPrefs, setPref: setA11yPref, applyRemote } = useAccessibilitySettings();
+  const [a11yPanelOpen, setA11yPanelOpen] = useState(false);
 
   const { latestShot, shots, isNewShot, shotVersion } = useShotContext();
 
@@ -103,6 +115,12 @@ function AppContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shotVersion triggers the effect; isNewShot is only a guard
   }, [shotVersion, isLaunchDaddyMode, triggerExplosion]);
+
+  // Apply remote a11y prefs when received from mobile app
+  useEffect(() => {
+    if (remoteA11yPrefs) applyRemote(remoteA11yPrefs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteA11yPrefs]);
 
   const handleClubChange = (club: string) => {
     setSelectedClub(club);
@@ -185,10 +203,11 @@ function AppContent() {
             onToggle={toggleCamera}
           />
           <ConnectionStatus connected={connected} />
+          <AccessibilityTrigger open={a11yPanelOpen} onClick={() => setA11yPanelOpen((o) => !o)} />
           <button
             className="power-button"
             onClick={() => setShowShutdown(true)}
-            title="Shut down"
+            aria-label="Shut down OpenFlight"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
               <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
@@ -198,15 +217,36 @@ function AppContent() {
         </div>
       </header>
 
+      <AccessibilityPanel
+        open={a11yPanelOpen}
+        onClose={() => setA11yPanelOpen(false)}
+        prefs={a11yPrefs}
+        onToggle={setA11yPref}
+      />
+
       {showShutdown && (
-        <div className="shutdown-overlay">
-          <div className="shutdown-dialog">
-            <p>Shut down OpenFlight?</p>
+        <div className="shutdown-overlay" role="presentation">
+          <div
+            className="shutdown-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shutdown-title"
+          >
+            <p id="shutdown-title">Shut down OpenFlight?</p>
             <div className="shutdown-dialog__buttons">
-              <button className="shutdown-dialog__confirm" onClick={() => { shutdown(); setShowShutdown(false); }}>
+              <button
+                className="shutdown-dialog__confirm"
+                onClick={() => { shutdown(); setShowShutdown(false); }}
+                aria-label="Confirm shut down"
+              >
                 Shut Down
               </button>
-              <button className="shutdown-dialog__cancel" onClick={() => setShowShutdown(false)}>
+              <button
+                className="shutdown-dialog__cancel"
+                onClick={() => setShowShutdown(false)}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              >
                 Cancel
               </button>
             </div>
@@ -214,10 +254,11 @@ function AppContent() {
         </div>
       )}
 
-      <nav className="nav">
+      <nav className="nav" aria-label="Main navigation">
         <button
           className={`nav__button ${currentView === 'live' ? 'nav__button--active' : ''}`}
           onClick={() => setCurrentView('live')}
+          aria-current={currentView === 'live' ? 'page' : undefined}
         >
           {Icons.live}
           <span>Live</span>
@@ -225,6 +266,7 @@ function AppContent() {
         <button
           className={`nav__button ${currentView === 'stats' ? 'nav__button--active' : ''}`}
           onClick={() => setCurrentView('stats')}
+          aria-current={currentView === 'stats' ? 'page' : undefined}
         >
           {Icons.stats}
           <span>Stats</span>
@@ -232,26 +274,40 @@ function AppContent() {
         <button
           className={`nav__button ${currentView === 'shots' ? 'nav__button--active' : ''}`}
           onClick={() => setCurrentView('shots')}
+          aria-current={currentView === 'shots' ? 'page' : undefined}
+          aria-label={shots.length > 0 ? `Shots, ${shots.length} recorded` : 'Shots'}
         >
           {Icons.shots}
-          <span>Shots</span>
-          {shots.length > 0 && <span className="nav__badge">{shots.length}</span>}
+          <span aria-hidden="true">Shots</span>
+          {shots.length > 0 && <span className="nav__badge" aria-hidden="true">{shots.length}</span>}
+        </button>
+        <button
+          className={`nav__button ${currentView === 'history' ? 'nav__button--active' : ''}`}
+          onClick={() => setCurrentView('history')}
+          aria-current={currentView === 'history' ? 'page' : undefined}
+        >
+          {Icons.history}
+          <span>History</span>
         </button>
         <button
           className={`nav__button ${currentView === 'camera' ? 'nav__button--active' : ''} ${cameraStatus.streaming ? 'nav__button--streaming' : ''}`}
           onClick={() => setCurrentView('camera')}
+          aria-current={currentView === 'camera' ? 'page' : undefined}
+          aria-label={cameraStatus.ball_detected ? 'Camera (ball detected)' : 'Camera'}
         >
           {Icons.camera}
-          <span>Camera</span>
-          {cameraStatus.ball_detected && <span className="nav__ball-dot" />}
+          <span aria-hidden="true">Camera</span>
+          {cameraStatus.ball_detected && <span className="nav__ball-dot" aria-hidden="true" />}
         </button>
         <button
           className={`nav__button ${currentView === 'debug' ? 'nav__button--active' : ''} ${debugMode ? 'nav__button--recording' : ''}`}
           onClick={() => setCurrentView('debug')}
+          aria-current={currentView === 'debug' ? 'page' : undefined}
+          aria-label={debugMode ? 'Debug (recording)' : 'Debug'}
         >
           {Icons.debug}
-          <span>Debug</span>
-          {debugMode && <span className="nav__recording-dot" />}
+          <span aria-hidden="true">Debug</span>
+          {debugMode && <span className="nav__recording-dot" aria-hidden="true" />}
         </button>
       </nav>
 
@@ -269,6 +325,7 @@ function AppContent() {
         )}
         {currentView === 'stats' && <StatsView shots={shots} onClearSession={clearSession} />}
         {currentView === 'shots' && <ShotList shots={shots} />}
+        {currentView === 'history' && <HistoryView />}
         {currentView === 'camera' && (
           <CameraFeed cameraStatus={cameraStatus} onToggleCamera={toggleCamera} onToggleStream={toggleCameraStream} streamToken={adminToken} />
         )}

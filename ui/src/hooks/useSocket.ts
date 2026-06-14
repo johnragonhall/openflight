@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import type { Shot, SessionStats, SessionState, TriggerDiagnostic, TriggerStatus } from '../types/shot';
 import { useShotContext } from '../state/useShotContext';
 import { getServerOrigin } from '../utils/serverOrigin';
+import type { A11yPrefs } from '../state/useAccessibilitySettings';
 
 const SOCKET_URL = getServerOrigin();
 
@@ -84,6 +85,8 @@ export function useSocket() {
     ball_detected: false,
     ball_confidence: 0,
   });
+  const [remoteA11yPrefs, setRemoteA11yPrefs] = useState<Partial<A11yPrefs> | null>(null);
+
   // Trigger diagnostics state
   const [triggerDiagnostics, setTriggerDiagnostics] = useState<TriggerDiagnostic[]>([]);
   const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>({
@@ -217,6 +220,16 @@ export function useSocket() {
       setTriggerStatus(data);
     });
 
+    newSocket.on('accessibility_prefs_update', (data: unknown) => {
+      if (data && typeof data === 'object') {
+        const p = data as Record<string, unknown>;
+        const a11y = p.accessibility;
+        if (a11y && typeof a11y === 'object') {
+          setRemoteA11yPrefs(a11y as Partial<A11yPrefs>);
+        }
+      }
+    });
+
     socketRef.current = newSocket;
 
     return () => {
@@ -273,6 +286,7 @@ export function useSocket() {
     cameraStatus,
     triggerDiagnostics,
     triggerStatus,
+    remoteA11yPrefs,
     clearSession,
     setClub,
     simulateShot,
