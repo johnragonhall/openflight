@@ -12,6 +12,7 @@
   border: 1px solid transparent;
   cursor: pointer;
   transition: all var(--transition-smooth);
+  min-height: 44px;
 }
 
 .ball-indicator:hover {
@@ -76,6 +77,18 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+/* Accessibility: disable looping icon animations */
+@media (prefers-reduced-motion: reduce) {
+  .ball-indicator--detected .ball-indicator__icon,
+  .ball-indicator--searching .ball-indicator__icon {
+    animation: none;
+  }
+
+  .ball-indicator:hover {
+    transform: none;
   }
 }
 

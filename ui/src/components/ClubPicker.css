@@ -16,7 +16,7 @@
   cursor: pointer;
   transition: all var(--transition-smooth);
   min-width: 90px;
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .club-picker__trigger:hover {
@@ -190,12 +190,20 @@
   }
 }
 
+/* Accessibility: disable entrance animations */
+@media (prefers-reduced-motion: reduce) {
+  .club-picker__overlay,
+  .club-picker__dropdown {
+    animation: none;
+  }
+}
+
 /* Small screens */
 @media (max-height: 500px) {
   .club-picker__trigger {
     padding: var(--space-xs) var(--space-sm);
     min-width: 80px;
-    min-height: 36px;
+    min-height: 44px;
   }
 
   .club-picker__label {

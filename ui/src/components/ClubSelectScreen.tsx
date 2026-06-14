@@ -44,6 +44,7 @@ export function ClubSelectScreen({ selectedClub, onSelect, onSkip }: ClubSelectS
                   key={club.id}
                   className={`club-select__option ${selectedClub === club.id ? 'club-select__option--selected' : ''}`}
                   onClick={() => onSelect(club.id)}
+                  aria-pressed={selectedClub === club.id}
                 >
                   {club.label}
                 </button>

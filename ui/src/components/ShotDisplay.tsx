@@ -51,8 +51,16 @@ function SpeedGauge({
   const valueArc = describeArc(GAUGE_START_ANGLE, angle);
 
   return (
-    <div className="speed-gauge">
-      <svg viewBox="0 0 200 140" className="speed-gauge__svg">
+    <div
+      className="speed-gauge"
+      role="meter"
+      aria-label={label}
+      aria-valuenow={speedMph}
+      aria-valuemin={GAUGE_MIN}
+      aria-valuemax={GAUGE_MAX}
+      aria-valuetext={`${displayValue} ${unit}`}
+    >
+      <svg viewBox="0 0 200 140" className="speed-gauge__svg" aria-hidden="true">
         <path d={backgroundArc} fill="none" stroke="rgba(245, 240, 230, 0.1)" strokeWidth="12" strokeLinecap="round" />
         <path
           d={valueArc}
@@ -69,7 +77,7 @@ function SpeedGauge({
           </linearGradient>
         </defs>
       </svg>
-      <div className="speed-gauge__content">
+      <div className="speed-gauge__content" aria-hidden="true">
         <span className="speed-gauge__value">{displayValue}</span>
         <span className="speed-gauge__unit">{unit}</span>
         <span className="speed-gauge__label">{label}</span>
@@ -159,7 +167,12 @@ export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
   const hasLaunchAngle = shot.launch_angle_vertical !== null;
 
   return (
-    <div className={`shot-display ${animate ? 'shot-display--animate' : ''}`}>
+    <div
+      className={`shot-display ${animate ? 'shot-display--animate' : ''}`}
+      aria-live="polite"
+      aria-atomic="true"
+      aria-label={`Shot: ${shot.club}, ball speed ${formatSpeed(shot.ball_speed_mph, unitSystem, 1)} ${getSpeedUnit(unitSystem)}, carry ${formatDistance(displayCarry, unitSystem, 0)} ${getDistanceUnit(unitSystem)}`}
+    >
       <div className="shot-display__layout">
         <div className="shot-display__primary">
           <SpeedGauge

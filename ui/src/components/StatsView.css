@@ -33,7 +33,7 @@
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: all var(--transition-smooth);
-  min-height: 40px;
+  min-height: 44px;
   touch-action: manipulation;
 }
 
@@ -133,7 +133,7 @@
 
   .club-tabs__tab {
     padding: var(--space-xs) var(--space-sm);
-    min-height: 36px;
+    min-height: 44px;
     font-size: 0.75rem;
   }
 
@@ -155,7 +155,7 @@
 
   .clear-button {
     padding: var(--space-sm);
-    min-height: 40px;
+    min-height: 44px;
     font-size: 0.8125rem;
   }
 }

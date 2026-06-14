@@ -43,18 +43,22 @@ export function StatsView({ shots, onClearSession }: StatsViewProps) {
 
   return (
     <div className="stats-view">
-      <div className="club-tabs">
+      <div className="club-tabs" role="tablist" aria-label="Filter by club">
         <button
+          role="tab"
           className={`club-tabs__tab ${selectedClub === null ? 'club-tabs__tab--active' : ''}`}
           onClick={() => setSelectedClub(null)}
+          aria-selected={selectedClub === null}
         >
           All ({shots.length})
         </button>
         {availableClubs.map((club) => (
           <button
             key={club}
+            role="tab"
             className={`club-tabs__tab ${selectedClub === club ? 'club-tabs__tab--active' : ''}`}
             onClick={() => setSelectedClub(club)}
+            aria-selected={selectedClub === club}
           >
             {club.toUpperCase()} ({clubCounts[club] || 0})
           </button>
@@ -92,7 +96,7 @@ export function StatsView({ shots, onClearSession }: StatsViewProps) {
         )}
       </div>
 
-      <button className="clear-button" onClick={onClearSession}>
+      <button className="clear-button" onClick={onClearSession} aria-label="Clear session data">
         Clear Session
       </button>
     </div>

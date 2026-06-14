@@ -87,21 +87,23 @@ export function ShotList({ shots }: ShotListProps) {
       </div>
 
       {totalPages > 1 && (
-        <div className="pagination">
+        <div className="pagination" role="navigation" aria-label="Shot list pagination">
           <button
             className="pagination__button"
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
+            aria-label="Previous page"
           >
             Prev
           </button>
-          <span className="pagination__info">
-            {page + 1} / {totalPages}
+          <span className="pagination__info" aria-live="polite" aria-atomic="true">
+            Page {page + 1} of {totalPages}
           </span>
           <button
             className="pagination__button"
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page === totalPages - 1}
+            aria-label="Next page"
           >
             Next
           </button>

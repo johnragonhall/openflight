@@ -19,9 +19,15 @@ export function ClubPicker({ selectedClub, onClubChange }: ClubPickerProps) {
 
   return (
     <div className="club-picker">
-      <button className="club-picker__trigger" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen}>
-        <span className="club-picker__label">Club</span>
-        <span className="club-picker__value">{selectedLabel}</span>
+      <button
+        className="club-picker__trigger"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={`Club: ${selectedLabel}. Press to change.`}
+      >
+        <span className="club-picker__label" aria-hidden="true">Club</span>
+        <span className="club-picker__value" aria-hidden="true">{selectedLabel}</span>
         <svg
           className={`club-picker__arrow ${isOpen ? 'club-picker__arrow--open' : ''}`}
           viewBox="0 0 24 24"
@@ -35,15 +41,23 @@ export function ClubPicker({ selectedClub, onClubChange }: ClubPickerProps) {
 
       {isOpen && (
         <>
-          <div className="club-picker__overlay" onClick={() => setIsOpen(false)} />
-          <div className="club-picker__dropdown">
+          <div className="club-picker__overlay" onClick={() => setIsOpen(false)} aria-hidden="true" />
+          <div
+            className="club-picker__dropdown"
+            role="listbox"
+            aria-label="Select club"
+            aria-activedescendant={`club-option-${selectedClub}`}
+          >
             {Object.entries(CLUBS_BY_TYPE).map(([type, clubs]) => (
-              <div className="club-picker__section">
-                <span className="club-picker__section-title">{type}</span>
-                <div className="club-picker__grid">
+              <div className="club-picker__section" key={type}>
+                <span className="club-picker__section-title" aria-hidden="true">{type}</span>
+                <div className="club-picker__grid" role="group" aria-label={type}>
                   {clubs.map((club) => (
                     <button
                       key={club.id}
+                      id={`club-option-${club.id}`}
+                      role="option"
+                      aria-selected={selectedClub === club.id}
                       className={`club-picker__option ${
                         selectedClub === club.id ? 'club-picker__option--selected' : ''
                       }`}
