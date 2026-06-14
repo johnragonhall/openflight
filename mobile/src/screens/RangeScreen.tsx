@@ -11,7 +11,7 @@ import {
   type GpsCoords, requestLocationPermission, getCurrentCoords, distanceYards,
 } from '../utils/gps';
 import { useUnitPreference } from '../state/useUnitPreference';
-import { cameraUrlPromise, DEFAULT_CAMERA_URL } from './SettingsScreen';
+import { getCameraUrl, DEFAULT_CAMERA_URL } from '../state/cameraSettings';
 import { convertDistanceFromYards, formatDistance, getDistanceUnit } from '../utils/units';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
@@ -232,7 +232,7 @@ const tgtStyles = StyleSheet.create({
 function CameraTab() {
   const [url, setUrl] = useState(DEFAULT_CAMERA_URL);
   useEffect(() => {
-    cameraUrlPromise.then(setUrl).catch(() => {});
+    getCameraUrl().then(setUrl).catch(() => {});
   }, []);
   return (
     <View style={camStyles.container}>

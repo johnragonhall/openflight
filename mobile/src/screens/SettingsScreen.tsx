@@ -1,39 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUnitPreference } from '../state/useUnitPreference';
 import type { UnitSystem } from '../utils/units';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
 import { OPENFLIGHT_SERVICE_UUID } from '../hooks/useBLEConnection';
-
-export const CAMERA_URL_KEY = 'camera_url';
-export const DEFAULT_CAMERA_URL = 'http://openflight.local:8080/stream';
-
-let cachedCameraUrl: string | null = null;
-export const cameraUrlPromise: Promise<string> = AsyncStorage.getItem(CAMERA_URL_KEY)
-  .then((v) => {
-    cachedCameraUrl = v ?? DEFAULT_CAMERA_URL;
-    return cachedCameraUrl;
-  })
-  .catch(() => {
-    cachedCameraUrl = DEFAULT_CAMERA_URL;
-    return cachedCameraUrl;
-  });
+import {
+  getCameraUrl,
+  setCameraUrl as persistCameraUrl,
+  DEFAULT_CAMERA_URL,
+} from '../state/cameraSettings';
 
 export function SettingsScreen() {
   const { unitSystem, setUnitSystem } = useUnitPreference();
-  const [cameraUrl, setCameraUrl] = useState(() => cachedCameraUrl ?? DEFAULT_CAMERA_URL);
+  const [cameraUrl, setCameraUrl] = useState(DEFAULT_CAMERA_URL);
 
   useEffect(() => {
-    if (cachedCameraUrl !== null) return;
-    cameraUrlPromise.then(setCameraUrl).catch(() => {});
+    getCameraUrl().then(setCameraUrl).catch(() => {});
   }, []);
 
   const saveCameraUrl = (url: string) => {
     setCameraUrl(url);
-    AsyncStorage.setItem(CAMERA_URL_KEY, url).catch(() => {});
+    persistCameraUrl(url).catch(() => {});
   };
 
   return (
