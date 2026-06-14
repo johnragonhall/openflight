@@ -12,6 +12,7 @@ import { RadarPulse } from '../components/RadarPulse';
 import { ShotDisplay } from '../components/ShotDisplay';
 import { ShotTracer2D } from '../components/ShotTracer2D';
 import { ShotTracer3D } from '../components/ShotTracer3D';
+import { ShotShapePill } from '../components/ShotShapePill';
 import { useConnection } from '../state/ConnectionContext';
 import { useUnitPreference } from '../state/useUnitPreference';
 import type { Shot } from '../types/shot';
@@ -100,8 +101,11 @@ const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
     <Animated.View style={{ opacity: entryAnim, transform: [{ translateY }] }}>
       <View style={styles.shotRow}>
         <View style={styles.shotRowLeft}>
-          <View style={styles.shotRowClubPill}>
-            <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
+          <View style={styles.shotRowPillRow}>
+            <View style={styles.shotRowClubPill}>
+              <Text style={styles.shotRowClub}>{shot.club.toUpperCase()}</Text>
+            </View>
+            <ShotShapePill shape={shot.shot_shape} />
           </View>
           <Text style={styles.shotRowTime}>
             {new Date(shot.timestamp).toLocaleTimeString([], {
@@ -474,6 +478,7 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   shotRowLeft: { gap: 4 },
+  shotRowPillRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   shotRowClubPill: {
     backgroundColor: C.s3,
     borderRadius: R.xs,
