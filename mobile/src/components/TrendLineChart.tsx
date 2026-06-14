@@ -52,7 +52,7 @@ export function TrendLineChart({ data, width, height = 100 }: Props) {
       {yLabels.map((v, i) => {
         const y = PAD.top + ((height - PAD.top - PAD.bottom) * (1 - i / 2));
         return (
-          <SvgText key={v} x={PAD.left - 4} y={y + 4} textAnchor="end"
+          <SvgText key={i} x={PAD.left - 4} y={y + 4} textAnchor="end"
             fontSize={9} fill={C.muted}>{v}</SvgText>
         );
       })}

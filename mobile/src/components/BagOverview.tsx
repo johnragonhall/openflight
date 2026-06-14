@@ -3,7 +3,6 @@ import { Animated, FlatList, StyleSheet, Text, View } from 'react-native';
 import type { ClubLifetimeStat } from '../types/shot';
 import { getLifetimeStatsByClub } from '../db/database';
 import { sortByBagOrder } from '../utils/shotShape';
-import { ShapeBar } from './ShapeBar';
 import { ClubDetailSheet, formatClubName } from './ClubDetailSheet';
 import { PressableScale } from './PressableScale';
 import { C, R } from '../theme';
@@ -84,7 +83,11 @@ function ClubRow({ stat, index, onPress }: RowProps) {
 
   return (
     <Animated.View style={{ opacity: fadeAnim }}>
-      <PressableScale onPress={onPress}>
+      <PressableScale
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${formatClubName(stat.club)}, ${stat.shot_count} shots, ${Math.round(stat.avg_carry)} yards average carry`}
+      >
         <View style={styles.row}>
           {/* Left: club pill + shot count */}
           <View style={styles.rowLeft}>
@@ -103,12 +106,12 @@ function ClubRow({ stat, index, onPress }: RowProps) {
             )}
           </View>
 
-          {/* Right: shape bar + range */}
+          {/* Right: carry range */}
           <View style={styles.rowRight}>
-            <ShapeBar shapes={[]} height={6} />
-            <Text style={styles.rangeText}>
-              {Math.round(stat.min_carry)}–{Math.round(stat.max_carry)} yds
+            <Text style={styles.rangeValue}>
+              {Math.round(stat.min_carry)}–{Math.round(stat.max_carry)}
             </Text>
+            <Text style={styles.rangeUnit}>yds range</Text>
           </View>
 
           <Text style={styles.chevron}>›</Text>
@@ -177,7 +180,8 @@ const styles = StyleSheet.create({
   carryUnit: { color: C.muted, fontSize: 10 },
   totalValue: { color: C.sub, fontSize: 11 },
   rowRight: { width: 80, gap: 4 },
-  rangeText: { color: C.muted, fontSize: 9 },
+  rangeValue: { color: C.sub, fontSize: 12, fontWeight: '600' },
+  rangeUnit: { color: C.muted, fontSize: 9 },
   chevron: { color: C.muted, fontSize: 18 },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
   emptyTitle: { color: C.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },

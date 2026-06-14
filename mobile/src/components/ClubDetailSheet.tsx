@@ -33,6 +33,7 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
     getClubSessionTrend(stat.club)
       .then((data) => { if (!cancelled) setTrend(data); })
       .finally(() => { if (!cancelled) setLoading(false); });
+    slideAnim.setValue(0);
     Animated.spring(slideAnim, {
       toValue: 1,
       speed: Anim.spring.speed,
@@ -54,6 +55,7 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
   const consistencyPct = stat.std_dev_carry != null && carry > 0
     ? Math.max(0, Math.round(100 - (stat.std_dev_carry / carry) * 100))
     : null;
+  const hasShapeData = shapeDrawPct + shapeFadePct > 0;
 
   return (
     <Modal transparent animationType="none" visible onRequestClose={onClose}>
@@ -69,7 +71,7 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
             <Text style={styles.clubName}>{formatClubName(stat.club)}</Text>
             <Text style={styles.shotCount}>{stat.shot_count} shots</Text>
           </View>
-          <Pressable onPress={onClose} style={styles.closeBtn}>
+          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close" accessibilityRole="button">
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
         </View>
@@ -86,23 +88,25 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
 
           {/* Carry range */}
           <View style={styles.metricsRow}>
-            <MetricTile label="MIN CARRY" value={`${Math.round(stat.min_carry)}`} />
-            <MetricTile label="MAX CARRY" value={`${Math.round(stat.max_carry)}`} />
+            <MetricTile label="MIN CARRY" value={`${Math.round(stat.min_carry)} yds`} />
+            <MetricTile label="MAX CARRY" value={`${Math.round(stat.max_carry)} yds`} />
             {stat.std_dev_carry != null && (
               <MetricTile label="SD CARRY" value={`±${Math.round(stat.std_dev_carry)} yds`} />
             )}
           </View>
 
-          {/* Shape bar */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>SHOT SHAPE</Text>
-            <ShapeBar shapes={buildShapeArray(shapeDrawPct, shapeStraightPct, shapeFadePct, stat.shot_count)} height={12} />
-            <View style={styles.shapeLegend}>
-              <LegendDot color={C.ok} label={`Draw/Hook ${pct(shapeDrawPct)}`} />
-              <LegendDot color={C.accent} label={`Straight ${pct(shapeStraightPct)}`} />
-              <LegendDot color={C.warn} label={`Fade/Slice ${pct(shapeFadePct)}`} />
+          {/* Shape bar — only shown when K-LD7 shape data is available */}
+          {hasShapeData && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>SHOT SHAPE</Text>
+              <ShapeBar shapes={buildShapeArray(shapeDrawPct, shapeStraightPct, shapeFadePct, stat.shot_count)} height={12} />
+              <View style={styles.shapeLegend}>
+                <LegendDot color={C.ok} label={`Draw/Hook ${pct(shapeDrawPct)}`} />
+                <LegendDot color={C.accent} label={`Straight ${pct(shapeStraightPct)}`} />
+                <LegendDot color={C.warn} label={`Fade/Slice ${pct(shapeFadePct)}`} />
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Trend chart */}
           <View style={styles.section}>

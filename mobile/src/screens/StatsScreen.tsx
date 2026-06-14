@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useConnection } from '../state/ConnectionContext';
 import { StatsView } from '../components/StatsView';
 import { FittingRecommendations } from '../components/FittingRecommendations';
 import { BagOverview } from '../components/BagOverview';
 import { computeStats, getUniqueClubs } from '../types/shot';
+import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
 
 type TabMode = 'session' | 'alltime';
@@ -41,10 +42,10 @@ export function StatsScreen() {
       {/* Segment toggle */}
       <View style={styles.segmentWrap}>
         <View style={styles.segment}>
-          <TouchableOpacity
+          <PressableScale
             style={[styles.segBtn, mode === 'session' && styles.segBtnActive]}
             onPress={switchToSession}
-            activeOpacity={0.7}
+            scale={0.97}
             accessibilityRole="tab"
             accessibilityState={{ selected: mode === 'session' }}
             accessibilityLabel="Session stats"
@@ -52,11 +53,11 @@ export function StatsScreen() {
             <Text style={[styles.segBtnText, mode === 'session' && styles.segBtnTextActive]}>
               Session
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </PressableScale>
+          <PressableScale
             style={[styles.segBtn, mode === 'alltime' && styles.segBtnActive]}
             onPress={switchToAllTime}
-            activeOpacity={0.7}
+            scale={0.97}
             accessibilityRole="tab"
             accessibilityState={{ selected: mode === 'alltime' }}
             accessibilityLabel="All time stats"
@@ -64,7 +65,7 @@ export function StatsScreen() {
             <Text style={[styles.segBtnText, mode === 'alltime' && styles.segBtnTextActive]}>
               All Time
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
       </View>
 
