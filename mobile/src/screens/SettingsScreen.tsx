@@ -1,22 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ScrollView, StyleSheet, Switch, Text, TextInput, View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useUnitPreference } from '../state/useUnitPreference';
-import type { UnitSystem } from '../utils/units';
+import { useConnection } from '../state/ConnectionContext';
+import { UNIT_COMBOS, LANGUAGES } from '../utils/units';
+import type { RootStackParamList } from '../types/navigation';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
 import { OPENFLIGHT_SERVICE_UUID } from '../hooks/useBLEConnection';
 import {
-  getCameraUrl,
-  setCameraUrl as persistCameraUrl,
-  DEFAULT_CAMERA_URL,
-  getCameraEnabled,
-  setCameraEnabled as persistCameraEnabled,
-  DEFAULT_CAMERA_ENABLED,
+  getCameraUrl, setCameraUrl as persistCameraUrl, DEFAULT_CAMERA_URL,
+  getCameraEnabled, setCameraEnabled as persistCameraEnabled, DEFAULT_CAMERA_ENABLED,
 } from '../state/cameraSettings';
 
+const APP_VERSION = '1.0.0';
+
 export function SettingsScreen() {
-  const { unitSystem, setUnitSystem } = useUnitPreference();
+  const { speedUnit, distanceUnit, temperatureUnit, language } = useUnitPreference();
+  const { connected, connectionLabel } = useConnection();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cameraUrl, setCameraUrl] = useState(DEFAULT_CAMERA_URL);
   const [cameraEnabled, setCameraEnabled] = useState(DEFAULT_CAMERA_ENABLED);
 
@@ -25,35 +32,72 @@ export function SettingsScreen() {
     getCameraEnabled().then(setCameraEnabled).catch(() => {});
   }, []);
 
-  const saveCameraUrl = (url: string) => {
-    setCameraUrl(url);
-    persistCameraUrl(url).catch(() => {});
-  };
-
   const toggleCamera = () => {
     const next = !cameraEnabled;
     setCameraEnabled(next);
     persistCameraEnabled(next).catch(() => {});
   };
 
+  const saveCameraUrl = (url: string) => {
+    setCameraUrl(url);
+    persistCameraUrl(url).catch(() => {});
+  };
+
+  const unitCombo = UNIT_COMBOS.find(c => c.speed === speedUnit && c.distance === distanceUnit);
+  const unitLabel = unitCombo?.label ?? 'mph, yds';
+  const tempLabel = temperatureUnit === 'fahrenheit' ? 'Fahrenheit' : 'Celsius';
+  const langEntry = LANGUAGES.find(l => l.code === language);
+  const langLabel = langEntry?.label ?? 'English';
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+    <SafeAreaView style={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Settings</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Section title="Units">
-          <SegmentedControl
-            options={[
-              { label: 'Imperial', sublabel: 'mph / yds', value: 'imperial' },
-              { label: 'Metric', sublabel: 'km/h / m', value: 'metric' },
-            ]}
-            selected={unitSystem}
-            onSelect={(v) => setUnitSystem(v as UnitSystem)}
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+
+        <Section title="Connection">
+          <NavRow
+            label="Radar"
+            value={connected ? connectionLabel : 'Not Connected'}
+            valueColor={connected ? C.ok : C.muted}
+            onPress={() => navigation.navigate('Connection')}
           />
         </Section>
 
-        <Section title="Camera">
+        <Section title="App Settings">
+          <NavRow
+            label="My Bag"
+            value="Clubs & Stats"
+            onPress={() => navigation.navigate('BagMain')}
+            border
+          />
+          <NavRow
+            label="Units"
+            value={unitLabel}
+            onPress={() => navigation.navigate('SettingsUnitsPicker')}
+            border
+          />
+          <NavRow
+            label="Temperature"
+            value={tempLabel}
+            onPress={() => navigation.navigate('SettingsTemperature')}
+            border
+          />
+          <NavRow
+            label="Language"
+            value={langLabel}
+            onPress={() => navigation.navigate('SettingsLanguage')}
+            border
+          />
+          <NavRow
+            label="Accessibility"
+            value="Motion, contrast, text"
+            onPress={() => navigation.navigate('SettingsAccessibility')}
+          />
+        </Section>
+
+        <Section title="Display">
           <ToggleRow
             label="Camera Tab"
             sublabel="Show live feed in Range screen"
@@ -61,12 +105,10 @@ export function SettingsScreen() {
             onToggle={toggleCamera}
           />
           {cameraEnabled && (
-            <>
-              <View style={[styles.labelRow, styles.labelRowBorder]}>
-                <Text style={styles.rowLabel}>Stream URL</Text>
-              </View>
+            <View style={s.inputWrap}>
+              <Text style={s.inputLabel}>Camera Stream URL</Text>
               <TextInput
-                style={styles.urlInput}
+                style={s.urlInput}
                 value={cameraUrl}
                 onChangeText={saveCameraUrl}
                 placeholder={DEFAULT_CAMERA_URL}
@@ -75,42 +117,64 @@ export function SettingsScreen() {
                 autoCorrect={false}
                 keyboardType="url"
               />
-            </>
+            </View>
           )}
         </Section>
 
         <Section title="About">
-          <InfoRow label="App Version" value="1.0.0" />
-          <InfoRow label="BLE Service UUID" value={OPENFLIGHT_SERVICE_UUID} mono />
+          <InfoRow label="App Version" value={APP_VERSION} />
+          <InfoRow label="BLE Service" value={OPENFLIGHT_SERVICE_UUID} mono />
         </Section>
+
+        <Text style={s.footer}>OpenFlight · DIY Golf Launch Monitor</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ── Primitives ────────────────────────────────────────────────────────────────
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionBody}>{children}</View>
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{title.toUpperCase()}</Text>
+      <View style={s.sectionBody}>{children}</View>
     </View>
   );
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function NavRow({
+  label, value, valueColor, onPress, border,
+}: {
+  label: string;
+  value?: string;
+  valueColor?: string;
+  onPress: () => void;
+  border?: boolean;
+}) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, mono && styles.mono]}>{value}</Text>
-    </View>
+    <PressableScale
+      style={[s.navRow, border && s.rowBorder]}
+      onPress={onPress}
+      scale={0.985}
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityHint="Double tap to change"
+    >
+      <Text style={s.rowLabel}>{label}</Text>
+      <View style={s.navRight}>
+        {value != null && (
+          <Text style={[s.navValue, valueColor ? { color: valueColor } : undefined]}>
+            {value}
+          </Text>
+        )}
+        <Ionicons name="chevron-forward" size={16} color={C.muted} />
+      </View>
+    </PressableScale>
   );
 }
 
 function ToggleRow({
-  label,
-  sublabel,
-  value,
-  onToggle,
+  label, sublabel, value, onToggle,
 }: {
   label: string;
   sublabel?: string;
@@ -118,175 +182,136 @@ function ToggleRow({
   onToggle: () => void;
 }) {
   return (
-    <PressableScale style={styles.toggleRow} onPress={onToggle} scale={0.985}>
-      <View style={styles.toggleLeft}>
-        <Text style={styles.toggleLabel}>{label}</Text>
-        {sublabel && <Text style={styles.toggleSublabel}>{sublabel}</Text>}
+    <View style={s.toggleRow}>
+      <View style={s.toggleLeft}>
+        <Text style={s.rowLabel}>{label}</Text>
+        {sublabel && <Text style={s.rowSublabel}>{sublabel}</Text>}
       </View>
-      <View style={[styles.toggleTrack, value && styles.toggleTrackOn]}>
-        <View style={[styles.toggleThumb, value && styles.toggleThumbOn]} />
-      </View>
-    </PressableScale>
-  );
-}
-
-function SegmentedControl({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: { label: string; sublabel: string; value: string }[];
-  selected: string;
-  onSelect: (value: string) => void;
-}) {
-  return (
-    <View>
-      {options.map((opt, i) => {
-        const isSelected = opt.value === selected;
-        const isLast = i === options.length - 1;
-        return (
-          <PressableScale
-            key={opt.value}
-            style={[
-              styles.segmentOption,
-              isSelected && styles.segmentSelected,
-              !isLast && styles.segmentBorder,
-            ]}
-            onPress={() => onSelect(opt.value)}
-            scale={0.985}
-          >
-            <View style={styles.segmentLeft}>
-              <View style={[styles.radio, isSelected && styles.radioSelected]}>
-                {isSelected && <View style={styles.radioDot} />}
-              </View>
-              <View>
-                <Text style={[styles.segmentLabel, isSelected && styles.segmentLabelSelected]}>
-                  {opt.label}
-                </Text>
-                <Text style={styles.segmentSublabel}>{opt.sublabel}</Text>
-              </View>
-            </View>
-          </PressableScale>
-        );
-      })}
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ false: C.lineMid, true: C.accent }}
+        thumbColor="#ffffff"
+        ios_backgroundColor={C.lineMid}
+        accessibilityLabel={label}
+        accessibilityHint={sublabel}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <View style={s.infoRow}>
+      <Text style={s.rowLabel}>{label}</Text>
+      <Text style={[s.infoValue, mono && s.mono]} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
 
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
   },
-  headerTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  headerTitle: {
+    color: C.text,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
 
-  scroll: { padding: 16, paddingBottom: 40 },
+  scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 48 },
 
   section: { marginBottom: 28 },
   sectionTitle: {
-    color: C.sub,
+    color: C.muted,
     fontSize: 11,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-    marginLeft: 2,
+    letterSpacing: 1.0,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   sectionBody: {
     backgroundColor: C.s1,
     borderRadius: R.md,
-    overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
+    overflow: 'hidden',
   },
 
-  // Toggle
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    minHeight: 52,
+  },
+  navRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  navValue: { color: C.sub, fontSize: 15 },
+  rowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line,
+  },
+
+  rowLabel: { color: C.text, fontSize: 16, fontWeight: '500' },
+  rowSublabel: { color: C.muted, fontSize: 12, marginTop: 2 },
+
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 52,
   },
   toggleLeft: { flex: 1, marginRight: 12 },
-  toggleLabel: { color: C.text, fontSize: 15, fontWeight: '500' },
-  toggleSublabel: { color: C.muted, fontSize: 12, marginTop: 2 },
-  toggleTrack: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: C.lineMid,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleTrackOn: { backgroundColor: C.accent },
-  toggleThumb: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#ffffff',
-    alignSelf: 'flex-start',
-  },
-  toggleThumbOn: { alignSelf: 'flex-end' },
 
-  // Segment
-  segmentOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+  inputWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
-  segmentBorder: { borderBottomWidth: 1, borderBottomColor: C.line },
-  segmentSelected: { backgroundColor: C.accentSurface },
-  segmentLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  radio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: C.muted,
-    alignItems: 'center',
-    justifyContent: 'center',
+  inputLabel: {
+    color: C.sub,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    marginBottom: 6,
   },
-  radioSelected: { borderColor: C.accent },
-  radioDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.accent,
-  },
-  segmentLabel: { color: C.sub, fontSize: 15 },
-  segmentLabelSelected: { color: C.text, fontWeight: '600' },
-  segmentSublabel: { color: C.muted, fontSize: 12, marginTop: 1 },
-
-  // URL input
-  labelRow: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 4 },
-  labelRowBorder: { borderTopWidth: 1, borderTopColor: C.line },
-  rowLabel: { color: C.sub, fontSize: 14 },
   urlInput: {
     color: C.text,
-    fontSize: 13,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
-    marginBottom: 2,
+    fontSize: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
 
-  // Info rows
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
+    minHeight: 52,
   },
-  rowValue: { color: C.muted, fontSize: 13 },
-  mono: { fontFamily: 'monospace', fontSize: 12 },
+  infoValue: { color: C.muted, fontSize: 13, flex: 1, textAlign: 'right', paddingLeft: 16 },
+  mono: { fontFamily: 'monospace', fontSize: 11 },
+
+  footer: {
+    textAlign: 'center',
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 8,
+  },
 });

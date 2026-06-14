@@ -16,8 +16,17 @@ import { StatsScreen } from './src/screens/StatsScreen';
 import { RangeScreen } from './src/screens/RangeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ConnectionScreen } from './src/screens/ConnectionScreen';
+import { PairScreen } from './src/screens/PairScreen';
 import { SessionDetailScreen } from './src/screens/SessionDetailScreen';
 import { AnimatedTabBar } from './src/components/AnimatedTabBar';
+import { UnitsPickerScreen } from './src/screens/settings/UnitsPickerScreen';
+import { TemperatureScreen } from './src/screens/settings/TemperatureScreen';
+import { LanguageScreen } from './src/screens/settings/LanguageScreen';
+import { BagScreen } from './src/screens/bag/BagScreen';
+import { AddClubScreen } from './src/screens/bag/AddClubScreen';
+import { ClubDetailScreen } from './src/screens/bag/ClubDetailScreen';
+import { SpareClubsScreen } from './src/screens/bag/SpareClubsScreen';
+import { AccessibilityScreen } from './src/screens/settings/AccessibilityScreen';
 import type { RootStackParamList, MainTabParamList } from './src/types/navigation';
 import { C } from './src/theme';
 
@@ -136,11 +145,101 @@ export default function App() {
                   headerTintColor: C.accent,
                 }}
               >
-                {() => <ConnectionScreen socket={socket} ble={ble} />}
+                {(props) => <ConnectionScreen {...props} socket={socket} ble={ble} />}
               </Stack.Screen>
+              <Stack.Screen
+                name="Pair"
+                component={PairScreen}
+                options={{
+                  headerShown: true, title: 'Pair with Kiosk',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                }}
+              />
               <Stack.Screen
                 name="SessionDetail"
                 component={SessionDetailScreen}
+              />
+              <Stack.Screen
+                name="SettingsUnitsPicker"
+                component={UnitsPickerScreen}
+                options={{
+                  headerShown: true, title: 'Units',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="SettingsTemperature"
+                component={TemperatureScreen}
+                options={{
+                  headerShown: true, title: 'Temperature',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="SettingsLanguage"
+                component={LanguageScreen}
+                options={{
+                  headerShown: true, title: 'Language',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="SettingsAccessibility"
+                component={AccessibilityScreen}
+                options={{
+                  headerShown: true, title: 'Accessibility',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="BagMain"
+                component={BagScreen}
+                options={{
+                  headerShown: true, title: 'My Bag',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="BagAddClub"
+                component={AddClubScreen}
+                options={{
+                  headerShown: true, title: 'Add Club',
+                  presentation: 'modal',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
+              />
+              <Stack.Screen
+                name="BagClubDetail"
+                component={ClubDetailScreen}
+                options={{
+                  headerShown: true, title: '',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerBackTitle: 'Bag',
+                }}
+              />
+              <Stack.Screen
+                name="BagSpareClubs"
+                component={SpareClubsScreen}
+                options={{
+                  headerShown: true, title: 'Spare Clubs',
+                  headerStyle: { backgroundColor: C.s1 },
+                  headerTintColor: C.accent,
+                  headerTitleStyle: { color: C.text, fontWeight: '700' },
+                }}
               />
             </Stack.Navigator>
           </NavigationContainer>
