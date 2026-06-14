@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { open } from '@op-engineering/op-sqlite';
 import type { Shot, ClubLifetimeStat, ClubSessionPoint } from '../types/shot';
+import { encryptCoords, decryptCoords } from '../utils/gpsEncryption';
 
 // ------------------------------------------------------------------
 // Database security layer
@@ -24,10 +25,16 @@ import type { Shot, ClubLifetimeStat, ClubSessionPoint } from '../types/shot';
 const DEVICE_KEY_STORE = 'openflight.db-device-key';
 type Database = ReturnType<typeof open>;
 let _db: Database | null = null;
+let _initPromise: Promise<void> | null = null;
 
 function getDb(): Database {
   if (!_db) throw new Error('Database not initialised — call initDatabase() first');
   return _db;
+}
+
+/** Expose the shared DB handle to sibling modules (e.g. bagDatabase). */
+export function getDatabase(): Database {
+  return getDb();
 }
 
 async function getOrCreateDeviceKey(): Promise<string> {
@@ -46,7 +53,12 @@ async function buildIntegrityHash(deviceKey: string): Promise<string> {
   );
 }
 
-export async function initDatabase(): Promise<void> {
+export function initDatabase(): Promise<void> {
+  if (!_initPromise) _initPromise = _init();
+  return _initPromise;
+}
+
+async function _init(): Promise<void> {
   const deviceKey = await getOrCreateDeviceKey();
   const expectedHash = await buildIntegrityHash(deviceKey);
 
@@ -102,6 +114,15 @@ export async function initDatabase(): Promise<void> {
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_shots_session ON shots(session_id)`);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)`);
 
+  // Schema migrations — idempotent; ALTER TABLE throws if column already exists.
+  await db.execute('ALTER TABLE shots ADD COLUMN gps_coords_enc TEXT').catch(() => {});
+  await db.execute('ALTER TABLE shots ADD COLUMN carry_side_yards REAL').catch(() => {});
+  await db.execute('ALTER TABLE shots ADD COLUMN curve_yards REAL').catch(() => {});
+
+  // Bag feature tables (lazy import to avoid circular deps at module load time)
+  const { initBagTables } = await import('./bagDatabase');
+  await initBagTables();
+
   const metaResult = await db.execute(
     "SELECT value FROM _db_meta WHERE key = 'device_integrity'",
   );
@@ -134,7 +155,7 @@ export async function initDatabase(): Promise<void> {
 }
 
 export async function createSession(connectionType: string): Promise<string> {
-  const id = `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const id = `s_${Crypto.randomUUID()}`;
   await getDb().execute(
     'INSERT INTO sessions (id, started_at, connection_type) VALUES (?, ?, ?)',
     [id, new Date().toISOString(), connectionType],
@@ -149,8 +170,8 @@ export async function endSession(id: string): Promise<void> {
   );
 }
 
-export async function saveShot(sessionId: string, shot: Shot): Promise<void> {
-  const shotId = `sh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+export async function saveShot(sessionId: string, shot: Shot): Promise<string> {
+  const shotId = `sh_${Crypto.randomUUID()}`;
   await getDb().execute(
     `INSERT OR IGNORE INTO shots (
       id, session_id, recorded_at, club, ball_speed_mph, club_speed_mph,
@@ -159,8 +180,8 @@ export async function saveShot(sessionId: string, shot: Shot): Promise<void> {
       launch_angle_horizontal, launch_angle_confidence, angle_source,
       club_angle_deg, club_path_deg, spin_axis_deg, spin_rpm,
       spin_confidence, spin_quality, apex_height_yards, total_distance_yards,
-      face_to_path_deg, is_mishit
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      carry_side_yards, curve_yards, face_to_path_deg, is_mishit
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       shotId, sessionId, shot.timestamp, shot.club,
       shot.ball_speed_mph, shot.club_speed_mph ?? null, shot.smash_factor ?? null,
@@ -172,6 +193,7 @@ export async function saveShot(sessionId: string, shot: Shot): Promise<void> {
       shot.spin_axis_deg ?? null, shot.spin_rpm ?? null,
       shot.spin_confidence ?? null, shot.spin_quality ?? null,
       shot.apex_height_yards ?? null, shot.total_distance_yards ?? null,
+      shot.carry_side_yards ?? null, shot.curve_yards ?? null,
       shot.face_to_path_deg ?? null, shot.is_mishit ? 1 : 0,
     ],
   );
@@ -179,6 +201,30 @@ export async function saveShot(sessionId: string, shot: Shot): Promise<void> {
     'UPDATE sessions SET shot_count = shot_count + 1 WHERE id = ?',
     [sessionId],
   );
+  return shotId;
+}
+
+/**
+ * Attach encrypted GPS coordinates to an already-saved shot.
+ * Uses AES-256-GCM with a key independent of the SQLCipher key
+ * (two separate Keystore-backed keys required to read GPS data).
+ */
+export async function saveShotGps(
+  shotId: string,
+  lat: number,
+  lng: number,
+): Promise<void> {
+  const enc = await encryptCoords(lat, lng);
+  await getDb().execute(
+    'UPDATE shots SET gps_coords_enc = ? WHERE id = ?',
+    [enc, shotId],
+  );
+}
+
+export async function decryptShotGps(
+  encBlob: string,
+): Promise<[number, number] | null> {
+  return decryptCoords(encBlob);
 }
 
 export interface SessionRow {
@@ -193,7 +239,13 @@ export async function getSessions(): Promise<SessionRow[]> {
   const result = await getDb().execute(
     'SELECT * FROM sessions ORDER BY started_at DESC LIMIT 500',
   );
-  return (result.rows ?? []) as unknown as SessionRow[];
+  return ((result.rows ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    started_at: r.started_at as string,
+    ended_at: (r.ended_at as string | null) ?? null,
+    connection_type: r.connection_type as string,
+    shot_count: r.shot_count as number,
+  }));
 }
 
 export async function getShotsForSession(sessionId: string): Promise<Shot[]> {
@@ -203,6 +255,26 @@ export async function getShotsForSession(sessionId: string): Promise<Shot[]> {
   );
   const rows = (result.rows ?? []) as Record<string, unknown>[];
   return rows.map(rowToShot);
+}
+
+export async function getShotsGps(
+  shotIds: string[],
+): Promise<Map<string, [number, number]>> {
+  if (shotIds.length === 0) return new Map();
+  const placeholders = shotIds.map(() => '?').join(',');
+  const result = await getDb().execute(
+    `SELECT id, gps_coords_enc FROM shots WHERE id IN (${placeholders}) AND gps_coords_enc IS NOT NULL`,
+    shotIds,
+  );
+  const rows = (result.rows ?? []) as Array<{ id: string; gps_coords_enc: string }>;
+  const map = new Map<string, [number, number]>();
+  await Promise.all(
+    rows.map(async (r) => {
+      const coords = await decryptCoords(r.gps_coords_enc);
+      if (coords) map.set(r.id, coords);
+    }),
+  );
+  return map;
 }
 
 const VALID_ANGLE_SOURCES = new Set<string>(['radar', 'camera', 'estimated']);
@@ -240,9 +312,24 @@ function rowToShot(r: Record<string, unknown>): Shot {
       : null),
     apex_height_yards: (r.apex_height_yards as number | null) ?? null,
     total_distance_yards: (r.total_distance_yards as number | null) ?? null,
+    carry_side_yards: (r.carry_side_yards as number | null) ?? null,
+    curve_yards: (r.curve_yards as number | null) ?? null,
     face_to_path_deg: (r.face_to_path_deg as number | null) ?? null,
     is_mishit: r.is_mishit === 1,
   };
+}
+
+export async function deleteShot(shotId: string): Promise<void> {
+  const db = getDb();
+  const shot = await db.execute('SELECT session_id FROM shots WHERE id = ?', [shotId]);
+  const row = ((shot.rows ?? []) as Array<{ session_id: string }>)[0];
+  await db.execute('DELETE FROM shots WHERE id = ?', [shotId]);
+  if (row?.session_id) {
+    await db.execute(
+      'UPDATE sessions SET shot_count = MAX(0, shot_count - 1) WHERE id = ?',
+      [row.session_id],
+    );
+  }
 }
 
 export async function getLifetimeStatsByClub(): Promise<ClubLifetimeStat[]> {
