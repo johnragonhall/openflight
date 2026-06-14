@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,19 +12,24 @@ import {
 } from 'react-native';
 import type { Device } from 'react-native-ble-plx';
 import type { BLEConnectionState } from '../hooks/useBLEConnection';
+import { BLE_PAIRING_SECRET_KEY } from '../hooks/useBLEConnection';
 import type { SocketConnectionState } from '../hooks/useSocketConnection';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types/navigation';
 import { C } from '../theme';
 
 const STORAGE_KEY = 'openflight.last-host';
 const DEFAULT_HOST = '192.168.1.';
-export const BLE_PIN_KEY = 'openflight.ble-pin';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 interface ConnectionScreenProps {
   socket: SocketConnectionState;
   ble: BLEConnectionState;
+  navigation: Nav;
 }
 
-export function ConnectionScreen({ socket, ble }: ConnectionScreenProps) {
+export function ConnectionScreen({ socket, ble, navigation }: ConnectionScreenProps) {
   const [tab, setTab] = useState<'wifi' | 'ble'>('wifi');
   const [hostAndPort, setHostAndPort] = useState(DEFAULT_HOST);
 
@@ -54,6 +59,9 @@ export function ConnectionScreen({ socket, ble }: ConnectionScreenProps) {
             key={t}
             style={[styles.tab, tab === t && styles.activeTab]}
             onPress={() => setTab(t)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === t }}
+            accessibilityLabel={t === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}
           >
             <Text style={[styles.tabText, tab === t && styles.activeTabText]}>
               {t === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}
@@ -70,17 +78,25 @@ export function ConnectionScreen({ socket, ble }: ConnectionScreenProps) {
           onConnect={handleConnect}
         />
       ) : (
-        <BLEPanel ble={ble} />
+        <BLEPanel ble={ble} onPair={() => navigation.navigate('Pair')} />
       )}
 
       <View style={styles.demoSection}>
         <View style={styles.divider} />
         {inDemo ? (
-          <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={socket.stopDemo}>
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton]}
+            onPress={socket.stopDemo}
+            accessibilityLabel="Stop demo mode"
+          >
             <Text style={[styles.buttonText, { color: C.text }]}>Stop Demo</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.demoButton} onPress={socket.startDemo}>
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={socket.startDemo}
+            accessibilityLabel="Try demo mode — simulates shots without hardware"
+          >
             <Text style={styles.demoButtonText}>Try Demo Mode</Text>
             <Text style={styles.demoHint}>Simulates shots without hardware</Text>
           </TouchableOpacity>
@@ -115,11 +131,19 @@ function WiFiPanel({
         autoCorrect={false}
       />
       {socket.connected ? (
-        <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={socket.disconnect}>
+        <TouchableOpacity
+          style={[styles.button, styles.dangerButton]}
+          onPress={socket.disconnect}
+          accessibilityLabel="Disconnect from launch monitor"
+        >
           <Text style={[styles.buttonText, { color: C.text }]}>Disconnect</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={styles.button} onPress={onConnect}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={onConnect}
+          accessibilityLabel="Connect to launch monitor"
+        >
           <Text style={styles.buttonText}>Connect</Text>
         </TouchableOpacity>
       )}
@@ -133,34 +157,56 @@ function WiFiPanel({
   );
 }
 
-function BLEPanel({ ble }: { ble: BLEConnectionState }) {
+function BLEPanel({ ble, onPair }: { ble: BLEConnectionState; onPair: () => void }) {
   const isScanning = ble.status === 'scanning';
   const isConnecting = ble.status === 'connecting';
   const isConnected = ble.status === 'connected';
-  const [pin, setPin] = useState('');
+  const [paired, setPaired] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    SecureStore.getItemAsync(BLE_PIN_KEY).then((v) => { if (v) setPin(v); }).catch(() => {});
+  const checkPaired = useCallback(() => {
+    SecureStore.getItemAsync(BLE_PAIRING_SECRET_KEY)
+      .then((v) => setPaired(v !== null))
+      .catch(() => setPaired(false));
   }, []);
 
-  const savePin = (v: string) => {
-    setPin(v);
-    SecureStore.setItemAsync(BLE_PIN_KEY, v).catch(() => {});
-  };
+  useEffect(() => { checkPaired(); }, [checkPaired]);
+
+  const unpair = useCallback(() => {
+    SecureStore.deleteItemAsync(BLE_PAIRING_SECRET_KEY)
+      .then(() => setPaired(false))
+      .catch(() => {});
+    if (isConnected) ble.disconnect();
+  }, [ble, isConnected]);
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.hint}>BLE PIN (shown on Pi console when BLE starts)</Text>
-      <TextInput
-        style={styles.input}
-        value={pin}
-        onChangeText={savePin}
-        placeholder="0000"
-        placeholderTextColor="#4b5563"
-        keyboardType="number-pad"
-        maxLength={4}
-        secureTextEntry
-      />
+      {paired === null ? (
+        <ActivityIndicator color={C.accent} />
+      ) : paired ? (
+        <View style={styles.pairedBadge}>
+          <View style={styles.statusDot} />
+          <Text style={styles.statusText}>Paired with kiosk</Text>
+          <TouchableOpacity
+            onPress={unpair}
+            style={styles.unpairBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityLabel="Unpair kiosk"
+          >
+            <Text style={styles.unpairText}>Unpair</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <Text style={styles.hint}>Scan the QR code on your kiosk to pair</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={onPair}
+            accessibilityLabel="Scan QR code to pair with kiosk"
+          >
+            <Text style={styles.buttonText}>Scan QR to Pair</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       {isConnected && ble.connectedDevice ? (
         <>
@@ -170,7 +216,11 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
               Connected to {ble.connectedDevice.name ?? 'OpenFlight'}
             </Text>
           </View>
-          <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={ble.disconnect}>
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton]}
+            onPress={ble.disconnect}
+            accessibilityLabel="Disconnect Bluetooth"
+          >
             <Text style={[styles.buttonText, { color: C.text }]}>Disconnect</Text>
           </TouchableOpacity>
         </>
@@ -179,7 +229,11 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
           <TouchableOpacity
             style={[styles.button, isScanning && styles.activeButton]}
             onPress={isScanning ? ble.stopScan : ble.startScan}
-            disabled={isConnecting}
+            disabled={isConnecting || !paired}
+            accessibilityLabel={
+              isScanning ? 'Stop Bluetooth scan' : isConnecting ? 'Connecting…' : 'Scan for Bluetooth devices'
+            }
+            accessibilityState={{ disabled: isConnecting || !paired, busy: isScanning || isConnecting }}
           >
             {isScanning ? (
               <View style={styles.scanningRow}>
@@ -187,7 +241,7 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
                 <Text style={[styles.buttonText, { marginLeft: 8 }]}>Stop Scan</Text>
               </View>
             ) : (
-              <Text style={styles.buttonText}>
+              <Text style={[styles.buttonText, !paired && { opacity: 0.4 }]}>
                 {isConnecting ? 'Connecting…' : 'Scan for Devices'}
               </Text>
             )}
@@ -216,7 +270,11 @@ function BLEPanel({ ble }: { ble: BLEConnectionState }) {
 
 function DeviceRow({ device, onPress }: { device: Device; onPress: () => void }) {
   return (
-    <TouchableOpacity style={styles.deviceRow} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.deviceRow}
+      onPress={onPress}
+      accessibilityLabel={`${device.name ?? device.id}, ${device.rssi} dBm. Tap to connect.`}
+    >
       <Text style={styles.deviceName}>{device.name ?? device.id}</Text>
       <Text style={styles.deviceRssi}>{device.rssi} dBm</Text>
     </TouchableOpacity>
@@ -249,8 +307,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: C.okSurface, padding: 12, borderRadius: 10,
   },
+  pairedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.okSurface, padding: 12, borderRadius: 10,
+  },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.ok },
-  statusText: { color: C.ok, fontWeight: '600' },
+  statusText: { color: C.ok, fontWeight: '600', flex: 1 },
+  unpairBtn: { paddingHorizontal: 10, paddingVertical: 4 },
+  unpairText: { color: C.muted, fontSize: 12, fontWeight: '600' },
   errorText: { color: C.err, fontSize: 13 },
   deviceList: { maxHeight: 300 },
   deviceRow: {
