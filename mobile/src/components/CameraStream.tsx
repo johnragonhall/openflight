@@ -3,6 +3,20 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { WebView } from 'react-native-webview';
 import { C } from '../theme';
 
+// Validate stream URL via URL parser — rejects javascript:/data: schemes, invalid ports (>65535),
+// and malformed URLs. Hoisted outside the component (js-hoist-regexp / init-once).
+function isValidStreamUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    // new URL() already rejects ports >65535, but guard against encoded quotes in the host
+    if (/["'<>]/.test(url)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface Props {
   streamUrl: string;
   height?: number;
@@ -11,10 +25,7 @@ interface Props {
 export function CameraStream({ streamUrl, height = 220 }: Props) {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // Allow only http/https URLs with a safe host:port/path — blocks javascript: and data: URIs.
-  const VALID_STREAM_RE = /^https?:\/\/[\w.-]+(:\d{1,5})?(\/[\w.%/=?&+-]*)?$/;
-  const validatedUrl = VALID_STREAM_RE.test(streamUrl.trim()) ? streamUrl.trim() : null;
+  const validatedUrl = isValidStreamUrl(streamUrl.trim()) ? streamUrl.trim() : null;
 
   const html = validatedUrl
     ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>* { margin:0; padding:0; } body { background:#000; display:flex; align-items:center; justify-content:center; height:100vh; } img { max-width:100%; max-height:100vh; object-fit:contain; }</style></head><body><img src="${validatedUrl}" /></body></html>`
