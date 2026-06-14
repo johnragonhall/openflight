@@ -11,7 +11,7 @@ import {
   type GpsCoords, requestLocationPermission, getCurrentCoords, distanceYards,
 } from '../utils/gps';
 import { useUnitPreference } from '../state/useUnitPreference';
-import { getCameraUrl, DEFAULT_CAMERA_URL } from '../state/cameraSettings';
+import { getCameraUrl, DEFAULT_CAMERA_URL, getCameraEnabled } from '../state/cameraSettings';
 import { convertDistanceFromYards, formatDistance, getDistanceUnit } from '../utils/units';
 import { PressableScale } from '../components/PressableScale';
 import { C, R } from '../theme';
@@ -247,7 +247,7 @@ const camStyles = StyleSheet.create({
   url: { color: C.muted, fontSize: 11, marginBottom: 10 },
 });
 
-const TABS: { key: Tab; label: string }[] = [
+const BASE_TABS: { key: Tab; label: string }[] = [
   { key: 'dispersion', label: 'Dispersion' },
   { key: 'targets', label: 'Targets' },
   { key: 'gps', label: 'GPS' },
@@ -259,7 +259,21 @@ export function RangeScreen() {
   const { shots } = useConnection();
   const [activeTab, setActiveTab] = useState<Tab>('dispersion');
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
   const clubs = useMemo(() => getUniqueClubs(shots), [shots]);
+
+  useEffect(() => {
+    getCameraEnabled().then(setCameraEnabled).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!cameraEnabled && activeTab === 'camera') setActiveTab('dispersion');
+  }, [cameraEnabled, activeTab]);
+
+  const tabs = useMemo(
+    () => (cameraEnabled ? BASE_TABS : BASE_TABS.filter((t) => t.key !== 'camera')),
+    [cameraEnabled],
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -268,7 +282,7 @@ export function RangeScreen() {
       </View>
 
       <View style={styles.tabBar}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <PressableScale
             key={t.key}
             style={styles.tabWrap}

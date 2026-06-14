@@ -10,19 +10,30 @@ import {
   getCameraUrl,
   setCameraUrl as persistCameraUrl,
   DEFAULT_CAMERA_URL,
+  getCameraEnabled,
+  setCameraEnabled as persistCameraEnabled,
+  DEFAULT_CAMERA_ENABLED,
 } from '../state/cameraSettings';
 
 export function SettingsScreen() {
   const { unitSystem, setUnitSystem } = useUnitPreference();
   const [cameraUrl, setCameraUrl] = useState(DEFAULT_CAMERA_URL);
+  const [cameraEnabled, setCameraEnabled] = useState(DEFAULT_CAMERA_ENABLED);
 
   useEffect(() => {
     getCameraUrl().then(setCameraUrl).catch(() => {});
+    getCameraEnabled().then(setCameraEnabled).catch(() => {});
   }, []);
 
   const saveCameraUrl = (url: string) => {
     setCameraUrl(url);
     persistCameraUrl(url).catch(() => {});
+  };
+
+  const toggleCamera = () => {
+    const next = !cameraEnabled;
+    setCameraEnabled(next);
+    persistCameraEnabled(next).catch(() => {});
   };
 
   return (
@@ -42,20 +53,30 @@ export function SettingsScreen() {
           />
         </Section>
 
-        <Section title="Camera Stream">
-          <View style={styles.labelRow}>
-            <Text style={styles.rowLabel}>Pi Stream URL</Text>
-          </View>
-          <TextInput
-            style={styles.urlInput}
-            value={cameraUrl}
-            onChangeText={saveCameraUrl}
-            placeholder={DEFAULT_CAMERA_URL}
-            placeholderTextColor={C.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
+        <Section title="Camera">
+          <ToggleRow
+            label="Camera Tab"
+            sublabel="Show live feed in Range screen"
+            value={cameraEnabled}
+            onToggle={toggleCamera}
           />
+          {cameraEnabled && (
+            <>
+              <View style={[styles.labelRow, styles.labelRowBorder]}>
+                <Text style={styles.rowLabel}>Stream URL</Text>
+              </View>
+              <TextInput
+                style={styles.urlInput}
+                value={cameraUrl}
+                onChangeText={saveCameraUrl}
+                placeholder={DEFAULT_CAMERA_URL}
+                placeholderTextColor={C.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+            </>
+          )}
         </Section>
 
         <Section title="About">
@@ -82,6 +103,30 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={[styles.rowValue, mono && styles.mono]}>{value}</Text>
     </View>
+  );
+}
+
+function ToggleRow({
+  label,
+  sublabel,
+  value,
+  onToggle,
+}: {
+  label: string;
+  sublabel?: string;
+  value: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <PressableScale style={styles.toggleRow} onPress={onToggle} scale={0.985}>
+      <View style={styles.toggleLeft}>
+        <Text style={styles.toggleLabel}>{label}</Text>
+        {sublabel && <Text style={styles.toggleSublabel}>{sublabel}</Text>}
+      </View>
+      <View style={[styles.toggleTrack, value && styles.toggleTrackOn]}>
+        <View style={[styles.toggleThumb, value && styles.toggleThumbOn]} />
+      </View>
+    </PressableScale>
   );
 }
 
@@ -159,6 +204,36 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
 
+  // Toggle
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  toggleLeft: { flex: 1, marginRight: 12 },
+  toggleLabel: { color: C.text, fontSize: 15, fontWeight: '500' },
+  toggleSublabel: { color: C.muted, fontSize: 12, marginTop: 2 },
+  toggleTrack: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: C.lineMid,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleTrackOn: { backgroundColor: C.accent },
+  toggleThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffffff',
+    alignSelf: 'flex-start',
+  },
+  toggleThumbOn: { alignSelf: 'flex-end' },
+
+  // Segment
   segmentOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -188,9 +263,10 @@ const styles = StyleSheet.create({
   segmentLabelSelected: { color: C.text, fontWeight: '600' },
   segmentSublabel: { color: C.muted, fontSize: 12, marginTop: 1 },
 
+  // URL input
   labelRow: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 4 },
+  labelRowBorder: { borderTopWidth: 1, borderTopColor: C.line },
   rowLabel: { color: C.sub, fontSize: 14 },
-
   urlInput: {
     color: C.text,
     fontSize: 13,
@@ -201,6 +277,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
+  // Info rows
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
