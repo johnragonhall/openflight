@@ -27,18 +27,20 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
   // Slide up on open
   useEffect(() => {
     if (!stat) return;
+    let cancelled = false;
     setLoading(true);
     setTrend([]);
     getClubSessionTrend(stat.club)
-      .then(setTrend)
-      .finally(() => setLoading(false));
+      .then((data) => { if (!cancelled) setTrend(data); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     Animated.spring(slideAnim, {
       toValue: 1,
       speed: Anim.spring.speed,
       bounciness: Anim.spring.bounciness,
       useNativeDriver: true,
     }).start();
-  }, [stat]);
+    return () => { cancelled = true; };
+  }, [stat, slideAnim]);
 
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
@@ -144,9 +146,10 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 }
 
 function buildShapeArray(drawPct: number, strPct: number, fadePct: number, total: number): ('draw' | 'straight' | 'fade')[] {
-  const draws   = Math.round(drawPct * total);
-  const strs    = Math.round(strPct * total);
-  const fades   = Math.round(fadePct * total);
+  const n = Math.min(total, 30);
+  const draws   = Math.round(drawPct * n);
+  const strs    = Math.round(strPct * n);
+  const fades   = Math.round(fadePct * n);
   return [
     ...Array(draws).fill('draw' as const),
     ...Array(strs).fill('straight' as const),
