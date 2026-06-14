@@ -20,7 +20,7 @@ export const C = {
   // Text — cream family (matches kiosk --color-cream)
   text: '#f5f0e6',
   sub: '#b5afa4',
-  muted: '#7a7068',
+  muted: '#857d75',
 
   // Semantic
   warn: '#f59e0b',
@@ -67,4 +67,15 @@ export const Anim = {
   draw:   900,
   spring: { speed: 18, bounciness: 3 },
   springSnappy: { speed: 24, bounciness: 2 },
+} as const;
+
+// Glass material tokens
+// iOS: BlurView substrate + gold-tinted overlay = instrument glass behind dark panel
+// Android: solid elevated surface (no blur available at same fidelity)
+export const Glass = {
+  blurIntensity: 85,
+  overlayGold:   'rgba(212, 175, 55, 0.05)',
+  edgeGold:      'rgba(212, 175, 55, 0.22)',
+  border:        'rgba(212, 175, 55, 0.18)',
+  androidBg:     '#15151e',
 } as const;
