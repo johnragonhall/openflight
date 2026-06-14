@@ -91,14 +91,16 @@ export function computeStats(shots: Shot[]): SessionStats {
   const stdDev = (arr: number[]): number | null => {
     if (arr.length < 2) return null;
     const m = mean(arr);
-    return Math.sqrt(arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / arr.length);
+    return Math.sqrt(arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / (arr.length - 1));
   };
   const ballSpeeds = shots.map((s) => s.ball_speed_mph);
   const clubSpeeds = shots.map((s) => s.club_speed_mph).filter((v): v is number => v !== null);
   const smashFactors = shots.map((s) => s.smash_factor).filter((v): v is number => v !== null);
   const launchAngles = shots.map((s) => s.launch_angle_vertical).filter((v): v is number => v !== null);
   const spinRpms = shots.map((s) => s.spin_rpm).filter((v): v is number => v !== null);
-  const carries = shots.map((s) => s.carry_spin_adjusted ?? s.estimated_carry_yards);
+  const carries = shots
+    .map((s) => s.carry_spin_adjusted ?? s.estimated_carry_yards)
+    .filter((v): v is number => typeof v === 'number');
   return {
     shot_count: shots.length,
     avg_ball_speed: mean(ballSpeeds),
@@ -106,7 +108,7 @@ export function computeStats(shots: Shot[]): SessionStats {
     min_ball_speed: Math.min(...ballSpeeds),
     avg_club_speed: clubSpeeds.length > 0 ? mean(clubSpeeds) : null,
     avg_smash_factor: smashFactors.length > 0 ? mean(smashFactors) : null,
-    avg_carry_est: mean(carries),
+    avg_carry_est: carries.length > 0 ? mean(carries) : 0,
     avg_launch_angle: launchAngles.length > 0 ? mean(launchAngles) : null,
     avg_spin_rpm: spinRpms.length > 0 ? mean(spinRpms) : null,
     std_dev_carry: stdDev(carries),
