@@ -1,8 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { open } from '@op-engineering/op-sqlite';
-import type { Shot } from '../types/shot';
-import type { ClubLifetimeStat, ClubSessionPoint } from '../types/shot';
+import type { Shot, ClubLifetimeStat, ClubSessionPoint } from '../types/shot';
 
 // ------------------------------------------------------------------
 // Database security layer
@@ -255,12 +254,14 @@ export async function getLifetimeStatsByClub(): Promise<ClubLifetimeStat[]> {
       AVG(total_distance_yards)                                            AS avg_total,
       MIN(COALESCE(carry_spin_adjusted, estimated_carry_yards))            AS min_carry,
       MAX(COALESCE(carry_spin_adjusted, estimated_carry_yards))            AS max_carry,
-      SQRT(
-        AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards) *
-            COALESCE(carry_spin_adjusted, estimated_carry_yards)) -
-        AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards)) *
-        AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards))
-      )                                                                    AS std_dev_carry
+      CASE WHEN COUNT(*) > 1 THEN
+        SQRT(MAX(0,
+          AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards) *
+              COALESCE(carry_spin_adjusted, estimated_carry_yards)) -
+          AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards)) *
+          AVG(COALESCE(carry_spin_adjusted, estimated_carry_yards))
+        ))
+      ELSE NULL END                                                        AS std_dev_carry
     FROM shots
     GROUP BY club
     ORDER BY club
@@ -269,15 +270,16 @@ export async function getLifetimeStatsByClub(): Promise<ClubLifetimeStat[]> {
   return rows.map((r) => ({
     club: r.club as string,
     shot_count: r.shot_count as number,
-    avg_carry: r.avg_carry as number,
+    avg_carry: (r.avg_carry as number | null) ?? 0,
     avg_total: (r.avg_total as number | null) ?? null,
-    min_carry: r.min_carry as number,
-    max_carry: r.max_carry as number,
+    min_carry: (r.min_carry as number | null) ?? 0,
+    max_carry: (r.max_carry as number | null) ?? 0,
     std_dev_carry: (r.std_dev_carry as number | null) ?? null,
   }));
 }
 
 export async function getClubSessionTrend(club: string): Promise<ClubSessionPoint[]> {
+  // Returns up to the 20 most-recent sessions for this club (chronological order).
   const result = await getDb().execute(`
     SELECT
       s.started_at                                                          AS session_date,
@@ -294,7 +296,7 @@ export async function getClubSessionTrend(club: string): Promise<ClubSessionPoin
   const rows = (result.rows ?? []) as Record<string, unknown>[];
   return rows.map((r) => ({
     session_date: r.session_date as string,
-    avg_carry: r.avg_carry as number,
+    avg_carry: (r.avg_carry as number | null) ?? 0,
     avg_total: (r.avg_total as number | null) ?? null,
     shot_count: r.shot_count as number,
   }));
