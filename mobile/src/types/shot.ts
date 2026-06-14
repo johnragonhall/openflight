@@ -40,9 +40,11 @@ export interface Shot {
   spin_confidence: number | null;
   spin_quality: 'high' | 'medium' | 'low' | null;
   carry_spin_adjusted: number | null;
-  // Computed fields (enriched on arrival)
+  // Computed trajectory / geometry fields
   apex_height_yards?: number | null;
   total_distance_yards?: number | null;
+  carry_side_yards?: number | null;
+  curve_yards?: number | null;
   face_to_path_deg?: number | null;
   is_mishit?: boolean;
   // computed on load via enrichShot, not stored in SQLite
