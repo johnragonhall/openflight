@@ -10,9 +10,9 @@ interface Props {
   height?: number;
 }
 
-const DRAW_FAMILY: ShotShape[] = ['duck-hook', 'draw', 'hook', 'pull-hook'];
-const FADE_FAMILY: ShotShape[] = ['fade', 'slice', 'push-slice', 'banana-slice'];
-const NEUTRAL_FAMILY: ShotShape[] = ['straight', 'push', 'pull', 'block'];
+const DRAW_FAMILY: ShotShape[] = ['draw', 'hook', 'pull-hook'];
+const FADE_FAMILY: ShotShape[] = ['fade', 'slice', 'push-slice'];
+const NEUTRAL_FAMILY: ShotShape[] = ['straight', 'push', 'pull'];
 
 export function ShapeBar({ shapes, height = 8 }: Props) {
   const valid = shapes.filter((s): s is ShotShape => s != null);

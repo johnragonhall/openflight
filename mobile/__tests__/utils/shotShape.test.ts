@@ -121,47 +121,6 @@ describe('classifyShotShape boundary values', () => {
   });
 });
 
-describe('classifyShotShape — new extreme shapes', () => {
-  it('classifies duck-hook: ftp < -8', () => {
-    expect(classifyShotShape(-9, 0)).toBe('duck-hook');
-    expect(classifyShotShape(-10, 0)).toBe('duck-hook');
-  });
-
-  it('classifies banana-slice: ftp > 8', () => {
-    expect(classifyShotShape(9, 0)).toBe('banana-slice');
-    expect(classifyShotShape(12, 0)).toBe('banana-slice');
-  });
-
-  it('classifies block: lateral > 7 with straight curve', () => {
-    expect(classifyShotShape(0, 8)).toBe('block');
-    expect(classifyShotShape(1, 8)).toBe('block');  // ftp=1 is in straight zone
-  });
-
-  it('push (lateral 4-7) still returns push, not block', () => {
-    expect(classifyShotShape(0, 4)).toBe('push');
-    expect(classifyShotShape(0, 7)).toBe('push');   // boundary: 7 is not > 7
-  });
-
-  it('duck-hook threshold: ftp=-8 is hook (not < -8)', () => {
-    expect(classifyShotShape(-8, 0)).toBe('hook');
-    expect(classifyShotShape(-7.99, 0)).toBe('hook');
-  });
-
-  it('banana-slice threshold: ftp=8 is slice (not > 8)', () => {
-    expect(classifyShotShape(8, 0)).toBe('slice');
-    expect(classifyShotShape(7.99, 0)).toBe('slice');
-  });
-
-  it('duck-hook with pull lateral still returns duck-hook', () => {
-    // Very extreme hook from a pull start — compound of duck-hook (no special compound name)
-    expect(classifyShotShape(-9, -4)).toBe('duck-hook');
-  });
-
-  it('banana-slice with push start still returns banana-slice', () => {
-    expect(classifyShotShape(9, 4)).toBe('banana-slice');
-  });
-});
-
 describe('sortByBagOrder', () => {
   it('sorts driver before irons before wedges', () => {
     const result = sortByBagOrder(['sand-wedge', '7-iron', 'driver']);

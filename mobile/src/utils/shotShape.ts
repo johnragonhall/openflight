@@ -36,11 +36,9 @@ export function classifyShotShape(
   const isRight = lateral > 3;   // push
 
   // Determine curve from face-to-path
-  let curve: 'duck-hook' | 'hook' | 'draw' | 'straight' | 'fade' | 'slice' | 'banana-slice';
-  if (ftp > 8)       curve = 'banana-slice';
-  else if (ftp > 4)  curve = 'slice';
+  let curve: 'hook' | 'draw' | 'straight' | 'fade' | 'slice';
+  if (ftp > 4)       curve = 'slice';
   else if (ftp > 2)  curve = 'fade';
-  else if (ftp < -8) curve = 'duck-hook';
   else if (ftp < -4) curve = 'hook';
   else if (ftp < -2) curve = 'draw';
   else               curve = 'straight';
@@ -49,10 +47,6 @@ export function classifyShotShape(
   if (isLeft && curve === 'hook')  return 'pull-hook';
   if (isRight && curve === 'slice') return 'push-slice';
   if (isLeft)  return curve === 'straight' ? 'pull' : curve;
-
-  // Block: very far right start (lateral > 7) with no curve — distinct from moderate push
-  if (lateral > 7 && curve === 'straight') return 'block';
-
   if (isRight) return curve === 'straight' ? 'push' : curve;
   return curve;
 }
@@ -66,7 +60,6 @@ export function shotShapeColor(shape: ShotShape | null | undefined, C: {
 }): string {
   if (!shape) return C.sub;
   switch (shape) {
-    case 'duck-hook':
     case 'draw':
     case 'pull-hook':
     case 'hook':
@@ -75,11 +68,9 @@ export function shotShapeColor(shape: ShotShape | null | undefined, C: {
       return C.accent;
     case 'fade':
       return C.warn;
-    case 'banana-slice':
     case 'slice':
     case 'push-slice':
       return C.err;
-    case 'block':
     case 'push':
     case 'pull':
       return C.sub;

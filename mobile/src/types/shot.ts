@@ -1,6 +1,5 @@
 export type ShotShape =
   | 'straight' | 'draw' | 'fade' | 'hook' | 'slice'
-  | 'duck-hook' | 'banana-slice' | 'block'
   | 'push' | 'pull' | 'push-slice' | 'pull-hook';
 
 export interface ClubLifetimeStat {
