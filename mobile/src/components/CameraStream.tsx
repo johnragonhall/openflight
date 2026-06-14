@@ -55,7 +55,7 @@ export function CameraStream({ streamUrl, height = 220 }: Props) {
 const styles = StyleSheet.create({
   container: { backgroundColor: '#000', overflow: 'hidden', borderRadius: 10 },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', zIndex: 1,
   },
   errorBox: {

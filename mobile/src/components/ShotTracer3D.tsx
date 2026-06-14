@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type JSX } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient, Stop, Polygon } from 'react-native-svg';
 import type { Shot } from '../types/shot';

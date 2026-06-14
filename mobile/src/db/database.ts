@@ -105,7 +105,7 @@ export async function initDatabase(): Promise<void> {
   const metaResult = await db.execute(
     "SELECT value FROM _db_meta WHERE key = 'device_integrity'",
   );
-  const existing = (metaResult.rows?._array as Array<{ value: string }> | undefined)?.[0];
+  const existing = (metaResult.rows as Array<{ value: string }>)?.[0];
 
   if (!existing) {
     await db.execute(
@@ -193,7 +193,7 @@ export async function getSessions(): Promise<SessionRow[]> {
   const result = await getDb().execute(
     'SELECT * FROM sessions ORDER BY started_at DESC LIMIT 100',
   );
-  return (result.rows?._array ?? []) as SessionRow[];
+  return (result.rows ?? []) as unknown as SessionRow[];
 }
 
 export async function getShotsForSession(sessionId: string): Promise<Shot[]> {
@@ -201,7 +201,7 @@ export async function getShotsForSession(sessionId: string): Promise<Shot[]> {
     'SELECT * FROM shots WHERE session_id = ? ORDER BY recorded_at ASC',
     [sessionId],
   );
-  const rows = (result.rows?._array ?? []) as Record<string, unknown>[];
+  const rows = (result.rows ?? []) as Record<string, unknown>[];
   return rows.map(rowToShot);
 }
 
