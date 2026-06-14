@@ -108,3 +108,4 @@ anthropic.claude-code-*.vsix
 ui/dist/autoresearch-results.tsv
 DESIGN.md
 PRODUCT.md
+.markdownlint.json
