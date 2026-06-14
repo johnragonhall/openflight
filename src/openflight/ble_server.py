@@ -3,31 +3,50 @@ BLE GATT peripheral server for OpenFlight.
 
 Characteristics
 ---------------
-Shot     (notify + read)  – new shots pushed to connected phones
-Command  (write)          – phones send {"cmd": "get_session" | "clear_session" | "set_club", "club": "..."}
-Status   (notify + read)  – Pi pushes events like {"event": "session_cleared"}
+Shot       (notify + read)  – new shots pushed to connected phones
+Command    (write)          – phones send {"cmd": "get_session" | "clear_session" | "set_club", ...}
+Status     (notify + read)  – Pi pushes events like {"event": "session_cleared"}
+Challenge  (notify + read)  – Pi writes a fresh nonce here; client reads and responds with HMAC
+
+Authentication
+--------------
+On startup the server is given a 32-byte pairing secret (loaded from disk by server.py).
+When a client connects it reads the Challenge characteristic to get the current nonce (64-char
+hex string), computes HMAC-SHA256(pairing_secret, nonce_utf8_bytes), and writes
+  {"cmd": "auth_challenge", "hmac": "<64-char hex>"}
+to the Command characteristic.  The Pi verifies with hmac.compare_digest (constant-time).
+
+The nonce is refreshed every 4 minutes.  A newly connected client always sees a valid nonce.
+Auth grants access for 1 hour; after that the client must re-authenticate.
+
+If no pairing_secret is supplied (development / no-BLE-auth mode) all commands are accepted.
 
 UUIDs
 -----
-Service:  4fafc201-1fb5-459e-8fcc-c5c9c331914b
-Shot:     beb5483e-36e1-4688-b7f5-ea07361b26a8
-Command:  beb5483e-36e1-4688-b7f5-ea07361b26a9
-Status:   beb5483e-36e1-4688-b7f5-ea07361b26aa
+Service:   4fafc201-1fb5-459e-8fcc-c5c9c331914b
+Shot:      beb5483e-36e1-4688-b7f5-ea07361b26a8
+Command:   beb5483e-36e1-4688-b7f5-ea07361b26a9
+Status:    beb5483e-36e1-4688-b7f5-ea07361b26aa
+Challenge: beb5483e-36e1-4688-b7f5-ea07361b26ab
 """
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
+import secrets
 import threading
 import time
 from typing import Callable, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
-OPENFLIGHT_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-SHOT_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-COMMAND_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a9"
-STATUS_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+OPENFLIGHT_SERVICE_UUID    = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+SHOT_CHARACTERISTIC_UUID      = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+COMMAND_CHARACTERISTIC_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+STATUS_CHARACTERISTIC_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+CHALLENGE_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26ab"
 
 # Truncate at 512 bytes; fall back to slim encoding before truncating
 _MAX_PAYLOAD_BYTES = 512
@@ -45,6 +64,9 @@ _SLIM_FIELDS = {
 }
 # Minimum seconds between accepted write commands (per-server rate limit)
 _COMMAND_RATE_LIMIT_S = 1.0
+# Nonce refresh interval — 4 minutes; nonce valid for 5 minutes.
+_NONCE_REFRESH_S = 240
+_NONCE_TTL_S = 300
 
 
 @runtime_checkable
@@ -52,18 +74,6 @@ class BLEBackend(Protocol):
     """
     Minimal interface that the real bless BlessServer satisfies.
     Inject a mock in tests to avoid needing real Bluetooth hardware.
-
-    Usage::
-
-        class MockBLEBackend:
-            notifications: list[tuple[str, bytearray]] = []
-
-            async def start(self) -> None: ...
-            async def stop(self) -> None: ...
-            async def update_value(self, service_uuid: str, char_uuid: str) -> None:
-                self.notifications.append((char_uuid, self.get_characteristic(char_uuid).value))
-            def get_characteristic(self, char_uuid: str): ...
-            # write_request_func is set as an attribute by BLEServer._setup
     """
 
     async def start(self) -> None: ...
@@ -87,17 +97,24 @@ class BLEServer:
         Optional callback invoked (in the BLE event loop thread) when a
         mobile client writes to the command characteristic.  The argument
         is the parsed JSON dict, e.g. {"cmd": "get_session"}.
+    pairing_secret:
+        32-byte secret shared with the mobile app during the QR pairing
+        ceremony.  If None the server runs in open mode (no auth required).
     """
 
     def __init__(
         self,
         on_command: Optional[Callable[[dict], None]] = None,
-        pin: Optional[str] = None,
+        pairing_secret: Optional[bytes] = None,
     ) -> None:
         self._on_command = on_command
-        self._pin = pin
-        self._authenticated: bool = pin is None  # no PIN → always authenticated
-        self._auth_expiry: float = float("inf") if pin is None else 0.0
+        self._pairing_secret = pairing_secret
+        # Open mode: no secret → always authenticated
+        self._authenticated: bool = pairing_secret is None
+        self._auth_expiry: float = float("inf") if pairing_secret is None else 0.0
+        self._current_nonce: str = ""        # 64-char hex string written to CHALLENGE char
+        self._nonce_expiry: float = 0.0
+        self._nonce_refresh_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server = None
         self._thread: Optional[threading.Thread] = None
@@ -172,6 +189,8 @@ class BLEServer:
     def stop(self) -> None:
         """Gracefully stop the server."""
         if self._server and self._loop:
+            if self._nonce_refresh_task:
+                self._loop.call_soon_threadsafe(self._nonce_refresh_task.cancel)
             future = asyncio.run_coroutine_threadsafe(self._server.stop(), self._loop)
             try:
                 future.result(timeout=5)
@@ -234,14 +253,57 @@ class BLEServer:
                     "Permissions": GATTAttributePermissions.readable,
                     "Value": bytearray(b""),
                 },
+                CHALLENGE_CHARACTERISTIC_UUID: {
+                    "Properties": (
+                        GATTCharacteristicProperties.read
+                        | GATTCharacteristicProperties.notify
+                    ),
+                    "Permissions": GATTAttributePermissions.readable,
+                    "Value": bytearray(b""),
+                },
             }
         }
 
         await server.add_gatt(gatt)
         await server.start()
         self._server = server
+        # Write the first nonce before signalling ready so connecting clients always
+        # see a valid challenge immediately.
+        await self._refresh_nonce()
+        self._nonce_refresh_task = asyncio.ensure_future(self._nonce_refresh_loop())
         logger.info("BLE server started — advertising as 'OpenFlight'")
         self._ready.set()
+
+    async def _refresh_nonce(self) -> None:
+        """Generate a fresh 32-byte nonce and write it to the Challenge characteristic.
+
+        Also resets auth state so any inherited session from a previous BLE client
+        is invalidated — the next client must prove possession of the pairing secret
+        with the new nonce.
+        """
+        self._current_nonce = secrets.token_hex(32)   # 64-char hex string
+        self._nonce_expiry = time.monotonic() + _NONCE_TTL_S
+        if self._pairing_secret is not None:
+            self._authenticated = False
+            self._auth_expiry = 0.0
+        if self._server:
+            char = self._server.get_characteristic(CHALLENGE_CHARACTERISTIC_UUID)
+            if char:
+                char.value = bytearray(self._current_nonce.encode())
+                try:
+                    await self._server.update_value(
+                        OPENFLIGHT_SERVICE_UUID, CHALLENGE_CHARACTERISTIC_UUID
+                    )
+                except Exception:  # pylint: disable=broad-except
+                    pass
+
+    async def _nonce_refresh_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(_NONCE_REFRESH_S)
+                await self._refresh_nonce()
+        except asyncio.CancelledError:
+            pass
 
     async def _push(self, char_uuid: str, payload: bytearray) -> None:
         if self._server is None:
@@ -255,6 +317,20 @@ class BLEServer:
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("BLE notify failed (…%s): %s", char_uuid[-4:], exc)
 
+    def _verify_hmac(self, provided_hex: str) -> bool:
+        """Constant-time HMAC-SHA256 verification against the current nonce."""
+        if not self._pairing_secret:
+            return True
+        if not self._current_nonce or time.monotonic() > self._nonce_expiry:
+            logger.warning("BLE: auth attempt with expired or missing nonce")
+            return False
+        nonce_bytes = self._current_nonce.encode()
+        expected = hmac.new(self._pairing_secret, nonce_bytes, hashlib.sha256).hexdigest()
+        try:
+            return hmac.compare_digest(expected, provided_hex.lower())
+        except (ValueError, TypeError):
+            return False
+
     def _dispatch_command(self, cmd: dict) -> None:
         try:
             self._on_command(cmd)  # type: ignore[misc]
@@ -263,7 +339,6 @@ class BLEServer:
 
     def _handle_write(self, characteristic, value: bytearray, **_kwargs) -> None:
         """Rate-limited write handler; dispatches on_command to a daemon thread."""
-        # Only respond to writes on the command characteristic
         try:
             char_uuid = str(characteristic.uuid).lower()
         except Exception:  # pylint: disable=broad-except
@@ -283,15 +358,17 @@ class BLEServer:
             logger.warning("BLE: malformed command payload")
             return
 
-        # Handle PIN auth before checking general auth state
-        if cmd.get("cmd") == "auth":
-            provided = cmd.get("pin", "")
-            if self._pin is not None and provided == self._pin:
+        if cmd.get("cmd") == "auth_challenge":
+            provided = cmd.get("hmac", "")
+            if self._verify_hmac(provided):
                 self._authenticated = True
-                self._auth_expiry = time.monotonic() + 3600.0
-                logger.info("BLE: client authenticated")
+                # Auth is tied to the nonce window (≤5 min).  When the nonce
+                # rotates, _nonce_expiry advances and any NEW connection must
+                # re-auth; an old connection's auth expires with its nonce.
+                self._auth_expiry = self._nonce_expiry
+                logger.info("BLE: client authenticated via HMAC-SHA256")
             else:
-                logger.warning("BLE: auth failed (wrong PIN)")
+                logger.warning("BLE: auth failed — invalid HMAC or expired nonce")
             return
 
         if not self._authenticated or time.monotonic() > self._auth_expiry:

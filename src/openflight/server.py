@@ -10,6 +10,7 @@ import os
 import random
 import re
 import secrets
+import socket as _net
 import statistics
 import sys
 import threading
@@ -71,6 +72,39 @@ socketio = SocketIO(app, async_mode="threading")
 
 # Generated at startup; printed to console for operator use
 _ADMIN_TOKEN: str = secrets.token_hex(16)
+
+# ------------------------------------------------------------------
+# BLE pairing secret — persisted across restarts so the mobile app
+# only needs to scan the QR once.  Stored chmod 600 in ~/.openflight/.
+# ------------------------------------------------------------------
+_PAIRING_KEY_FILE = Path.home() / ".openflight" / "pairing.key"
+
+
+def _load_or_create_pairing_secret() -> bytes:
+    _PAIRING_KEY_FILE.parent.mkdir(exist_ok=True)
+    if _PAIRING_KEY_FILE.exists():
+        _PAIRING_KEY_FILE.chmod(0o600)  # enforce on every load, not just creation
+        try:
+            return bytes.fromhex(_PAIRING_KEY_FILE.read_text().strip())
+        except ValueError:
+            pass  # corrupted — regenerate
+    raw = secrets.token_bytes(32)
+    _PAIRING_KEY_FILE.write_text(raw.hex())
+    _PAIRING_KEY_FILE.chmod(0o600)
+    return raw
+
+
+_PAIRING_SECRET: bytes = _load_or_create_pairing_secret()
+
+
+def _get_local_ip() -> str:
+    """Return the primary LAN IP used to reach the outside world."""
+    try:
+        with _net.socket(_net.AF_INET, _net.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:  # pylint: disable=broad-except
+        return "127.0.0.1"
 
 # Global state
 monitor = None
@@ -837,8 +871,15 @@ def shot_to_dict(shot: Shot) -> dict:
         "spin_phase_confirmed": shot.spin_phase_confirmed,
         "spin_rejection_reason": shot.spin_rejection_reason,
         "carry_spin_adjusted": round(shot.carry_spin_adjusted)
-        if shot.carry_spin_adjusted
+        if shot.carry_spin_adjusted is not None
         else None,
+        # Computed trajectory / geometry fields
+        "apex_height_yards": round(shot.apex_height_yards, 1) if shot.apex_height_yards is not None else None,
+        "total_distance_yards": round(shot.total_distance_yards) if shot.total_distance_yards is not None else None,
+        "carry_side_yards": round(shot.carry_side_yards, 1) if shot.carry_side_yards is not None else None,
+        "curve_yards": round(shot.curve_yards, 1) if shot.curve_yards is not None else None,
+        "face_to_path_deg": round(shot.face_to_path_deg, 1) if shot.face_to_path_deg is not None else None,
+        "is_mishit": getattr(shot, "is_mishit", False) or False,
     }
 
 
@@ -860,6 +901,26 @@ def static_files(path):
     return send_from_directory(app.static_folder, path)
 
 
+@app.route("/api/pair-qr")
+def api_pair_qr():
+    """Return the QR payload for BLE pairing.
+
+    Only callable from localhost (the kiosk browser on the Pi itself) so the
+    pairing secret is never served over the LAN.  The kiosk renders the
+    payload as a QR code; the mobile app scans it once and stores the secret
+    in the device Keychain/Keystore — no further network calls required.
+    """
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return {"error": "Forbidden"}, 403
+    return {
+        "v": 1,
+        "s": _PAIRING_SECRET.hex(),
+        "h": _get_local_ip(),
+        "p": request.host.split(":")[-1] if ":" in request.host else "5000",
+    }, 200
+
+
+
 @app.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     """Cleanly shut down the server via REST API."""
@@ -869,6 +930,47 @@ def api_shutdown():
     logger.info("[SERVER] Shutdown requested via REST API")
     threading.Thread(target=_shutdown_process_after_delay, daemon=True).start()
     return {"status": "shutting_down"}, 200
+
+
+@app.route("/api/history")
+def api_history():
+    """Return past session summaries from JSONL log files."""
+    sessions_dir = Path.home() / "openflight_sessions"
+    if not sessions_dir.exists():
+        return {"sessions": []}, 200
+
+    sessions = []
+    for log_file in sorted(sessions_dir.glob("session_*.jsonl"), reverse=True)[:20]:
+        meta = {}
+        shot_count = 0
+        max_ball_speed = None
+        try:
+            with open(log_file, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    t = entry.get("type")
+                    if t == "session_start":
+                        meta = {
+                            "id": log_file.stem,
+                            "started_at": entry.get("timestamp"),
+                            "filename": log_file.name,
+                        }
+                    elif t == "shot_detected":
+                        shot_count += 1
+                        bs = entry.get("ball_speed")
+                        if bs and (max_ball_speed is None or bs > max_ball_speed):
+                            max_ball_speed = bs
+        except OSError:
+            continue
+        if meta:
+            meta["shot_count"] = shot_count
+            meta["max_ball_speed"] = max_ball_speed
+            sessions.append(meta)
+
+    return {"sessions": sessions}, 200
 
 
 # Camera functions
@@ -1523,6 +1625,14 @@ def handle_set_radar_config(data):
             exc=e,
         )
         socketio.emit("radar_config_error", {"error": "Failed to apply radar config"})
+
+
+@socketio.on("client_prefs")
+def handle_client_prefs(data=None):
+    """Receive preference update from mobile app and broadcast to kiosk UI."""
+    if not isinstance(data, dict):
+        return
+    socketio.emit("accessibility_prefs_update", data)
 
 
 @socketio.on("shutdown")
@@ -2321,6 +2431,9 @@ def _handle_ble_command(cmd: dict) -> None:
                 monitor.set_club(club)
         except ValueError:
             pass
+    elif command == "set_prefs":
+        prefs_payload = {k: v for k, v in cmd.items() if k != "cmd"}
+        socketio.emit("accessibility_prefs_update", prefs_payload)
 
 
 def main():
@@ -2708,11 +2821,11 @@ def main():
         global ble_server  # pylint: disable=global-statement
         from .ble_server import BLEServer  # pylint: disable=import-outside-toplevel
 
-        _ble_pin = f"{random.randint(0, 9999):04d}"
-        ble_server = BLEServer(on_command=_handle_ble_command, pin=_ble_pin)
+        ble_server = BLEServer(on_command=_handle_ble_command, pairing_secret=_PAIRING_SECRET)
         if ble_server.start():
             print("Bluetooth LE server started — advertising as 'OpenFlight'")
-            print(f"  BLE PIN: {_ble_pin}")
+            print(f"  Pairing secret stored at: {_PAIRING_KEY_FILE}")
+            print("  Show the kiosk Settings → Pair Mobile to display the QR code")
         else:
             print("WARNING: Bluetooth LE server failed to start — continuing without BLE")
             ble_server = None
