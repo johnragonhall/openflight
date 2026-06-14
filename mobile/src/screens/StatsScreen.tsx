@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useConnection } from '../state/ConnectionContext';
@@ -23,6 +23,9 @@ export function StatsScreen() {
   const stats = useMemo(() => computeStats(filteredShots), [filteredShots]);
   const fittingClub = selectedClub ?? (clubs.length === 1 ? clubs[0] ?? null : null);
 
+  const switchToSession = useCallback(() => setMode('session'), []);
+  const switchToAllTime = useCallback(() => setMode('alltime'), []);
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -40,8 +43,11 @@ export function StatsScreen() {
         <View style={styles.segment}>
           <TouchableOpacity
             style={[styles.segBtn, mode === 'session' && styles.segBtnActive]}
-            onPress={() => setMode('session')}
+            onPress={switchToSession}
             activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: mode === 'session' }}
+            accessibilityLabel="Session stats"
           >
             <Text style={[styles.segBtnText, mode === 'session' && styles.segBtnTextActive]}>
               Session
@@ -49,8 +55,11 @@ export function StatsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.segBtn, mode === 'alltime' && styles.segBtnActive]}
-            onPress={() => setMode('alltime')}
+            onPress={switchToAllTime}
             activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: mode === 'alltime' }}
+            accessibilityLabel="All time stats"
           >
             <Text style={[styles.segBtnText, mode === 'alltime' && styles.segBtnTextActive]}>
               All Time
