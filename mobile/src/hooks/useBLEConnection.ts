@@ -1,4 +1,3 @@
-import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,26 +10,39 @@ import {
 } from 'react-native-ble-plx';
 import { isValidShot } from '../types/shot';
 import type { Shot } from '../types/shot';
+import { getAccessibilityPrefs } from '../state/accessibilitySettings';
 
 export const OPENFLIGHT_SERVICE_UUID       = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 export const SHOT_CHARACTERISTIC_UUID      = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 export const COMMAND_CHARACTERISTIC_UUID   = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
 export const STATUS_CHARACTERISTIC_UUID    = 'beb5483e-36e1-4688-b7f5-ea07361b26aa';
-// Challenge characteristic: firmware writes a random nonce here on connect;
-// client reads it and responds with SHA-256(nonce + pin) for mutual auth.
+// Challenge characteristic: Pi writes a fresh 64-char hex nonce here.
+// Client reads it, computes HMAC-SHA256(pairing_secret, nonce_utf8), sends hex digest.
 export const CHALLENGE_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26ab';
 
 const DEVICE_NAME = 'OpenFlight';
-const BLE_PIN_SECURE_KEY = 'openflight.ble-pin';
+// SecureStore key for the 32-byte pairing secret (64 hex chars) obtained via QR scan.
+export const BLE_PAIRING_SECRET_KEY = 'openflight.ble-pairing-secret';
 
-// Derive an auth response from a server-supplied nonce.
-// Pi firmware computes the same hash and verifies it server-side.
-// This prevents replay attacks — each connection uses a fresh nonce.
-async function computeChallengeResponse(nonce: string, pin: string): Promise<string> {
-  return Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    `${nonce}:${pin}`,
+/**
+ * Compute HMAC-SHA256(pairing_secret_bytes, nonce_utf8_bytes).
+ * Returns a 64-char lowercase hex string matching what the Pi verifies.
+ */
+async function computeHmac(secretHex: string, nonce: string): Promise<string> {
+  const pairs = secretHex.match(/.{2}/g);
+  if (!pairs || pairs.length !== 32) throw new Error('Invalid pairing secret format');
+  const keyBytes = Uint8Array.from(pairs.map((b) => parseInt(b, 16)));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
   );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(nonce));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAYS_MS = [3000, 6000, 12000];
@@ -58,6 +70,7 @@ export interface BLEConnectionState {
   disconnect: () => void;
   clearSession: () => void;
   setClub: (clubId: string) => Promise<void>;
+  sendClientPrefs: () => Promise<void>;
 }
 
 const manager = new BleManager();
@@ -200,47 +213,29 @@ export function useBLEConnection(): BLEConnectionState {
         const connected = await device.connect({ timeout: 10000 });
         await connected.discoverAllServicesAndCharacteristics();
 
-        // Challenge-response authentication (firmware >= 2.0).
-        // Firmware writes a random nonce to CHALLENGE_CHARACTERISTIC on connect;
-        // client responds with SHA-256(nonce + pin) so the PIN is never sent in
-        // the clear over BLE and each session uses a unique credential.
-        // Falls back to static-PIN auth for firmware < 2.0.
+        // HMAC-SHA256 challenge-response auth.
+        // Pi writes a fresh 64-char hex nonce to CHALLENGE_CHARACTERISTIC on connect.
+        // Mobile reads nonce, computes HMAC-SHA256(pairing_secret, nonce_utf8), sends hex.
+        // The pairing secret is obtained once during the QR pairing ceremony.
         try {
-          const storedPin = await SecureStore.getItemAsync(BLE_PIN_SECURE_KEY);
-          if (storedPin) {
-            let authenticated = false;
-
-            // Attempt challenge-response (new firmware).
-            try {
-              const challengeChar = await connected.readCharacteristicForService(
-                OPENFLIGHT_SERVICE_UUID,
-                CHALLENGE_CHARACTERISTIC_UUID,
-              );
-              if (challengeChar?.value) {
-                const nonce = atob(challengeChar.value);
-                const response = await computeChallengeResponse(nonce, storedPin);
-                await connected.writeCharacteristicWithResponseForService(
-                  OPENFLIGHT_SERVICE_UUID,
-                  COMMAND_CHARACTERISTIC_UUID,
-                  btoa(JSON.stringify({ cmd: 'auth_challenge', response }))
-                );
-                authenticated = true;
-              }
-            } catch {
-              // CHALLENGE_CHARACTERISTIC not present on this firmware — fall through.
-            }
-
-            // Fallback: static-PIN auth for firmware < 2.0.
-            if (!authenticated) {
+          const secretHex = await SecureStore.getItemAsync(BLE_PAIRING_SECRET_KEY);
+          if (secretHex) {
+            const challengeChar = await connected.readCharacteristicForService(
+              OPENFLIGHT_SERVICE_UUID,
+              CHALLENGE_CHARACTERISTIC_UUID,
+            );
+            if (challengeChar?.value) {
+              const nonce = atob(challengeChar.value);
+              const hmacHex = await computeHmac(secretHex, nonce);
               await connected.writeCharacteristicWithResponseForService(
                 OPENFLIGHT_SERVICE_UUID,
                 COMMAND_CHARACTERISTIC_UUID,
-                btoa(JSON.stringify({ cmd: 'auth', pin: storedPin }))
+                btoa(JSON.stringify({ cmd: 'auth_challenge', hmac: hmacHex })),
               );
             }
           }
         } catch {
-          // Auth may fail on older firmware — not fatal, commands will be rejected server-side
+          // No secret stored (not yet paired) or CHALLENGE char unavailable — open mode
         }
 
         // Request session history on connect
@@ -252,6 +247,21 @@ export function useBLEConnection(): BLEConnectionState {
           );
         } catch {
           // Command char may not be available on older firmware — not fatal
+        }
+
+        // Send client preferences (units, accessibility, language) to kiosk
+        try {
+          const a11y = await getAccessibilityPrefs();
+          await connected.writeCharacteristicWithResponseForService(
+            OPENFLIGHT_SERVICE_UUID,
+            COMMAND_CHARACTERISTIC_UUID,
+            btoa(JSON.stringify({
+              cmd: 'set_prefs',
+              accessibility: a11y,
+            }))
+          );
+        } catch {
+          // not fatal
         }
 
         // Monitor shot notifications
@@ -368,6 +378,20 @@ export function useBLEConnection(): BLEConnectionState {
     }
   }, []);
 
+  const sendClientPrefs = useCallback(async () => {
+    if (!connectedDeviceRef.current) return;
+    try {
+      const a11y = await getAccessibilityPrefs();
+      await connectedDeviceRef.current.writeCharacteristicWithResponseForService(
+        OPENFLIGHT_SERVICE_UUID,
+        COMMAND_CHARACTERISTIC_UUID,
+        btoa(JSON.stringify({ cmd: 'set_prefs', accessibility: a11y }))
+      );
+    } catch {
+      // not fatal
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       teardownRef.current();
@@ -392,5 +416,6 @@ export function useBLEConnection(): BLEConnectionState {
     disconnect,
     clearSession,
     setClub,
+    sendClientPrefs,
   };
 }
