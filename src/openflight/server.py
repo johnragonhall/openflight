@@ -952,6 +952,53 @@ def api_shutdown():
     return {"status": "shutting_down"}, 200
 
 
+@app.route("/api/history/<session_id>/shots")
+def api_history_shots(session_id):
+    """Return individual shots from a historical session JSONL file."""
+    import re as _re
+    if not _re.match(r'^session_[\w-]+$', session_id):
+        return {"error": "Invalid session id"}, 400
+    sessions_dir = Path.home() / "openflight_sessions"
+    log_file = sessions_dir / f"{session_id}.jsonl"
+    if not log_file.exists():
+        return {"error": "Session not found"}, 404
+    shots = []
+    try:
+        with open(log_file, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("type") != "shot_detected":
+                    continue
+                carry = entry.get("estimated_carry_yards") or 0.0
+                shots.append({
+                    "ball_speed_mph": entry.get("ball_speed_mph") or 0.0,
+                    "club_speed_mph": entry.get("club_speed_mph"),
+                    "smash_factor": entry.get("smash_factor"),
+                    "estimated_carry_yards": carry,
+                    "carry_range": [carry * 0.92, carry * 1.08],
+                    "club": entry.get("club") or "driver",
+                    "timestamp": entry.get("ts") or "",
+                    "peak_magnitude": entry.get("peak_magnitude"),
+                    "launch_angle_vertical": entry.get("launch_angle_vertical"),
+                    "launch_angle_horizontal": entry.get("launch_angle_horizontal"),
+                    "launch_angle_confidence": entry.get("launch_angle_confidence"),
+                    "angle_source": entry.get("angle_source"),
+                    "club_angle_deg": entry.get("club_angle_deg"),
+                    "club_path_deg": entry.get("club_path_deg"),
+                    "spin_axis_deg": entry.get("spin_axis_deg"),
+                    "spin_rpm": entry.get("spin_rpm"),
+                    "spin_confidence": entry.get("spin_confidence"),
+                    "spin_quality": entry.get("spin_quality"),
+                    "carry_spin_adjusted": entry.get("carry_spin_adjusted"),
+                })
+    except OSError:
+        return {"error": "Could not read session"}, 500
+    return {"shots": shots}, 200
+
+
 @app.route("/api/history")
 def api_history():
     """Return past session summaries from JSONL log files."""
@@ -975,7 +1022,7 @@ def api_history():
                     if t == "session_start":
                         meta = {
                             "id": log_file.stem,
-                            "started_at": entry.get("timestamp"),
+                            "started_at": entry.get("start_time") or entry.get("ts"),
                             "filename": log_file.name,
                         }
                     elif t == "shot_detected":
