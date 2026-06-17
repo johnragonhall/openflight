@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useSocket, type CameraStatus } from './hooks/useSocket';
 import { ShotDisplay } from './components/ShotDisplay';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { CloudStatus } from './components/CloudStatus';
 import { ClubPicker } from './components/ClubPicker';
 import { ClubSelectScreen } from './components/ClubSelectScreen';
 import { BallDetectionIndicator } from './components/BallDetectionIndicator';
@@ -166,6 +167,8 @@ function AppContent() {
     toggleCameraStream,
     shutdown,
     sendRemoteKey,
+    cloudStatus,
+    setCloudSync,
   } = useSocket();
 
   const { prefs: a11yPrefs, setPref: setA11yPref, applyRemote } = useAccessibilitySettings();
@@ -327,6 +330,7 @@ function AppContent() {
             {isLaunchDaddyMode ? <LaunchDaddyBrand /> : <img className="header__logo" src="/openflightlogo.svg" alt="OpenFlight" />}
           </div>
           <ConnectionStatus connected={connected} />
+          <CloudStatus status={cloudStatus} />
         </div>
         <div className="header__controls">
           <ClubPicker selectedClub={selectedClub} onClubChange={handleClubChange} />
@@ -360,6 +364,8 @@ function AppContent() {
         onToggleCameraTab={handleToggleCameraTab}
         showDebugTab={showDebugTab}
         onToggleDebugTab={handleToggleDebugTab}
+        cloudStatus={cloudStatus}
+        onToggleCloudSync={setCloudSync}
       />
 
       {showShutdown && (

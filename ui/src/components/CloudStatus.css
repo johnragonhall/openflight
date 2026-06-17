@@ -1,0 +1,119 @@
+/* Cloud Sync Status — mirrors ConnectionStatus. Colors use the same tokens the
+   color-blind theme remaps (--ball-rgb, --gold-rgb, --neg-rgb, --color-success,
+   --color-danger), so the badge adapts to color-blind mode automatically. Each
+   state also carries a text label, so it reads without color too. */
+.cloud-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: background var(--transition-smooth), border-color var(--transition-smooth),
+    color var(--transition-smooth);
+}
+
+/* Icon-only states (synced/paused) read as a single glyph, not a clipped chip. */
+.cloud-status--compact {
+  padding: var(--space-xs);
+}
+
+.cloud-status__icon {
+  flex-shrink: 0;
+}
+
+.cloud-status__text {
+  white-space: nowrap;
+}
+
+.cloud-status--synced {
+  background: rgba(var(--ball-rgb), 0.1);
+  border: 1px solid rgba(var(--ball-rgb), 0.3);
+  color: var(--color-success);
+}
+
+.cloud-status--syncing {
+  background: rgba(var(--gold-rgb), 0.1);
+  border: 1px solid rgba(var(--gold-rgb), 0.3);
+  color: var(--color-gold);
+}
+
+.cloud-status--syncing .cloud-status__icon {
+  animation: cloud-status-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform-origin: center;
+}
+
+.cloud-status--paused {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+}
+
+.cloud-status--offline {
+  background: rgba(var(--neg-rgb), 0.1);
+  border: 1px solid rgba(var(--neg-rgb), 0.3);
+  color: var(--color-danger);
+}
+
+@keyframes cloud-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: scale(0.92);
+  }
+}
+
+/* The app's global .a11y-reduce-motion rule already halts this; honor the OS
+   setting as well. */
+@media (prefers-reduced-motion: reduce) {
+  .cloud-status--syncing .cloud-status__icon {
+    animation: none;
+  }
+}
+
+@media (max-height: 500px) {
+  .cloud-status {
+    padding: 2px var(--space-xs);
+    font-size: 0.5625rem;
+  }
+}
+
+/* Cloud section in the settings panel */
+.cloud-settings__counts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 0;
+  padding: 0 var(--space-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.cloud-settings__n {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums; /* counts don't jitter as they tick */
+  color: var(--text-primary);
+}
+
+.cloud-settings__sep {
+  opacity: 0.65;
+}
+
+.cloud-settings__parked {
+  color: var(--color-gold);
+}
+
+.cloud-settings__hint {
+  margin: var(--space-xs) 0 0;
+  padding: 0 var(--space-sm);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}

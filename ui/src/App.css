@@ -478,6 +478,9 @@
 .a11y-color-blind .shot-list-td--neg  { color: var(--cb-orange); }
 .a11y-color-blind .shot-list-td--gold { color: var(--cb-purple); }
 
+/* Cloud "parked" count: purple in CB mode so it reads distinct from syncing amber. */
+.a11y-color-blind .cloud-settings__parked { color: var(--cb-purple); }
+
 /* ── Live view metric card confidence indicators ── */
 .a11y-color-blind .metric-card__confidence--medium        { color: var(--cb-blue); }
 .a11y-color-blind .metric-card__confidence--low,

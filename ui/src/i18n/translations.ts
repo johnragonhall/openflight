@@ -4,6 +4,7 @@ export type LangCode =
   | 'th' | 'no' | 'da' | 'fi';
 
 const en = {
+  cloudSection: 'Cloud Sync', cloudSync: 'Cloud sync', cloudSynced: 'Synced', cloudSyncing: 'Syncing', cloudPaused: 'Paused', cloudOffline: 'Not linked', cloudUploads: 'Cloud uploads', cloudUploadsSub: 'Upload sessions to FlightWeb', cloudPending: 'pending', cloudPushed: 'uploaded', cloudParked: 'parked', cloudNotLinkedHint: 'Run "openflight-cloud link" on the Pi to connect.',
   tabLive: 'Live', tabHistory: 'History', tabStats: 'Analytics',
   tabShots: 'Shots', tabCamera: 'Camera', tabDebug: 'Debug',
   readyTitle: 'Ready for your shot', readyHint: 'Position ball in front of radar',
@@ -360,6 +361,7 @@ export function interpolate(template: string, vars: Record<string, string | numb
 }
 
 const es: TMap = {
+  cloudSection: 'Nube', cloudSync: 'Sincronización', cloudSynced: 'Sincronizado', cloudSyncing: 'Sincronizando', cloudPaused: 'En pausa', cloudOffline: 'Sin vincular', cloudUploads: 'Subidas a la nube', cloudUploadsSub: 'Sube las sesiones a FlightWeb', cloudPending: 'pendientes', cloudPushed: 'subidas', cloudParked: 'en espera', cloudNotLinkedHint: 'Ejecuta "openflight-cloud link" en la Pi para conectar.',
   // Coaching corpus (computer translated; {placeholders} preserved)
   insightSmashLowHead: 'Factor smash {smash} con {club} - {yds} yardas desaprovechadas',
   insightSmashLowDetail: 'Tu smash medio de {smash} está {gap} por debajo del objetivo de {target} para un {club}. Centrar el impacto añadiría unas {yds} yardas de vuelo sin golpear más fuerte.',
@@ -636,6 +638,7 @@ const es: TMap = {
 };
 
 const fr: TMap = {
+  cloudSection: 'Cloud', cloudSync: 'Synchro cloud', cloudSynced: 'Synchronisé', cloudSyncing: 'Synchronisation', cloudPaused: 'En pause', cloudOffline: 'Non lié', cloudUploads: 'Envois cloud', cloudUploadsSub: 'Envoyer les sessions vers FlightWeb', cloudPending: 'en attente', cloudPushed: 'envoyées', cloudParked: 'bloquées', cloudNotLinkedHint: 'Lancez "openflight-cloud link" sur le Pi pour vous connecter.',
   insightSmashLowHead: 'Facteur smash {smash} avec {club} - {yds} yards gaspillés',
   insightSmashLowDetail: 'Ton smash moyen de {smash} est {gap} en dessous de l’objectif de {target} pour un {club}. Centrer le contact ajouterait environ {yds} yards de portée sans frapper plus fort.',
   insightSmashLowOpp: '+{yds} yd',
@@ -938,6 +941,7 @@ const fr: TMap = {
 };
 
 const de: TMap = {
+  cloudSection: 'Cloud-Sync', cloudSync: 'Cloud-Sync', cloudSynced: 'Synchron', cloudSyncing: 'Sync läuft', cloudPaused: 'Pausiert', cloudOffline: 'Nicht verknüpft', cloudUploads: 'Cloud-Uploads', cloudUploadsSub: 'Sitzungen zu FlightWeb hochladen', cloudPending: 'ausstehend', cloudPushed: 'hochgeladen', cloudParked: 'geparkt', cloudNotLinkedHint: 'Führe "openflight-cloud link" auf dem Pi aus, um zu verbinden.',
   insightSmashLowHead: 'Smash-Faktor {smash} mit {club} - {yds} yd verschenkt',
   insightSmashLowDetail: 'Dein durchschnittlicher Smash von {smash} liegt {gap} unter dem Zielwert von {target} für einen {club}. Zentrierter Kontakt würde rund {yds} yd Carry hinzufügen, ohne härter zu schwingen.',
   insightSmashLowOpp: '+{yds} yd',
@@ -1240,6 +1244,7 @@ const de: TMap = {
 };
 
 const pt: TMap = {
+  cloudSection: 'Nuvem', cloudSync: 'Sincronização', cloudSynced: 'Sincronizado', cloudSyncing: 'Sincronizando', cloudPaused: 'Em pausa', cloudOffline: 'Sem vínculo', cloudUploads: 'Envios à nuvem', cloudUploadsSub: 'Enviar sessões para o FlightWeb', cloudPending: 'pendentes', cloudPushed: 'enviadas', cloudParked: 'retidas', cloudNotLinkedHint: 'Execute "openflight-cloud link" no Pi para conectar.',
   insightSmashLowHead: '{club} fator de smash {smash} - {yds} jardas deixadas na mesa',
   insightSmashLowDetail: 'O seu smash médio de {smash} está {gap} abaixo do objetivo {target} para um {club}. Centrar o contacto adicionaria cerca de {yds} jardas de carry sem bater mais forte.',
   insightSmashLowOpp: '+{yds} jds',
@@ -1542,6 +1547,7 @@ const pt: TMap = {
 };
 
 const it: TMap = {
+  cloudSection: 'Cloud', cloudSync: 'Sincron. cloud', cloudSynced: 'Sincronizzato', cloudSyncing: 'Sincronizz.', cloudPaused: 'In pausa', cloudOffline: 'Non collegato', cloudUploads: 'Caricamenti cloud', cloudUploadsSub: 'Carica le sessioni su FlightWeb', cloudPending: 'in attesa', cloudPushed: 'caricate', cloudParked: 'sospese', cloudNotLinkedHint: 'Esegui "openflight-cloud link" sul Pi per collegarti.',
   insightSmashLowHead: '{club} smash factor {smash} - {yds} yds lasciati sul campo',
   insightSmashLowDetail: 'Il tuo smash medio di {smash} è {gap} sotto l’obiettivo {target} per un {club}. Centrare il contatto aggiungerebbe circa {yds} yard di carry senza aumentare la velocità.',
   insightSmashLowOpp: '+{yds} yds',
@@ -1844,6 +1850,7 @@ const it: TMap = {
 };
 
 const nl: TMap = {
+  cloudSection: 'Cloudsync', cloudSync: 'Cloudsync', cloudSynced: 'Gesynchroniseerd', cloudSyncing: 'Synchroniseren', cloudPaused: 'Gepauzeerd', cloudOffline: 'Niet gekoppeld', cloudUploads: 'Cloud-uploads', cloudUploadsSub: 'Sessies uploaden naar FlightWeb', cloudPending: 'in wachtrij', cloudPushed: 'geüpload', cloudParked: 'geparkeerd', cloudNotLinkedHint: 'Voer "openflight-cloud link" uit op de Pi om te verbinden.',
   insightSmashLowHead: '{club} smash factor {smash} - {yds} yds blijft op tafel',
   insightSmashLowDetail: 'Je gemiddelde smash van {smash} ligt {gap} onder het {target}-doel voor een {club}. Gecentreerd contact zou ruwweg {yds} yards carry toevoegen zonder harder te swingen.',
   insightSmashLowOpp: '+{yds} yds',
@@ -2146,6 +2153,7 @@ const nl: TMap = {
 };
 
 const sv: TMap = {
+  cloudSection: 'Molnsynk', cloudSync: 'Molnsynk', cloudSynced: 'Synkad', cloudSyncing: 'Synkar', cloudPaused: 'Pausad', cloudOffline: 'Ej länkad', cloudUploads: 'Molnuppladdning', cloudUploadsSub: 'Ladda upp sessioner till FlightWeb', cloudPending: 'väntar', cloudPushed: 'uppladdade', cloudParked: 'parkerade', cloudNotLinkedHint: 'Kör "openflight-cloud link" på din Pi för att ansluta.',
   insightSmashLowHead: '{club} smashfaktor {smash} - {yds} yards kvar att hämta',
   insightSmashLowDetail: 'Ditt genomsnittliga smash på {smash} ligger {gap} under målet {target} för en {club}. Centrerat träffläge skulle lägga till ungefär {yds} yards carry utan att slå hårdare.',
   insightSmashLowOpp: '+{yds} yds',
@@ -2448,6 +2456,7 @@ const sv: TMap = {
 };
 
 const ja: TMap = {
+  cloudSection: 'クラウド同期', cloudSync: 'クラウド同期', cloudSynced: '同期済み', cloudSyncing: '同期中', cloudPaused: '一時停止', cloudOffline: '未連携', cloudUploads: 'クラウドへ送信', cloudUploadsSub: 'セッションを FlightWeb に送信', cloudPending: '待機', cloudPushed: '送信済み', cloudParked: '保留', cloudNotLinkedHint: 'Pi で "openflight-cloud link" を実行して連携してください。',
   insightSmashLowHead: '{club} スマッシュファクター {smash} - テーブルに {yds} yds を残している',
   insightSmashLowDetail: '{club} の平均スマッシュ {smash} は {club} の目標 {target} を {gap} 下回っています。センターコンタクトができれば、スイングスピードを上げなくても約 {yds} ヤードのキャリーが追加されます。',
   insightSmashLowOpp: '+{yds} yds',
@@ -2749,6 +2758,7 @@ const ja: TMap = {
 };
 
 const ko: TMap = {
+  cloudSection: '클라우드 동기화', cloudSync: '클라우드 동기화', cloudSynced: '동기화됨', cloudSyncing: '동기화 중', cloudPaused: '일시중지', cloudOffline: '연결 안 됨', cloudUploads: '클라우드 업로드', cloudUploadsSub: '세션을 FlightWeb에 업로드', cloudPending: '대기', cloudPushed: '업로드됨', cloudParked: '보류', cloudNotLinkedHint: 'Pi에서 "openflight-cloud link"를 실행하여 연결하세요.',
   insightSmashLowHead: '{club} 스매시 팩터 {smash} - {yds} yds 손실 중',
   insightSmashLowDetail: '{club}의 평균 스매시 {smash}는 목표치 {target}보다 {gap} 낮습니다. 중심 타격으로 더 세게 스윙하지 않아도 약 {yds} 야드의 캐리를 늘릴 수 있습니다.',
   insightSmashLowOpp: '+{yds} yds',
@@ -3050,6 +3060,7 @@ const ko: TMap = {
 };
 
 const zhHans: TMap = {
+  cloudSection: '云同步', cloudSync: '云同步', cloudSynced: '已同步', cloudSyncing: '同步中', cloudPaused: '已暂停', cloudOffline: '未关联', cloudUploads: '云端上传', cloudUploadsSub: '将场次上传到 FlightWeb', cloudPending: '待传', cloudPushed: '已上传', cloudParked: '已搁置', cloudNotLinkedHint: '在树莓派上运行 "openflight-cloud link" 以连接。',
   insightAoaSteepHead: '{club} 攻击角过陡 {deg}° - 损失飞行距离',
   insightAoaSteepDetail: '开球木攻击角过陡会加大旋转杆面角并增加倒旋。攻击角从 −5° 改善至 +5° 可减少约 1,100 rpm 旋转，在相同杆头速度下增加最多 30 码。压浅攻击角是开球木单一效益最高的改进方向。',
   insightAoaSteepOpp: '+{yds} 码',
@@ -3325,6 +3336,7 @@ const zhHans: TMap = {
 };
 
 const zhHant: TMap = {
+  cloudSection: '雲端同步', cloudSync: '雲端同步', cloudSynced: '已同步', cloudSyncing: '同步中', cloudPaused: '已暫停', cloudOffline: '未連結', cloudUploads: '雲端上傳', cloudUploadsSub: '將場次上傳到 FlightWeb', cloudPending: '待傳', cloudPushed: '已上傳', cloudParked: '已擱置', cloudNotLinkedHint: '在樹莓派上執行 "openflight-cloud link" 以連線。',
   drillLowFaceTitle: '低桿面擊球修正練習',
   drillLowFaceDesc: '將球座調高至至少一半球體露出桿頭頂部。練習刷過球座頂端，並在感測器上確認垂直擊球點達到居中或略偏上。低桿面擊球會增加倒旋並壓低出球角 - 居中偏上的接觸可降低多達 1,000 rpm 的旋轉。',
   drillLowFaceTip: '"桿面高，成績高"',
@@ -3619,6 +3631,7 @@ const zhHant: TMap = {
 };
 
 const th: TMap = {
+  cloudSection: 'คลาวด์', cloudSync: 'ซิงค์คลาวด์', cloudSynced: 'ซิงค์แล้ว', cloudSyncing: 'กำลังซิงค์', cloudPaused: 'หยุดชั่วคราว', cloudOffline: 'ยังไม่เชื่อมโยง', cloudUploads: 'อัปโหลดขึ้นคลาวด์', cloudUploadsSub: 'อัปโหลดเซสชันไปยัง FlightWeb', cloudPending: 'รอ', cloudPushed: 'อัปโหลดแล้ว', cloudParked: 'พักไว้', cloudNotLinkedHint: 'รัน "openflight-cloud link" บน Pi เพื่อเชื่อมต่อ',
   insightSmashLowHead: '{club} smash factor {smash} - เสียระยะ {yds} หลา',
   insightSmashLowDetail: 'smash เฉลี่ยของคุณที่ {smash} ต่ำกว่าเป้าหมาย {target} สำหรับ {club} อยู่ {gap} การตีตรงจุดกึ่งกลางหน้าไม้จะเพิ่มระยะพุ่งประมาณ {yds} หลาโดยไม่ต้องออกแรงมากขึ้น',
   insightSmashLowOpp: '+{yds} หลา',
@@ -3920,6 +3933,7 @@ const th: TMap = {
 };
 
 const no: TMap = {
+  cloudSection: 'Skysynk', cloudSync: 'Skysynk', cloudSynced: 'Synket', cloudSyncing: 'Synker', cloudPaused: 'Pauset', cloudOffline: 'Ikke koblet', cloudUploads: 'Skyopplasting', cloudUploadsSub: 'Last opp økter til FlightWeb', cloudPending: 'venter', cloudPushed: 'lastet opp', cloudParked: 'parkert', cloudNotLinkedHint: 'Kjør "openflight-cloud link" på Pi-en for å koble til.',
   insightSmashLowHead: '{club} smashfaktor {smash} - {yds} yds igjen på bordet',
   insightSmashLowDetail: 'Ditt gjennomsnittlige smash på {smash} er {gap} under {target}-målet for en {club}. Sentrert treff ville lagt til omtrent {yds} yards carry uten å svinge hardere.',
   insightSmashLowOpp: '+{yds} yds',
@@ -4221,6 +4235,7 @@ const no: TMap = {
 };
 
 const da: TMap = {
+  cloudSection: 'Sky-synk', cloudSync: 'Sky-synk', cloudSynced: 'Synket', cloudSyncing: 'Synker', cloudPaused: 'På pause', cloudOffline: 'Ikke forbundet', cloudUploads: 'Sky-uploads', cloudUploadsSub: 'Upload sessioner til FlightWeb', cloudPending: 'afventer', cloudPushed: 'uploadet', cloudParked: 'parkeret', cloudNotLinkedHint: 'Kør "openflight-cloud link" på din Pi for at forbinde.',
   insightSmashLowHead: '{club} smassfaktor {smash} - {yds} yds tabt på bordet',
   insightSmashLowDetail: 'Dit gennemsnitlige smash på {smash} er {gap} under {target}-målet for en {club}. Centreret kontakt ville tilføje cirka {yds} yards carry uden at svinge hårdere.',
   insightSmashLowOpp: '+{yds} yds',
@@ -4522,6 +4537,7 @@ const da: TMap = {
 };
 
 const fi: TMap = {
+  cloudSection: 'Pilvi', cloudSync: 'Pilvisynkronointi', cloudSynced: 'Synkronoitu', cloudSyncing: 'Synkronoi', cloudPaused: 'Keskeytetty', cloudOffline: 'Ei linkitetty', cloudUploads: 'Pilvilataukset', cloudUploadsSub: 'Lähetä istunnot FlightWebiin', cloudPending: 'jonossa', cloudPushed: 'lähetetty', cloudParked: 'pysäköity', cloudNotLinkedHint: 'Suorita "openflight-cloud link" Pi:llä yhdistääksesi.',
   insightSmashLowHead: '{club} smash-kerroin {smash} - {yds} yds jätetty pöydälle',
   insightSmashLowDetail: 'Keskimääräinen smash-kertoimesi {smash} on {gap} alle {target}-tavoitteen mailalle {club}. Osuman keskittäminen lisäisi noin {yds} yardia kantamaan ilman kovempaa lyöntiä.',
   insightSmashLowOpp: '+{yds} yds',

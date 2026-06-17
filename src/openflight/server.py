@@ -1788,6 +1788,69 @@ def _apply_calculated_spin(shot: Shot) -> bool:
     return True
 
 
+def _cloud_status_payload() -> dict:
+    """Cloud-sync status for the kiosk: link state, enabled flag, queue counts.
+
+    Omits the device token. Reports available=False when the cloud module or
+    config is absent, so the UI hides the indicator.
+    """
+    try:
+        from .cloud import config as cloud_config  # pylint: disable=import-outside-toplevel
+        from .cloud import spool  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return {"available": False}
+    cfg = cloud_config.load_config()
+    if cfg is None:
+        return {
+            "available": True, "configured": False, "linked": False,
+            "enabled": False, "pending": 0, "pushed": 0, "parked": 0,
+        }
+    sessions_dir = Path.home() / "openflight_sessions"
+    try:
+        counts = spool.summarize(sessions_dir)
+    except OSError:
+        counts = {"pending": 0, "pushed": 0, "parked": 0}
+    return {
+        "available": True,
+        "configured": True,
+        "linked": cfg.is_linked(),
+        "enabled": cfg.enabled,
+        "active": cfg.is_active(),
+        "endpoint": cfg.endpoint,
+        "pending": counts.get("pending", 0),
+        "pushed": counts.get("pushed", 0),
+        "parked": counts.get("parked", 0),
+    }
+
+
+@socketio.on("get_cloud_status")
+def handle_get_cloud_status(data=None):
+    """Broadcast the current cloud-sync status to connected clients."""
+    try:
+        socketio.emit("cloud_status", _cloud_status_payload())
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("[SERVER] get_cloud_status failed")
+
+
+@socketio.on("set_cloud_sync")
+def handle_set_cloud_sync(data=None):
+    """Pause or resume cloud uploads. Kiosk-only (localhost), never destructive."""
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return
+    if not isinstance(data, dict):
+        return
+    try:
+        from .cloud import config as cloud_config  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return
+    cfg = cloud_config.load_config()
+    if cfg is None or not cfg.is_linked():
+        return
+    cfg.enabled = bool(data.get("enabled"))
+    cloud_config.save_config(cfg)
+    socketio.emit("cloud_status", _cloud_status_payload())
+
+
 def on_shot_detected(shot: Shot):
     """Callback when a shot is detected - emit to all clients."""
     global ball_detected, ball_detection_confidence  # pylint: disable=global-statement
