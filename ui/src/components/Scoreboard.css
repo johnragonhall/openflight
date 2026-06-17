@@ -1,12 +1,21 @@
 .display-mode {
+  position: relative;
   min-height: 100dvh;
   width: 100%;
   padding: clamp(1rem, 2vw, 2rem);
   background:
-    radial-gradient(ellipse at top left, rgba(212, 175, 55, 0.1), transparent 38rem),
+    radial-gradient(ellipse at top left, rgba(var(--gold-rgb), 0.1), transparent 38rem),
     var(--color-bg-deep);
   color: var(--text-primary);
   overflow: hidden;
+}
+
+/* Settings gear — top-right corner of the display, above the content. */
+.display-mode__settings {
+  position: absolute;
+  top: clamp(1rem, 2vw, 2rem);
+  right: clamp(1rem, 2vw, 2rem);
+  z-index: 30;
 }
 
 .display-mode__hero {
@@ -40,19 +49,6 @@
   flex: 1;
   object-fit: cover;
   background: #050508;
-}
-
-.display-mode__camera-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-height: 24rem;
-  padding: 2rem;
-  color: var(--text-secondary);
-  font-size: clamp(1.5rem, 3vw, 3rem);
-  font-weight: 700;
-  text-align: center;
 }
 
 .display-mode__status-row {
@@ -97,61 +93,88 @@
   gap: clamp(0.75rem, 1.6vw, 1.25rem);
 }
 
-.display-mode__eyebrow {
-  color: var(--color-gold);
-  font-size: clamp(0.85rem, 1.2vw, 1.1rem);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.display-mode__logo {
+  display: block;
+  /* 1.5× the title curve (clamp(3rem,5vw,6rem)) so the wordmark scales in
+     lockstep with the club name across every resolution / the TV ramp. */
+  height: clamp(4.5rem, 7.5vw, 9rem);
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .display-mode__title {
   margin: 0;
   color: var(--color-cream);
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: clamp(3rem, 5vw, 6rem);
-  font-weight: 400;
+  font-weight: 700;
   line-height: 0.95;
   text-transform: capitalize;
 }
 
-.display-mode__primary-grid,
-.display-mode__metrics-grid {
+/* Uniform 5-row × 2-col grid: every tile is the same size, gauges included. */
+.display-mode__grid {
   display: grid;
-  gap: clamp(0.65rem, 1.2vw, 1rem);
-}
-
-.display-mode__primary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.display-mode__metrics-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: clamp(0.5rem, 1vw, 0.9rem);
   flex: 1;
+  min-height: 0;
 }
 
 .display-metric {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 8.5rem;
-  padding: clamp(0.8rem, 1.4vw, 1.25rem);
+  align-items: center;
+  text-align: center;
+  gap: 0.2rem;
+  min-height: 0;
+  padding: clamp(0.55rem, 1.1vw, 1rem) clamp(0.8rem, 1.4vw, 1.25rem);
   border: 1px solid rgba(245, 240, 230, 0.1);
   border-radius: var(--radius-md);
   background: rgba(18, 18, 26, 0.86);
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
-.display-metric--featured {
-  min-height: clamp(10rem, 18vh, 15rem);
-  border-color: rgba(212, 175, 55, 0.35);
-  background: linear-gradient(145deg, rgba(212, 175, 55, 0.18), rgba(18, 18, 26, 0.92));
+/* Gold treatment for the distance + speed tiles (boxes + values glow gold). */
+.display-metric--gold {
+  border-color: rgba(var(--gold-rgb), 0.4);
+  background: linear-gradient(150deg, rgba(var(--gold-rgb), 0.12) 0%, rgba(18, 18, 26, 0.92) 100%);
+  box-shadow:
+    0 0 24px rgba(var(--gold-rgb), 0.22),
+    inset 0 1px 0 rgba(var(--gold-rgb), 0.18);
+}
+
+.display-metric--gold .display-metric__value {
+  color: var(--color-gold-bright);
+  text-shadow: 0 0 24px var(--color-gold-glow);
+}
+
+.display-metric--gold .display-metric__unit {
+  color: var(--color-gold);
+}
+
+/* Speed tiles host a gauge instead of a value row. The gauge's open arc draws
+   ~18% below its own box, so we top-align it and cap its height (~82%) to leave
+   room for that overshoot — the whole gauge then sits inside the gold box. */
+.display-metric--gauge {
+  align-items: center;
+  justify-content: flex-start;
+  padding: clamp(0.5rem, 1vw, 0.9rem);
+}
+
+.display-metric--gauge .speed-gauge {
+  max-width: min(100%, 15rem);
+  max-height: 82%;
 }
 
 .display-metric__label,
 .display-metric__detail {
   color: var(--text-muted);
-  font-size: clamp(0.8rem, 1.15vw, 1rem);
+  font-size: clamp(0.72rem, 1vw, 0.95rem);
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -160,34 +183,72 @@
 .display-metric__value-row {
   display: flex;
   align-items: baseline;
-  gap: 0.45rem;
+  justify-content: center;
+  gap: 0.4rem;
   min-width: 0;
 }
 
 .display-metric__value {
   color: var(--color-cream);
-  font-size: clamp(2.35rem, 4vw, 4.75rem);
+  font-size: clamp(1.75rem, 3.4vw, 3.5rem);
   font-weight: 800;
   line-height: 1;
-}
-
-.display-metric--featured .display-metric__value {
-  color: var(--color-gold-bright);
-  font-size: clamp(4rem, 7.4vw, 8.5rem);
+  font-variant-numeric: tabular-nums;
 }
 
 .display-metric__unit {
   color: var(--text-secondary);
-  font-size: clamp(0.95rem, 1.4vw, 1.4rem);
-  font-weight: 800;
+  font-size: clamp(0.8rem, 1.1vw, 1.15rem);
+  font-weight: 700;
   white-space: nowrap;
 }
 
+/* Degree symbol sits up at the exponent position, like the kiosk. */
+.display-metric__unit--degree {
+  align-self: flex-start;
+  position: relative;
+  top: -0.35em;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
 .display-metric__detail {
-  min-height: 1.25rem;
-  margin-top: 0.4rem;
+  margin-top: 0.1rem;
   color: var(--color-gold);
 }
+
+/* ── Confidence indicator (kiosk parity: dots + Low/Perfect/High or Left/Perfect/Right) ── */
+.display-metric__confidence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+  font-size: clamp(0.68rem, 0.95vw, 0.9rem);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.display-metric__dots {
+  display: inline-flex;
+  gap: 0.22rem;
+}
+
+.display-metric__dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(245, 240, 230, 0.2);
+}
+
+.display-metric__dot.is-filled {
+  background: currentColor;
+}
+
+.display-metric__confidence--medium { color: rgb(var(--pos-rgb)); }
+.display-metric__confidence--low,
+.display-metric__confidence--high { color: rgb(var(--neg-rgb)); }
 
 .display-mode__recent {
   display: grid;
@@ -261,14 +322,9 @@
 }
 
 @media (max-width: 700px) {
-  .display-mode__primary-grid,
-  .display-mode__metrics-grid,
+  .display-mode__grid,
   .display-mode__recent {
     grid-template-columns: 1fr;
-  }
-
-  .display-mode__camera-placeholder {
-    min-height: 16rem;
   }
 }
 
@@ -290,9 +346,9 @@
 }
 
 /* Eyebrow legible at 3m */
-.tv .display-mode__eyebrow {
-  font-size: clamp(1.1rem, 1.8vw, 1.6rem);
-  letter-spacing: 0.12em;
+.tv .display-mode__logo {
+  /* 1.5× the .tv title curve (clamp(4rem,7vw,9rem)). */
+  height: clamp(6rem, 10.5vw, 13.5rem);
 }
 
 /* Club name in large display type — visible across the room */
@@ -300,19 +356,10 @@
   font-size: clamp(4rem, 7vw, 9rem);
 }
 
-/* Featured metrics (ball speed, carry) — the hero numbers */
-.tv .display-metric--featured .display-metric__value {
-  font-size: clamp(6rem, 10vw, 13rem);
-  letter-spacing: -0.02em;
-}
-
-.tv .display-metric--featured {
-  min-height: clamp(14rem, 22vh, 22rem);
-}
-
-/* Secondary metric values — still legible from couch */
+/* Metric values — legible from the couch, but bounded so the uniform 5-row
+   grid still fits the screen (grid-auto-rows: 1fr controls tile height). */
 .tv .display-metric__value {
-  font-size: clamp(3rem, 5vw, 6.5rem);
+  font-size: clamp(2.5rem, 4vw, 4.5rem);
 }
 
 .tv .display-metric__label {
@@ -321,12 +368,15 @@
 }
 
 .tv .display-metric__unit {
-  font-size: clamp(1.2rem, 1.8vw, 2rem);
+  font-size: clamp(1.1rem, 1.6vw, 1.7rem);
+}
+
+.tv .display-metric__confidence {
+  font-size: clamp(0.95rem, 1.3vw, 1.3rem);
 }
 
 .tv .display-metric {
-  min-height: clamp(10rem, 16vh, 16rem);
-  padding: clamp(1.25rem, 2vw, 2rem);
+  padding: clamp(0.9rem, 1.6vw, 1.6rem);
 }
 
 /* Status row: glass overlay on camera for TV */
@@ -344,7 +394,7 @@
   backdrop-filter: blur(12px) saturate(1.2);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
   background: rgba(10, 10, 15, 0.80);
-  border-color: rgba(212, 175, 55, 0.18);
+  border-color: rgba(var(--gold-rgb), 0.18);
 }
 
 /* Recent shot chips: focusable for D-pad navigation */
@@ -365,7 +415,7 @@
 .tv .display-shot-chip:focus,
 .tv .display-shot-chip:focus-visible {
   transform: scale(1.06);
-  box-shadow: 0 0 0 2px var(--color-gold), 0 0 24px rgba(212, 175, 55, 0.30);
+  box-shadow: 0 0 0 2px var(--color-gold), 0 0 24px rgba(var(--gold-rgb), 0.30);
   outline: none;
 }
 
