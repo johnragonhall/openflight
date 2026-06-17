@@ -914,14 +914,24 @@ def api_pair_qr():
     payload as a QR code; the mobile app scans it once and stores the secret
     in the device Keychain/Keystore — no further network calls required.
     """
-    if request.remote_addr not in ("127.0.0.1", "::1"):
+    # Only the socket-level peer address matters — X-Forwarded-For is
+    # trivially spoofable by any LAN host and must never gate a secret endpoint.
+    remote = request.remote_addr or ""
+    is_local = remote in ("127.0.0.1", "::1")
+    if not is_local:
         return {"error": "Forbidden"}, 403
-    return {
-        "v": 1,
-        "s": _PAIRING_SECRET.hex(),
-        "h": _get_local_ip(),
-        "p": request.host.split(":")[-1] if ":" in request.host else "5000",
-    }, 200
+    try:
+        host_str = request.host or ""
+        host_port = int(host_str.split(":")[-1]) if ":" in host_str else 8080
+        return {
+            "v": 1,
+            "s": _PAIRING_SECRET.hex(),
+            "h": _get_local_ip(),
+            "p": host_port,
+        }, 200
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("[SERVER] pair-qr error: %s", exc)
+        return {"error": f"Server error: {exc}"}, 503
 
 
 
