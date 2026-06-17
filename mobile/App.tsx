@@ -1,19 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useBLEConnection } from './src/hooks/useBLEConnection';
-import { useSocketConnection } from './src/hooks/useSocketConnection';
+import { useActiveConnection } from './src/hooks/useActiveConnection';
+import { useShotPersistence } from './src/hooks/useShotPersistence';
 import { UnitPreferenceProvider } from './src/state/UnitPreferenceProvider';
+import { AccessibilityProvider } from './src/state/AccessibilityProvider';
 import { ConnectionProvider, type ConnectionContextValue } from './src/state/ConnectionContext';
-import { enrichShot } from './src/utils/ballistics';
-import { initDatabase, createSession, endSession, saveShot } from './src/db/database';
+import { ConnectionControlsProvider } from './src/state/ConnectionControlsContext';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
-import { RangeScreen } from './src/screens/RangeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ConnectionScreen } from './src/screens/ConnectionScreen';
 import { PairScreen } from './src/screens/PairScreen';
@@ -54,99 +53,81 @@ function MainTabs() {
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Live" component={HomeScreen} />
+      <Tab.Screen name="Analytics" component={StatsScreen} />
       <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="Stats" component={StatsScreen} />
-      <Tab.Screen name="Range" component={RangeScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
 
 export default function App() {
-  const socket = useSocketConnection();
-  const ble = useBLEConnection();
+  const {
+    connected, connectionLabel, mockMode, shots, latestShot, selectedClub,
+    bleErrorMessage, malformedCount, setClub, clearSession: transportClear,
+    startDemo, stopDemo, wifi, ble,
+  } = useActiveConnection();
   const [dismissedError, setDismissedError] = useState<string | null>(null);
-  const [dbReady, setDbReady] = useState(false);
-  const sessionIdRef = useRef<string | null>(null);
-  const prevShotTsRef = useRef<string | null>(null);
 
-  const wifiActive = socket.connected;
-  const bleActive = ble.status === 'connected';
-  const connected = wifiActive || bleActive;
-  const shots = wifiActive ? socket.shots : ble.shots;
-  const latestShot = wifiActive ? socket.latestShot : ble.latestShot;
-  const connectionLabel = wifiActive ? 'Wi-Fi' : 'BLE';
-  const selectedClub = wifiActive ? socket.selectedClub : ble.selectedClub;
+  const { dbError, resetSession, dismissDbError } = useShotPersistence({
+    latestShot,
+    connected,
+    connectionLabel,
+  });
 
-  useEffect(() => {
-    initDatabase()
-      .then(() => setDbReady(true))
-      .catch(() => { /* DB unavailable — shots remain in-memory only */ });
-  }, []);
+  const clearSession = useCallback(() => {
+    resetSession();
+    transportClear();
+  }, [resetSession, transportClear]);
 
-  // Start DB session on first connect, but only after DB is ready
-  useEffect(() => {
-    if (!dbReady || !connected || sessionIdRef.current) return;
-    createSession(connectionLabel)
-      .then((id) => { sessionIdRef.current = id; })
-      .catch(() => {});
-  }, [connected, connectionLabel, dbReady]);
+  const dismissError = useCallback(() => {
+    dismissDbError();
+    setDismissedError(bleErrorMessage);
+  }, [dismissDbError, bleErrorMessage]);
 
-  // Persist each new shot
-  useEffect(() => {
-    if (!latestShot || latestShot.timestamp === prevShotTsRef.current) return;
-    prevShotTsRef.current = latestShot.timestamp;
-    if (!sessionIdRef.current) return;
-    saveShot(sessionIdRef.current, enrichShot(latestShot)).catch(() => {});
-  }, [latestShot]);
+  const bleError = bleErrorMessage !== dismissedError ? bleErrorMessage : null;
+  const errorMessage = dbError ?? bleError;
 
-  const clearSession = () => {
-    const oldId = sessionIdRef.current;
-    sessionIdRef.current = null;
-    if (oldId) endSession(oldId).catch(() => {});
-    if (connected) {
-      createSession(connectionLabel)
-        .then((id) => { sessionIdRef.current = id; })
-        .catch(() => {});
-    }
-    (wifiActive ? socket.clearSession : ble.clearSession)();
-  };
+  const ctxValue = useMemo<ConnectionContextValue>(() => ({
+    connected,
+    connectionLabel,
+    mockMode,
+    shots,
+    latestShot,
+    selectedClub,
+    errorMessage,
+    malformedCount,
+    setClub,
+    clearSession,
+    dismissError,
+    startDemo,
+    stopDemo,
+  }), [
+    connected, connectionLabel, mockMode, shots, latestShot, selectedClub,
+    errorMessage, malformedCount, setClub, clearSession, dismissError,
+    startDemo, stopDemo,
+  ]);
 
-  const setClub = (clubId: string) => {
-    if (wifiActive) socket.setClub(clubId);
-    else if (bleActive) ble.setClub(clubId);
-  };
-
-  const displayedError = ble.errorMessage !== dismissedError ? ble.errorMessage : null;
-
-  const ctxValue: ConnectionContextValue = {
-    connected, connectionLabel, mockMode: socket.mockMode,
-    shots, latestShot, selectedClub,
-    errorMessage: displayedError, malformedCount: ble.malformedCount,
-    setClub, clearSession,
-    dismissError: () => setDismissedError(ble.errorMessage),
-    startDemo: socket.startDemo,
-    stopDemo: socket.stopDemo,
-  };
+  const controls = useMemo(() => ({ wifi, ble }), [wifi, ble]);
 
   return (
     <SafeAreaProvider>
-      <UnitPreferenceProvider>
+      <AccessibilityProvider>
+       <UnitPreferenceProvider>
         <ConnectionProvider value={ctxValue}>
+         <ConnectionControlsProvider value={controls}>
           <StatusBar style="light" />
           <NavigationContainer theme={NAV_THEME}>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="MainTabs" component={MainTabs} />
               <Stack.Screen
                 name="Connection"
+                component={ConnectionScreen}
                 options={{
                   headerShown: true, title: 'Connect',
                   headerStyle: { backgroundColor: C.s1 },
                   headerTintColor: C.accent,
                 }}
-              >
-                {(props) => <ConnectionScreen {...props} socket={socket} ble={ble} />}
-              </Stack.Screen>
+              />
               <Stack.Screen
                 name="Pair"
                 component={PairScreen}
@@ -243,8 +224,10 @@ export default function App() {
               />
             </Stack.Navigator>
           </NavigationContainer>
+         </ConnectionControlsProvider>
         </ConnectionProvider>
-      </UnitPreferenceProvider>
+       </UnitPreferenceProvider>
+      </AccessibilityProvider>
     </SafeAreaProvider>
   );
 }
