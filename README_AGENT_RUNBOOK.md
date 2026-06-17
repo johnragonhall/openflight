@@ -9,6 +9,17 @@ This runbook explains how to use the iOS/Android agents and CI for the OpenFligh
 - Agent prompts: `.github/agents/`
 - Skills: `.agents/skills/` / `.claude/skills/`
 
+## Documentation
+
+Before changing mobile code, read the architecture and protocol docs so you do not re-derive them:
+
+- [mobile/README.md](mobile/README.md) - build, run, folder map
+- [docs/mobile-architecture.md](docs/mobile-architecture.md) - providers, navigation, data layer
+- [docs/mobile-ble-protocol.md](docs/mobile-ble-protocol.md) - GATT service, pairing, HMAC auth
+- [docs/bag-database-schema.md](docs/bag-database-schema.md) - SQLCipher schema and queries
+- [docs/mobile-accessibility.md](docs/mobile-accessibility.md) - prefs and kiosk relay
+- [docs/server-api.md](docs/server-api.md) - REST + Socket.IO the app talks to
+
 ## How to Use the Agents
 
 ### Option 1: Claude Code Skills (recommended)

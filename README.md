@@ -81,16 +81,36 @@ scripts/start-kiosk.sh --mock
 
 Then open http://localhost:8080 or use the touchscreen.
 
-### TV Display Mode
+### Scoreboard View
 
-OpenFlight also serves a fullscreen-friendly browser display for tablets, TV browsers, or a Chrome tab cast to Chromecast.
+OpenFlight serves a fullscreen-friendly passive scoreboard for tablets, TV browsers, or a Chrome tab cast to Chromecast.
 
 1. Start OpenFlight as usual with `scripts/start-kiosk.sh`.
 2. Find the OpenFlight host IP address on your LAN.
-3. Open `http://<openflight-host-ip>:8080/display` from another laptop, tablet, or TV browser.
-4. For Chromecast, open the display page in Chrome and use Chrome's built-in **Cast** feature to cast the tab.
+3. Open `http://<openflight-host-ip>:8080/scoreboard` from another laptop, tablet, or TV browser.
+4. For Chromecast, open the scoreboard page in Chrome and use Chrome's built-in **Cast** feature to cast the tab.
 
 This is browser/tab casting only. OpenFlight does not include native Cast SDK support yet.
+
+**Smart TV adaptation.** The UI auto-detects a 10-foot context - Samsung Tizen, LG webOS, or an explicit `?tv=1` query - and adapts (`ui/src/state/displayDetect.ts` + `ui/src/state/ViewModeProvider.tsx`):
+
+- Raises the root font-size ceiling and enlarges focus rings and touch targets for across-the-room viewing.
+- Drops the backdrop-filter blur to solid surfaces on GPU-constrained clients (TVs, and the Pi kiosk launched with `?lowpower=1`).
+- Enables **full D-pad spatial navigation** (up/down/left/right, plus OK/Back) across every control with a remote (`ui/src/state/useSpatialNavigation.ts`).
+
+Both the main app and the passive `/scoreboard` route adapt, so the whole UI works on a television, not just the scoreboard.
+
+- **Use a TV remote:** [TV Remote Control](docs/tv-remote-control.md) - HDMI-CEC, FLIRC/IR, Bluetooth, or a no-hardware phone web-remote served at `/remote`.
+
+### Mobile App
+
+OpenFlight has a companion phone app (iOS and Android, built with Expo) in [`mobile/`](mobile/). It connects to the kiosk over Wi-Fi or Bluetooth LE, mirrors live shots, keeps an encrypted on-device shot history, and manages your club bag with per-club stats and dispersion.
+
+- **Use it:** [Mobile App Guide](docs/mobile-app-guide.md)
+- **Build it:** [mobile/README.md](mobile/README.md)
+- **Architecture:** [Mobile Architecture](docs/mobile-architecture.md)
+
+Bluetooth pairing uses a QR code shown on the kiosk and an HMAC challenge so only paired phones connect. See [BLE Protocol](docs/mobile-ble-protocol.md).
 
 ## How It Works
 
@@ -202,7 +222,8 @@ openflight/
 ├── src/openflight/
 │   ├── ops243.py              # OPS243-A radar driver
 │   ├── launch_monitor.py      # Shot detection & club/ball separation
-│   ├── server.py              # Flask server, K-LD7 correlation, carry
+│   ├── server.py              # Flask + Socket.IO server, REST API, carry
+│   ├── ble_server.py          # BLE GATT peripheral for the mobile app
 │   ├── session_logger.py      # JSONL session logging
 │   ├── kld7/                  # K-LD7 angle radar
 │   │   ├── radc.py            # FFT, phase interferometry, angle extraction
@@ -214,7 +235,8 @@ openflight/
 │       ├── processor.py       # I/Q processing for spin
 │       ├── trigger.py         # Trigger strategies
 │       └── types.py           # Data types
-├── ui/                        # React frontend
+├── ui/                        # React kiosk frontend (+ scoreboard view)
+├── mobile/                    # Expo iOS/Android companion app
 ├── scripts/                   # Utility & setup scripts
 ├── docs/                      # Documentation
 └── pyproject.toml
@@ -228,7 +250,7 @@ Areas of interest:
 
 - **Better spin detection**: A dechirped Doppler-sideband estimator is in development (`scripts/analysis/replay_spin_dechirp.py`) — help validating it against launch-monitor truth data is especially welcome
 - **K-LD7 signal processing**: Improve ball detection from sparse radar frames
-- **Mobile app**: Bluetooth connection to phone
+- **Mobile app**: the Expo companion app in [`mobile/`](mobile/) is live (Wi-Fi + BLE, bag, stats) - see [mobile/README.md](mobile/README.md); help with iOS/Android polish and new screens is welcome
 
 ### Running Tests
 
@@ -246,6 +268,20 @@ uv run pytest tests/ -v
 - **[K-LD7 Ball Detection Theory](docs/kld7-ball-detection-theory.md)** — How angle detection works
 - **[K-LD7 Session Review](docs/kld7-session-review.md)** — Offline review workflow for session JSONL files
 - **[Observability & Log Shipping](docs/observability.md)** — Ship logs to Grafana Cloud
+- **[Server API](docs/server-api.md)** - REST endpoints and Socket.IO event catalog
+
+**Mobile app**
+
+- **[Mobile App Guide](docs/mobile-app-guide.md)** - Using the companion phone app
+- **[Mobile README](mobile/README.md)** - Build and run the Expo app
+- **[Mobile Architecture](docs/mobile-architecture.md)** - Providers, navigation, data layer
+- **[BLE Protocol](docs/mobile-ble-protocol.md)** - GATT service, pairing, HMAC auth
+- **[Mobile Database Schema](docs/bag-database-schema.md)** - SQLCipher schema and queries
+- **[Mobile Accessibility](docs/mobile-accessibility.md)** - Prefs and kiosk relay
+- **[Shot Visualization](docs/shot-visualization.md)** - Tracers and charts
+
+**Project**
+
 - **[Contributing Guide](CONTRIBUTING.md)** — How to contribute
 - **[Changelog](docs/CHANGELOG.md)** — Version history
 

@@ -179,6 +179,24 @@ React UI (WebSocket) ──► Flask Server ──► RollingBufferMonitor ─�
 - `kld7/radc.py` - FFT, CFAR detection, per-bin angle extraction from raw ADC
 - `server.py` - Flask server, shot processing, K-LD7 correlation, carry estimation
 - `session_logger.py` - JSONL logging for post-session analysis
+- `ble_server.py` - BLE GATT peripheral for the mobile app (HMAC-auth, shot/event notify)
+
+### Mobile App
+
+The Expo iOS/Android companion app lives in `mobile/` (separate from the kiosk UI in `ui/`). It
+connects over Wi-Fi (Socket.IO) or Bluetooth LE, mirrors live shots, stores an encrypted on-device
+SQLCipher history, and manages a club bag. Build/run with `npm` inside `mobile/` (see
+`mobile/README.md`); never use `uv` there. Architecture: `docs/mobile-architecture.md`. The
+BLE protocol (shared by `ble_server.py` and `mobile/src/hooks/useBLEConnection.ts`):
+`docs/mobile-ble-protocol.md`.
+
+### Server API
+
+`server.py` exposes REST (`/api/history`, `/api/history/<id>/shots`, `/api/pair-qr`,
+`/camera/stream`, `/api/shutdown`, `/remote`) and Socket.IO events (`shot`, `session_state`,
+`client_prefs` → `accessibility_prefs_update`, `toggle_camera`, `set_radar_config`, `remote_key`, …). Full catalog:
+`docs/server-api.md`. Carry now adds a club-specific roll factor for total distance
+(`_ROLL_PCT_BY_CLUB` in `launch_monitor.py`).
 
 ### Processing Mode
 

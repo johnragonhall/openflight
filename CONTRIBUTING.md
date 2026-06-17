@@ -77,7 +77,7 @@ uv run pylint src/openflight/
 make format
 ```
 
-### TypeScript/React
+### TypeScript/React (kiosk UI)
 
 ```bash
 cd ui
@@ -85,20 +85,37 @@ npm run lint      # ESLint
 npm run build     # Type check + build
 ```
 
-### Running Tests
+### Mobile app (Expo)
+
+The companion app lives in `mobile/` and uses `npm`, not `uv`. See
+[mobile/README.md](mobile/README.md) for the full workflow.
 
 ```bash
-# Run all tests
-make test
-
-# Run specific test file
-uv run pytest tests/test_launch_monitor.py -v
-
-# Run with coverage (if pytest-cov installed)
-uv run pytest tests/ --cov=src/openflight --cov-report=html
+cd mobile
+npm install
+npm run lint      # ESLint over src/
+npm test          # Jest (jest-expo)
+npm run android   # or npm run ios - build the dev client on a device
 ```
 
-**All tests must pass before submitting a PR.**
+### Running Tests
+
+The project has three independent test suites. Run the ones your change touches:
+
+```bash
+# Python backend
+make test
+uv run pytest tests/test_launch_monitor.py -v            # one file
+uv run pytest tests/ --cov=src/openflight --cov-report=html  # with coverage
+
+# Kiosk UI (React)
+cd ui && npm test
+
+# Mobile app (React Native / Expo)
+cd mobile && npm test
+```
+
+**All tests for the areas you changed must pass before submitting a PR.**
 
 ## Submitting Changes
 
@@ -152,7 +169,7 @@ Add ball detection indicator to UI header
 **Feature ideas:**
 - Launch angle detection improvements
 - Better carry distance models
-- Mobile app / Bluetooth support
+- Mobile app polish - new screens, iOS/Android parity (the Expo app in `mobile/` is live)
 - Integration with golf simulation software
 
 ## Project Structure
@@ -165,11 +182,17 @@ openflight/
 │   ├── server.py         # WebSocket server
 │   ├── kld7/             # K-LD7 angle radar
 │   └── rolling_buffer/   # Spin detection
-├── ui/                   # React frontend
+├── ui/                   # React kiosk frontend
 │   └── src/
 │       ├── components/   # UI components
 │       └── hooks/        # React hooks
-├── tests/                # Test suite
+├── mobile/               # Expo iOS/Android companion app
+│   └── src/
+│       ├── components/   # Charts, tracers, UI
+│       ├── db/           # SQLCipher data layer
+│       ├── hooks/        # BLE + Socket.IO connections
+│       └── screens/      # App screens
+├── tests/                # Python test suite
 ├── scripts/
 │   ├── start-kiosk.sh    # Main startup script
 │   ├── analysis/         # Post-session analysis & data capture
