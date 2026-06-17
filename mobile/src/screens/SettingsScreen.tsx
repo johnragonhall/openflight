@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
@@ -11,7 +11,10 @@ import { useConnection } from '../state/ConnectionContext';
 import { UNIT_COMBOS, LANGUAGES } from '../utils/units';
 import type { RootStackParamList } from '../types/navigation';
 import { PressableScale } from '../components/PressableScale';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
 import { OPENFLIGHT_SERVICE_UUID } from '../hooks/useBLEConnection';
 import {
   getCameraUrl, setCameraUrl as persistCameraUrl, DEFAULT_CAMERA_URL,
@@ -20,9 +23,15 @@ import {
 
 const APP_VERSION = '1.0.0';
 
+type Styles = ReturnType<typeof makeStyles>;
+
 export function SettingsScreen() {
   const { speedUnit, distanceUnit, temperatureUnit, language } = useUnitPreference();
   const { connected, connectionLabel } = useConnection();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cameraUrl, setCameraUrl] = useState(DEFAULT_CAMERA_URL);
   const [cameraEnabled, setCameraEnabled] = useState(DEFAULT_CAMERA_ENABLED);
@@ -52,53 +61,67 @@ export function SettingsScreen() {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <Text style={s.headerTitle}>Settings</Text>
+        <Text style={s.headerTitle}>{t('settingsTitle')}</Text>
       </View>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
 
-        <Section title="Connection">
+        <Section s={s} title="Connection">
           <NavRow
+            s={s}
+            C={C}
             label="Radar"
-            value={connected ? connectionLabel : 'Not Connected'}
+            value={connected ? connectionLabel : t('disconnected')}
             valueColor={connected ? C.ok : C.muted}
             onPress={() => navigation.navigate('Connection')}
           />
         </Section>
 
-        <Section title="App Settings">
+        <Section s={s} title="App Settings">
           <NavRow
+            s={s}
+            C={C}
             label="My Bag"
             value="Clubs & Stats"
             onPress={() => navigation.navigate('BagMain')}
             border
           />
           <NavRow
-            label="Units"
+            s={s}
+            C={C}
+            label={t('unitsLabel')}
             value={unitLabel}
             onPress={() => navigation.navigate('SettingsUnitsPicker')}
             border
           />
           <NavRow
+            s={s}
+            C={C}
             label="Temperature"
             value={tempLabel}
             onPress={() => navigation.navigate('SettingsTemperature')}
             border
           />
           <NavRow
-            label="Language"
+            s={s}
+            C={C}
+            label={t('langLabel')}
             value={langLabel}
             onPress={() => navigation.navigate('SettingsLanguage')}
             border
           />
           <NavRow
+            s={s}
+            C={C}
             label="Accessibility"
             value="Motion, contrast, text"
             onPress={() => navigation.navigate('SettingsAccessibility')}
           />
         </Section>
 
-        <Section title="Display">
+        <Section s={s} title="Display">
           <ToggleRow
+            s={s}
+            C={C}
             label="Camera Tab"
             sublabel="Show live feed in Range screen"
             value={cameraEnabled}
@@ -106,7 +129,7 @@ export function SettingsScreen() {
           />
           {cameraEnabled && (
             <View style={s.inputWrap}>
-              <Text style={s.inputLabel}>Camera Stream URL</Text>
+              <Text style={s.inputLabel}>{t('cameraStreamUrl')}</Text>
               <TextInput
                 style={s.urlInput}
                 value={cameraUrl}
@@ -121,9 +144,9 @@ export function SettingsScreen() {
           )}
         </Section>
 
-        <Section title="About">
-          <InfoRow label="App Version" value={APP_VERSION} />
-          <InfoRow label="BLE Service" value={OPENFLIGHT_SERVICE_UUID} mono />
+        <Section s={s} title="About">
+          <InfoRow s={s} label="App Version" value={APP_VERSION} />
+          <InfoRow s={s} label="BLE Service" value={OPENFLIGHT_SERVICE_UUID} mono />
         </Section>
 
         <Text style={s.footer}>OpenFlight · DIY Golf Launch Monitor</Text>
@@ -134,7 +157,7 @@ export function SettingsScreen() {
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, s }: { title: string; children: React.ReactNode; s: Styles }) {
   return (
     <View style={s.section}>
       <Text style={s.sectionTitle}>{title.toUpperCase()}</Text>
@@ -144,13 +167,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function NavRow({
-  label, value, valueColor, onPress, border,
+  label, value, valueColor, onPress, border, s, C,
 }: {
   label: string;
   value?: string;
   valueColor?: string;
   onPress: () => void;
   border?: boolean;
+  s: Styles;
+  C: Palette;
 }) {
   return (
     <PressableScale
@@ -174,12 +199,14 @@ function NavRow({
 }
 
 function ToggleRow({
-  label, sublabel, value, onToggle,
+  label, sublabel, value, onToggle, s, C,
 }: {
   label: string;
   sublabel?: string;
   value: boolean;
   onToggle: () => void;
+  s: Styles;
+  C: Palette;
 }) {
   return (
     <View style={s.toggleRow}>
@@ -200,7 +227,7 @@ function ToggleRow({
   );
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function InfoRow({ label, value, mono, s }: { label: string; value: string; mono?: boolean; s: Styles }) {
   return (
     <View style={s.infoRow}>
       <Text style={s.rowLabel}>{label}</Text>
@@ -211,7 +238,7 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
 
   header: {
@@ -222,7 +249,7 @@ const s = StyleSheet.create({
   },
   headerTitle: {
     color: C.text,
-    fontSize: 22,
+    fontSize: scale(22),
     fontWeight: '800',
     letterSpacing: -0.5,
   },
@@ -232,7 +259,7 @@ const s = StyleSheet.create({
   section: { marginBottom: 28 },
   sectionTitle: {
     color: C.muted,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     letterSpacing: 1.0,
     marginBottom: 8,
@@ -255,14 +282,14 @@ const s = StyleSheet.create({
     minHeight: 52,
   },
   navRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  navValue: { color: C.sub, fontSize: 15 },
+  navValue: { color: C.sub, fontSize: scale(15) },
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
   },
 
-  rowLabel: { color: C.text, fontSize: 16, fontWeight: '500' },
-  rowSublabel: { color: C.muted, fontSize: 12, marginTop: 2 },
+  rowLabel: { color: C.text, fontSize: scale(16), fontWeight: '500' },
+  rowSublabel: { color: C.muted, fontSize: scale(12), marginTop: 2 },
 
   toggleRow: {
     flexDirection: 'row',
@@ -282,7 +309,7 @@ const s = StyleSheet.create({
   },
   inputLabel: {
     color: C.sub,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     letterSpacing: 0.5,
     paddingHorizontal: 16,
@@ -290,7 +317,7 @@ const s = StyleSheet.create({
   },
   urlInput: {
     color: C.text,
-    fontSize: 14,
+    fontSize: scale(14),
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
@@ -305,13 +332,13 @@ const s = StyleSheet.create({
     borderBottomColor: C.line,
     minHeight: 52,
   },
-  infoValue: { color: C.muted, fontSize: 13, flex: 1, textAlign: 'right', paddingLeft: 16 },
-  mono: { fontFamily: 'monospace', fontSize: 11 },
+  infoValue: { color: C.muted, fontSize: scale(13), flex: 1, textAlign: 'right', paddingLeft: 16 },
+  mono: { fontFamily: 'monospace', fontSize: scale(11) },
 
   footer: {
     textAlign: 'center',
     color: C.muted,
-    fontSize: 12,
+    fontSize: scale(12),
     marginTop: 8,
   },
 });

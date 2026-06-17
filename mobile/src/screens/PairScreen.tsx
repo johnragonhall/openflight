@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { BLE_PAIRING_SECRET_KEY } from '../hooks/useBLEConnection';
+import { useT } from '../i18n/useT';
 import { C } from '../theme';
 
 // expo-camera CameraView provides built-in barcode scanning (Expo SDK 50+).
@@ -21,7 +22,7 @@ try {
   CameraView = cam.CameraView;
   useCameraPermissions = cam.useCameraPermissions;
 } catch {
-  // expo-camera not installed — show error state below
+  // expo-camera not installed - show error state below
 }
 
 // QR payload from the kiosk: { v: 1, s: "<64-char hex secret>", h: "<ip>", p: <port> }
@@ -51,16 +52,17 @@ interface PairScreenProps {
 }
 
 export function PairScreen({ navigation }: PairScreenProps) {
+  const t = useT();
   const scanned = useRef(false);
   const [status, setStatus] = useState<'scanning' | 'success' | 'error' | 'no-camera'>(
     () => CameraView ? 'scanning' : 'no-camera',
   );
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Camera permissions — only available when expo-camera is installed
-  const [permission, requestPermission] = useCameraPermissions
-    ? useCameraPermissions()
-    : [null, async () => {}];
+  // Camera permissions - use nullish coalescing so the call is unconditional
+  // (react-hooks/rules-of-hooks forbids conditional hook calls)
+  const cameraPermissionsHook = useCameraPermissions ?? (() => [null, async () => {}] as const);
+  const [permission, requestPermission] = cameraPermissionsHook();
 
   useEffect(() => {
     if (status !== 'success') return;
@@ -82,18 +84,18 @@ export function PairScreen({ navigation }: PairScreenProps) {
       try {
         const payload: unknown = JSON.parse(data);
         if (!isPairPayload(payload)) {
-          setErrorMsg('Invalid QR code — scan the pairing QR on your kiosk.');
+          setErrorMsg(t('pairBadQr'));
           setStatus('error');
           return;
         }
         await SecureStore.setItemAsync(BLE_PAIRING_SECRET_KEY, payload.s);
         setStatus('success');
       } catch {
-        setErrorMsg('Could not read QR code. Try again.');
+        setErrorMsg(t('pairReadError'));
         setStatus('error');
       }
     },
-    [navigation],
+    [t],
   );
 
   const retry = useCallback(() => {
@@ -105,8 +107,8 @@ export function PairScreen({ navigation }: PairScreenProps) {
   if (status === 'no-camera') {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.title}>Pairing unavailable</Text>
-        <Text style={styles.sub}>Install expo-camera to enable QR pairing.</Text>
+        <Text style={styles.title}>{t('pairUnavailable')}</Text>
+        <Text style={styles.sub}>{t('pairInstallCamera')}</Text>
       </SafeAreaView>
     );
   }
@@ -115,8 +117,8 @@ export function PairScreen({ navigation }: PairScreenProps) {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={styles.successIcon}>✓</Text>
-        <Text style={styles.title}>Paired!</Text>
-        <Text style={styles.sub}>Your phone is now paired with the kiosk.</Text>
+        <Text style={styles.title}>{t('pairSuccess')}</Text>
+        <Text style={styles.sub}>{t('pairSuccessSub')}</Text>
       </SafeAreaView>
     );
   }
@@ -124,10 +126,10 @@ export function PairScreen({ navigation }: PairScreenProps) {
   if (status === 'error') {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.title}>Pairing failed</Text>
+        <Text style={styles.title}>{t('pairFailed')}</Text>
         <Text style={styles.sub}>{errorMsg}</Text>
-        <TouchableOpacity style={styles.btn} onPress={retry} accessibilityLabel="Try pairing again">
-          <Text style={styles.btnText}>Try Again</Text>
+        <TouchableOpacity style={styles.btn} onPress={retry} accessibilityLabel={t('a11yTryPairAgain')}>
+          <Text style={styles.btnText}>{t('pairTryAgain')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -136,14 +138,14 @@ export function PairScreen({ navigation }: PairScreenProps) {
   if (!permission?.granted) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.title}>Camera access needed</Text>
-        <Text style={styles.sub}>Allow camera access to scan the pairing QR code.</Text>
+        <Text style={styles.title}>{t('pairCameraNeeded')}</Text>
+        <Text style={styles.sub}>{t('pairCameraNeededSub')}</Text>
         <TouchableOpacity
           style={styles.btn}
           onPress={requestPermission}
-          accessibilityLabel="Allow camera access for QR scanning"
+          accessibilityLabel={t('a11yAllowCamera')}
         >
-          <Text style={styles.btnText}>Allow Camera</Text>
+          <Text style={styles.btnText}>{t('pairAllowCamera')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -159,17 +161,15 @@ export function PairScreen({ navigation }: PairScreenProps) {
         />
       )}
       <View style={styles.overlay}>
-        <Text style={styles.overlayTitle}>Scan Kiosk QR Code</Text>
+        <Text style={styles.overlayTitle}>{t('pairScanTitle')}</Text>
         <View style={styles.reticle} accessibilityElementsHidden importantForAccessibility="no" />
-        <Text style={styles.overlayHint}>
-          On the kiosk go to Settings → Pair Mobile to display the QR code
-        </Text>
+        <Text style={styles.overlayHint}>{t('pairOverlayHint')}</Text>
         <TouchableOpacity
           style={styles.cancelBtn}
           onPress={() => navigation.goBack()}
-          accessibilityLabel="Cancel pairing"
+          accessibilityLabel={t('a11yCancelPairing')}
         >
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelText}>{t('pairCancel')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -185,7 +185,11 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: C.accent, borderRadius: 10, paddingVertical: 14, paddingHorizontal: 28, marginTop: 8 },
   btnText: { color: C.bg, fontWeight: '700', fontSize: 16 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 60,

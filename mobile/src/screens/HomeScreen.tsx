@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -20,7 +20,10 @@ import type { Shot } from '../types/shot';
 import type { RootStackParamList, MainTabParamList } from '../types/navigation';
 import { formatDistance, formatSpeed, getDistanceUnit, getSpeedUnit } from '../utils/units';
 import { exportSessionCSV } from '../utils/exportSession';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
 
 type NavProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Live'>,
@@ -30,7 +33,7 @@ type NavProp = CompositeNavigationProp<
 type TracerView = '2d' | '3d';
 
 // ── Pulsing connection dot ───────────────────────────────────────────────────
-function PulsingDot({ active }: { active: boolean }) {
+function PulsingDot({ active, C }: { active: boolean; C: Palette }) {
   const ringAnim = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
 
@@ -46,7 +49,7 @@ function PulsingDot({ active }: { active: boolean }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [active, reduceMotion]);
+  }, [active, reduceMotion, ringAnim]);
 
   const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.6] });
   const ringOpacity = ringAnim.interpolate({
@@ -60,7 +63,7 @@ function PulsingDot({ active }: { active: boolean }) {
         <Animated.View
           style={[
             pulseStyles.ring,
-            { transform: [{ scale: ringScale }], opacity: ringOpacity },
+            { borderColor: C.ok, transform: [{ scale: ringScale }], opacity: ringOpacity },
           ]}
         />
       )}
@@ -77,14 +80,16 @@ const pulseStyles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: C.ok,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
 });
 
 // ── Shot list row with entry animation ──────────────────────────────────────
 const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
-  const { unitSystem } = useUnitPreference();
+  const { speedUnit, distanceUnit } = useUnitPreference();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   const reduceMotion = useReduceMotion();
   const entryAnim = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
 
@@ -96,14 +101,16 @@ const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
       speed: 18,
       bounciness: 2,
     }).start();
-  }, [reduceMotion]);
+  }, [reduceMotion, entryAnim]);
 
   const translateY = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] });
 
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
+  const time = new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const rowLabel = `${shot.club.toUpperCase()}, ${formatSpeed(shot.ball_speed_mph, speedUnit, 0)} ${getSpeedUnit(speedUnit)} ball speed, ${formatDistance(carry, distanceUnit, 0)} ${getDistanceUnit(distanceUnit)} carry, ${time}`;
   return (
     <Animated.View style={{ opacity: entryAnim, transform: [{ translateY }] }}>
-      <View style={styles.shotRow}>
+      <View style={styles.shotRow} accessible accessibilityLabel={rowLabel}>
         <View style={styles.shotRowLeft}>
           <View style={styles.shotRowPillRow}>
             <View style={styles.shotRowClubPill}>
@@ -121,15 +128,15 @@ const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
         <View style={styles.shotRowMetrics}>
           <View style={styles.shotRowMetric}>
             <Text style={styles.shotRowValue}>
-              {formatSpeed(shot.ball_speed_mph, unitSystem, 0)}
+              {formatSpeed(shot.ball_speed_mph, speedUnit, 0)}
             </Text>
-            <Text style={styles.shotRowUnit}>{getSpeedUnit(unitSystem)}</Text>
+            <Text style={styles.shotRowUnit}>{getSpeedUnit(speedUnit)}</Text>
           </View>
           <View style={styles.shotRowMetric}>
             <Text style={styles.shotRowValue}>
-              {formatDistance(carry, unitSystem, 0)}
+              {formatDistance(carry, distanceUnit, 0)}
             </Text>
-            <Text style={styles.shotRowUnit}>{getDistanceUnit(unitSystem)}</Text>
+            <Text style={styles.shotRowUnit}>{getDistanceUnit(distanceUnit)}</Text>
           </View>
         </View>
       </View>
@@ -140,6 +147,10 @@ const ShotListRow = React.memo(function ShotListRow({ shot }: { shot: Shot }) {
 // ── Main screen ──────────────────────────────────────────────────────────────
 export function HomeScreen() {
   const nav = useNavigation<NavProp>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   const {
     connected, connectionLabel, mockMode, shots, latestShot,
     selectedClub, errorMessage, malformedCount,
@@ -214,7 +225,7 @@ export function HomeScreen() {
               <PressableScale
                 onPress={handleExport}
                 style={styles.toolbarBtn}
-                accessibilityLabel="Export session as CSV"
+                accessibilityLabel={t('a11yExportCsv')}
               >
                 <Text style={styles.toolbarBtnText}>CSV</Text>
               </PressableScale>
@@ -222,22 +233,22 @@ export function HomeScreen() {
             <PressableScale
               onPress={clearSession}
               style={styles.toolbarBtn}
-              accessibilityLabel="Clear session"
+              accessibilityLabel={t('clearSession')}
             >
-              <Text style={styles.toolbarBtnText}>Clear</Text>
+              <Text style={styles.toolbarBtnText}>{t('clearShort')}</Text>
             </PressableScale>
           </View>
         </View>
 
         <View style={styles.historyLabelRow}>
-          <Text style={styles.historyLabel}>Session</Text>
+          <Text style={styles.historyLabel}>{t('filterSession')}</Text>
           <View style={styles.historyCount}>
             <Text style={styles.historyCountText}>{shots.length}</Text>
           </View>
         </View>
       </>
     );
-  }, [latestShot, tracerView, shots, selectedClub, handleExport, clearSession]);
+  }, [latestShot, tracerView, shots, selectedClub, handleExport, clearSession, styles, t]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -272,7 +283,7 @@ export function HomeScreen() {
             }
             hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
           >
-            <PulsingDot active={connected} />
+            <PulsingDot active={connected} C={C} />
             <Text
               style={[
                 styles.statusText,
@@ -280,7 +291,7 @@ export function HomeScreen() {
               ]}
               accessibilityElementsHidden
             >
-              {connected ? connectionLabel : 'Connect'}
+              {connected ? connectionLabel : t('connectBtn')}
             </Text>
           </PressableScale>
         </View>
@@ -291,20 +302,20 @@ export function HomeScreen() {
       {/* States */}
       {!connected ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Not connected</Text>
+          <Text style={styles.emptyTitle}>{t('notConnected')}</Text>
           <Text style={styles.emptySubtitle}>
-            Link to your launch monitor to start tracking
+            {t('notConnectedSub')}
           </Text>
           <PressableScale
             style={styles.connectButton}
             onPress={() => nav.navigate('Connection')}
           >
-            <Text style={styles.connectButtonText}>Connect</Text>
+            <Text style={styles.connectButtonText}>{t('connectBtn')}</Text>
           </PressableScale>
         </View>
       ) : latestShot === null ? (
         <View style={styles.emptyState}>
-          <RadarPulse size={140} label="Waiting for shot" />
+          <RadarPulse size={140} label={t('readyTitle')} />
           <PressableScale
             onPress={() => setClubPickerVisible(true)}
             style={[styles.clubChip, styles.clubChipCentered]}
@@ -316,7 +327,7 @@ export function HomeScreen() {
       ) : (
         <FlatList<Shot>
           data={shots}
-          keyExtractor={(item) => item.id ?? item.timestamp}
+          keyExtractor={(item, index) => item.id ?? `${item.timestamp}-${index}`}
           ListHeaderComponent={ListHeader}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
@@ -333,7 +344,7 @@ export function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
 
   header: {
@@ -354,14 +365,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  mockBadgeText: { color: C.mockText, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  mockBadgeText: { color: C.mockText, fontSize: scale(10), fontWeight: '700', letterSpacing: 0.8 },
   warnBadge: {
     backgroundColor: C.warnDim,
     borderRadius: R.xs,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  warnBadgeText: { color: C.warn, fontSize: 10, fontWeight: '700' },
+  warnBadgeText: { color: C.warn, fontSize: scale(10), fontWeight: '700' },
 
   statusBadge: {
     flexDirection: 'row',
@@ -381,7 +392,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.accentMuted,
   },
-  statusText: { fontSize: 12, fontWeight: '700' },
+  statusText: { fontSize: scale(12), fontWeight: '700' },
   statusConnected: { color: C.ok },
   statusDisconnected: { color: C.accent },
 
@@ -400,7 +411,7 @@ const styles = StyleSheet.create({
   },
   tracerBtn: { paddingHorizontal: 10, paddingVertical: 5 },
   tracerBtnActive: { backgroundColor: C.accent },
-  tracerBtnText: { color: C.sub, fontSize: 11, fontWeight: '700' },
+  tracerBtnText: { color: C.sub, fontSize: scale(11), fontWeight: '700' },
   tracerBtnTextActive: { color: C.bg },
 
   emptyState: {
@@ -412,11 +423,11 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: C.text,
-    fontSize: 22,
+    fontSize: scale(22),
     fontWeight: '800',
     letterSpacing: -0.5,
   },
-  emptySubtitle: { color: C.sub, fontSize: 15, textAlign: 'center' },
+  emptySubtitle: { color: C.sub, fontSize: scale(15), textAlign: 'center' },
   connectButton: {
     marginTop: 8,
     backgroundColor: C.accent,
@@ -424,7 +435,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: R.lg,
   },
-  connectButtonText: { color: C.bg, fontWeight: '700', fontSize: 16 },
+  connectButtonText: { color: C.bg, fontWeight: '700', fontSize: scale(16) },
 
   toolbarRow: {
     flexDirection: 'row',
@@ -443,7 +454,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.lineMid,
   },
-  toolbarBtnText: { color: C.accent, fontWeight: '600', fontSize: 13 },
+  toolbarBtnText: { color: C.accent, fontWeight: '600', fontSize: scale(13) },
 
   clubChip: {
     flexDirection: 'row',
@@ -460,10 +471,10 @@ const styles = StyleSheet.create({
   clubChipText: {
     color: C.text,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: scale(13),
     textTransform: 'uppercase',
   },
-  clubChipCaret: { color: C.sub, fontSize: 11 },
+  clubChipCaret: { color: C.sub, fontSize: scale(11) },
 
   historyLabelRow: {
     flexDirection: 'row',
@@ -475,7 +486,7 @@ const styles = StyleSheet.create({
   },
   historyLabel: {
     color: C.sub,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -486,7 +497,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 1,
   },
-  historyCountText: { color: C.muted, fontSize: 10, fontWeight: '700' },
+  historyCountText: { color: C.muted, fontSize: scale(10), fontWeight: '700' },
 
   listContent: { paddingBottom: 40 },
 
@@ -512,15 +523,15 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     alignSelf: 'flex-start',
   },
-  shotRowClub: { color: C.text, fontWeight: '700', fontSize: 11, letterSpacing: 0.8 },
-  shotRowTime: { color: C.sub, fontSize: 11 },
+  shotRowClub: { color: C.text, fontWeight: '700', fontSize: scale(11), letterSpacing: 0.8 },
+  shotRowTime: { color: C.sub, fontSize: scale(11) },
   shotRowMetrics: { flexDirection: 'row', gap: 20 },
   shotRowMetric: { alignItems: 'flex-end' },
   shotRowValue: {
     color: C.text,
     fontWeight: '700',
-    fontSize: 18,
+    fontSize: scale(18),
     fontVariant: ['tabular-nums' as const],
   },
-  shotRowUnit: { color: C.sub, fontSize: 10 },
+  shotRowUnit: { color: C.sub, fontSize: scale(10) },
 });

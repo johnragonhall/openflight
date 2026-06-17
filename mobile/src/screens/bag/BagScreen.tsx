@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Animated, ScrollView, StyleSheet,
+  ActivityIndicator, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,32 +8,54 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
-import { getBagClubsWithStats, getSpareClubs } from '../../db/bagDatabase';
+import { getBagClubs, getBagClubsWithStats, getSpareClubs } from '../../db/bagDatabase';
 import type { ClubWithStats } from '../../types/bag';
+import { logger } from '../../utils/logger';
 import { getClubDisplayName, getTypeLabel } from '../../types/bag';
 import { ClubIcon } from '../../components/ClubIcon';
 import { PressableScale } from '../../components/PressableScale';
-import { C, R } from '../../theme';
+import { R } from '../../theme';
+import { useThemeColors, type Palette } from '../../state/useThemeColors';
+import { useFontScale } from '../../state/useFontScale';
+import { useT } from '../../i18n/useT';
+
+type Styles = ReturnType<typeof makeStyles>;
 
 export function BagScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
   const [clubs, setClubs] = useState<ClubWithStats[]>([]);
   const [spareCount, setSpareCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    // Load the club list resiliently: a failure in the lifetime-stats join must
+    // never blank the bag. Fall back to the raw club list (no stats) so a newly
+    // added club always shows.
     try {
-      const [withStats, spares] = await Promise.all([
-        getBagClubsWithStats(),
-        getSpareClubs(),
-      ]);
+      const withStats = await getBagClubsWithStats();
       setClubs(withStats);
-      setSpareCount(spares.length);
-    } catch {
-      /* no-op */
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      logger.error('Bag stats load failed; showing clubs without stats:', err);
+      try {
+        const bag = await getBagClubs();
+        setClubs(bag.map((c) => ({
+          ...c, avg_carry: null, avg_total: null, shot_count: 0, last_shot_at: null,
+        })));
+      } catch (err2) {
+        logger.error('Bag club list load failed:', err2);
+      }
     }
+    try {
+      const spares = await getSpareClubs();
+      setSpareCount(spares.length);
+    } catch (err) {
+      logger.error('Spare clubs load failed:', err);
+    }
+    setLoading(false);
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -44,14 +66,14 @@ export function BagScreen() {
         <TouchableOpacity
           onPress={() => navigation.navigate('BagAddClub')}
           style={s.addBtn}
-          accessibilityLabel="Add club"
+          accessibilityLabel={t('a11yAddClub')}
           accessibilityRole="button"
         >
           <Ionicons name="add" size={24} color={C.accent} />
         </TouchableOpacity>
       ),
     });
-  }, [navigation]);
+  }, [navigation, s, C, t]);
 
   if (loading) {
     return (
@@ -66,7 +88,7 @@ export function BagScreen() {
   if (clubs.length === 0) {
     return (
       <SafeAreaView style={s.container} edges={['bottom']}>
-        <EmptyState onAdd={() => navigation.navigate('BagAddClub')} />
+        <EmptyState onAdd={() => navigation.navigate('BagAddClub')} s={s} C={C} />
       </SafeAreaView>
     );
   }
@@ -79,13 +101,13 @@ export function BagScreen() {
 
         {/* Summary card */}
         <View style={s.summaryCard}>
-          <SummaryTile label="Clubs" value={String(clubs.length)} />
+          <SummaryTile label="Clubs" value={String(clubs.length)} s={s} />
           <View style={s.summaryDivider} />
-          <SummaryTile label="Total Shots" value={String(totalShots)} />
+          <SummaryTile label="Total Shots" value={String(totalShots)} s={s} />
           {spareCount > 0 && (
             <>
               <View style={s.summaryDivider} />
-              <SummaryTile label="Spare" value={String(spareCount)} muted />
+              <SummaryTile label="Spare" value={String(spareCount)} muted s={s} />
             </>
           )}
         </View>
@@ -101,6 +123,8 @@ export function BagScreen() {
                 index={index}
                 isLast={index === clubs.length - 1}
                 onPress={() => navigation.navigate('BagClubDetail', { clubId: club.id })}
+                s={s}
+                C={C}
               />
             ))}
           </View>
@@ -113,11 +137,11 @@ export function BagScreen() {
               style={s.spareRow}
               onPress={() => navigation.navigate('BagSpareClubs')}
               scale={0.985}
-              accessibilityLabel={`Spare clubs, ${spareCount} clubs`}
+              accessibilityLabel={`${t('spareClubsTitle')}, ${spareCount}`}
             >
               <View style={s.spareLeft}>
                 <Ionicons name="archive-outline" size={18} color={C.muted} style={s.spareIcon} />
-                <Text style={s.spareLabel}>Spare Clubs</Text>
+                <Text style={s.spareLabel}>{t('spareClubsTitle')}</Text>
               </View>
               <View style={s.spareRight}>
                 <Text style={s.spareCount}>{spareCount}</Text>
@@ -135,12 +159,14 @@ export function BagScreen() {
 // ── Club row with timeline ─────────────────────────────────────────────────────
 
 function ClubRow({
-  club, index, isLast, onPress,
+  club, index, isLast, onPress, s, C,
 }: {
   club: ClubWithStats;
   index: number;
   isLast: boolean;
   onPress: () => void;
+  s: Styles;
+  C: Palette;
 }) {
   const carry = club.avg_carry != null ? Math.round(club.avg_carry) : null;
   const display = getClubDisplayName(club);
@@ -186,7 +212,7 @@ function ClubRow({
                 <Text style={s.carryUnit}>yds</Text>
               </>
             ) : (
-              <Text style={s.noData}>—</Text>
+              <Text style={s.noData}>-</Text>
             )}
             <Ionicons name="chevron-forward" size={14} color={C.muted} style={s.chevron} />
           </View>
@@ -198,7 +224,7 @@ function ClubRow({
 
 // ── Summary tile ──────────────────────────────────────────────────────────────
 
-function SummaryTile({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function SummaryTile({ label, value, muted, s }: { label: string; value: string; muted?: boolean; s: Styles }) {
   return (
     <View style={s.summaryTile}>
       <Text style={[s.summaryValue, muted && s.summaryValueMuted]}>{value}</Text>
@@ -209,25 +235,26 @@ function SummaryTile({ label, value, muted }: { label: string; value: string; mu
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({ onAdd, s, C }: { onAdd: () => void; s: Styles; C: Palette }) {
+  const t = useT();
   return (
     <View style={s.emptyWrap}>
       <View style={s.emptyIcon}>
         <ClubIcon category="driver" size={52} color={C.accentMuted} />
       </View>
-      <Text style={s.emptyTitle}>Your bag is empty</Text>
+      <Text style={s.emptyTitle}>{t('bagEmptyTitle')}</Text>
       <Text style={s.emptySub}>
-        Add your clubs to track carry distance and consistency for each stick.
+        {t('bagEmptySub')}
       </Text>
       <TouchableOpacity
         style={s.emptyBtn}
         onPress={onAdd}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel="Add your first club to the bag"
+        accessibilityLabel={t('a11yAddFirstClub')}
       >
         <Ionicons name="add" size={18} color={C.bg} />
-        <Text style={s.emptyBtnText}>Add First Club</Text>
+        <Text style={s.emptyBtnText}>{t('bagAddFirst')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -239,7 +266,7 @@ const ROW_HEIGHT = 72;
 const DOT_SIZE = 10;
 const TIMELINE_LEFT = 16;
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 48, gap: 24 },
@@ -257,9 +284,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
   },
   summaryTile: { flex: 1, alignItems: 'center', gap: 2 },
-  summaryValue: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  summaryValue: { color: C.text, fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5 },
   summaryValueMuted: { color: C.sub },
-  summaryLabel: { color: C.muted, fontSize: 10, fontWeight: '600', letterSpacing: 0.6 },
+  summaryLabel: { color: C.muted, fontSize: scale(10), fontWeight: '600', letterSpacing: 0.6 },
   summaryDivider: {
     width: StyleSheet.hairlineWidth,
     backgroundColor: C.line,
@@ -270,7 +297,7 @@ const s = StyleSheet.create({
   listSection: { gap: 10 },
   sectionLabel: {
     color: C.muted,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     letterSpacing: 1.0,
     marginLeft: TIMELINE_LEFT + DOT_SIZE + 8,
@@ -325,7 +352,7 @@ const s = StyleSheet.create({
   rowLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   abbrevBadge: {
     color: C.accent,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '800',
     backgroundColor: C.accentDim,
     paddingHorizontal: 7,
@@ -336,13 +363,13 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   rowLabels: { flex: 1, gap: 1 },
-  clubName: { color: C.text, fontSize: 15, fontWeight: '600' },
-  clubBrand: { color: C.sub, fontSize: 12 },
-  shotCount: { color: C.muted, fontSize: 11 },
+  clubName: { color: C.text, fontSize: scale(15), fontWeight: '600' },
+  clubBrand: { color: C.sub, fontSize: scale(12) },
+  shotCount: { color: C.muted, fontSize: scale(11) },
   rowRight: { alignItems: 'flex-end', gap: 1 },
-  carryValue: { color: C.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
-  carryUnit: { color: C.muted, fontSize: 10 },
-  noData: { color: C.muted, fontSize: 18 },
+  carryValue: { color: C.text, fontSize: scale(18), fontWeight: '800', letterSpacing: -0.5 },
+  carryUnit: { color: C.muted, fontSize: scale(10) },
+  noData: { color: C.muted, fontSize: scale(18) },
   chevron: { marginTop: 2 },
 
   // Spare section
@@ -363,11 +390,11 @@ const s = StyleSheet.create({
   },
   spareLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   spareIcon: { opacity: 0.7 },
-  spareLabel: { color: C.text, fontSize: 16, fontWeight: '500' },
+  spareLabel: { color: C.text, fontSize: scale(16), fontWeight: '500' },
   spareRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   spareCount: {
     color: C.muted,
-    fontSize: 14,
+    fontSize: scale(14),
     backgroundColor: C.s2,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -392,10 +419,10 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
   },
-  emptyTitle: { color: C.text, fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  emptyTitle: { color: C.text, fontSize: scale(20), fontWeight: '800', textAlign: 'center' },
   emptySub: {
     color: C.sub,
-    fontSize: 14,
+    fontSize: scale(14),
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -409,5 +436,5 @@ const s = StyleSheet.create({
     borderRadius: R.lg,
     marginTop: 8,
   },
-  emptyBtnText: { color: C.bg, fontSize: 15, fontWeight: '700' },
+  emptyBtnText: { color: C.bg, fontSize: scale(15), fontWeight: '700' },
 });

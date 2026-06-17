@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
@@ -12,10 +12,19 @@ import type { ClubWithStats } from '../../types/bag';
 import { getClubDisplayName, getTypeLabel } from '../../types/bag';
 import { ClubIcon } from '../../components/ClubIcon';
 import { PressableScale } from '../../components/PressableScale';
-import { C, R } from '../../theme';
+import { R } from '../../theme';
+import { useThemeColors, type Palette } from '../../state/useThemeColors';
+import { useFontScale } from '../../state/useFontScale';
+import { useT } from '../../i18n/useT';
+
+type Styles = ReturnType<typeof makeStyles>;
 
 export function SpareClubsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
   const [clubs, setClubs] = useState<ClubWithStats[]>([]);
 
   const load = useCallback(async () => {
@@ -32,12 +41,12 @@ export function SpareClubsScreen() {
 
   const handleDelete = (club: ClubWithStats) => {
     Alert.alert(
-      'Delete Club?',
-      `Permanently delete ${getClubDisplayName(club)}?`,
+      t('alertDeleteClubTitle'),
+      t('alertSpareDeleteBody', { club: getClubDisplayName(club) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('alertDeleteConfirm'),
           style: 'destructive',
           onPress: async () => {
             await deleteClub(club.id);
@@ -53,9 +62,9 @@ export function SpareClubsScreen() {
       {clubs.length === 0 ? (
         <View style={s.empty}>
           <Ionicons name="archive-outline" size={48} color={C.s3} />
-          <Text style={s.emptyTitle}>No spare clubs</Text>
+          <Text style={s.emptyTitle}>{t('noSpareClubs')}</Text>
           <Text style={s.emptySub}>
-            Clubs you remove from your active bag will appear here.
+            {t('noSpareClubsSub')}
           </Text>
         </View>
       ) : (
@@ -72,6 +81,8 @@ export function SpareClubsScreen() {
                 onView={() => navigation.navigate('BagClubDetail', { clubId: club.id })}
                 onAddToBag={() => handleAddToBag(club)}
                 onDelete={() => handleDelete(club)}
+                s={s}
+                C={C}
               />
             ))}
           </View>
@@ -82,13 +93,15 @@ export function SpareClubsScreen() {
 }
 
 function SpareRow({
-  club, isLast, onView, onAddToBag, onDelete,
+  club, isLast, onView, onAddToBag, onDelete, s, C,
 }: {
   club: ClubWithStats;
   isLast: boolean;
   onView: () => void;
   onAddToBag: () => void;
   onDelete: () => void;
+  s: Styles;
+  C: Palette;
 }) {
   const abbrev = getTypeLabel(club.category, club.type_key);
   const display = getClubDisplayName(club);
@@ -143,7 +156,7 @@ function SpareRow({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 48, gap: 16 },
 
@@ -154,10 +167,10 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 40,
   },
-  emptyTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
-  emptySub: { color: C.sub, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { color: C.text, fontSize: scale(18), fontWeight: '700' },
+  emptySub: { color: C.sub, fontSize: scale(13), textAlign: 'center', lineHeight: 18 },
 
-  intro: { color: C.muted, fontSize: 12, lineHeight: 17 },
+  intro: { color: C.muted, fontSize: scale(12), lineHeight: 17 },
 
   list: {
     backgroundColor: C.s1,
@@ -193,7 +206,7 @@ const s = StyleSheet.create({
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   abbrev: {
     color: C.sub,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '800',
     backgroundColor: C.s2,
     paddingHorizontal: 6,
@@ -201,9 +214,9 @@ const s = StyleSheet.create({
     borderRadius: R.xs,
     overflow: 'hidden',
   },
-  carry: { color: C.muted, fontSize: 11 },
-  name: { color: C.text, fontSize: 14, fontWeight: '600' },
-  count: { color: C.muted, fontSize: 11 },
+  carry: { color: C.muted, fontSize: scale(11) },
+  name: { color: C.text, fontSize: scale(14), fontWeight: '600' },
+  count: { color: C.muted, fontSize: scale(11) },
 
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   addBtn: { padding: 2 },

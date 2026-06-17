@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,9 +6,14 @@ import { useUnitPreference } from '../../state/useUnitPreference';
 import { UNIT_COMBOS } from '../../utils/units';
 import type { SpeedUnit, DistanceUnit } from '../../utils/units';
 import { PressableScale } from '../../components/PressableScale';
-import { C, R } from '../../theme';
+import { R } from '../../theme';
+import { useThemeColors, type Palette } from '../../state/useThemeColors';
+import { useFontScale } from '../../state/useFontScale';
 
 export function UnitsPickerScreen() {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
   const { speedUnit, distanceUnit, setSpeedUnit, setDistanceUnit } = useUnitPreference();
 
   const select = (speed: SpeedUnit, distance: DistanceUnit) => {
@@ -46,7 +51,7 @@ export function UnitsPickerScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 },
   group: {
@@ -66,6 +71,6 @@ const s = StyleSheet.create({
   },
   rowSelected: { backgroundColor: C.accentSurface },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.line },
-  label: { color: C.sub, fontSize: 16 },
+  label: { color: C.sub, fontSize: scale(16) },
   labelSelected: { color: C.text, fontWeight: '600' },
 });

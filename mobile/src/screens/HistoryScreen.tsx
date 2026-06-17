@@ -1,14 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator, FlatList, StyleSheet, Text, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getSessions, type SessionRow } from '../db/database';
 import type { RootStackParamList } from '../types/navigation';
 import { PressableScale } from '../components/PressableScale';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
+import { logger } from '../utils/logger';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,24 +28,30 @@ function formatTime(iso: string): string {
 function duration(row: SessionRow): string {
   if (!row.ended_at) return 'active';
   const ms = new Date(row.ended_at).getTime() - new Date(row.started_at).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return '—';
+  if (!Number.isFinite(ms) || ms < 0) return '-';
   const min = Math.round(ms / 60000);
   return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
 export function HistoryScreen() {
   const nav = useNavigation<NavProp>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
     getSessions()
       .then(setSessions)
-      .catch(() => {})
+      .catch((err) => logger.error('Failed to load sessions:', err))
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Reload whenever the tab regains focus so newly recorded sessions and
+  // updated shot counts appear without an app restart.
+  useFocusEffect(load);
 
   if (loading) {
     return (
@@ -55,11 +65,11 @@ export function HistoryScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>History</Text>
+          <Text style={styles.headerTitle}>{t('tabHistory')}</Text>
         </View>
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No sessions yet</Text>
-          <Text style={styles.emptySub}>Hit some balls to start tracking history</Text>
+          <Text style={styles.emptyTitle}>{t('historyEmpty')}</Text>
+          <Text style={styles.emptySub}>{t('historyEmptySub')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -68,7 +78,7 @@ export function HistoryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>History</Text>
+        <Text style={styles.headerTitle}>{t('tabHistory')}</Text>
         <View style={styles.headerCountPill}>
           <Text style={styles.headerCountText}>{sessions.length}</Text>
         </View>
@@ -85,6 +95,8 @@ export function HistoryScreen() {
               label: `${formatDate(item.started_at)} ${formatTime(item.started_at)}`,
             })}
             scale={0.985}
+            accessibilityRole="button"
+            accessibilityLabel={`${formatDate(item.started_at)} ${formatTime(item.started_at)}, ${duration(item)}, ${item.connection_type.toUpperCase()}, ${item.shot_count} ${t('shotCount')}`}
           >
             <View style={styles.rowMain}>
               <Text style={styles.rowDate}>{formatDate(item.started_at)}</Text>
@@ -100,7 +112,7 @@ export function HistoryScreen() {
             </View>
             <View style={styles.rowRight}>
               <Text style={styles.rowShots}>{item.shot_count}</Text>
-              <Text style={styles.rowShotsLabel}>shots</Text>
+              <Text style={styles.rowShotsLabel}>{t('shotCount')}</Text>
             </View>
           </PressableScale>
         )}
@@ -109,7 +121,7 @@ export function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
 
   header: {
@@ -121,20 +133,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.line,
   },
-  headerTitle: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  headerTitle: { color: C.text, fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5 },
   headerCountPill: {
     backgroundColor: C.s3,
     borderRadius: R.pill,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
-  headerCountText: { color: C.sub, fontSize: 12, fontWeight: '600' },
+  headerCountText: { color: C.sub, fontSize: scale(12), fontWeight: '600' },
 
   list: { padding: 12, gap: 6, paddingBottom: 40 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
-  emptySub: { color: C.sub, fontSize: 14, textAlign: 'center', marginTop: 6 },
+  emptyTitle: { color: C.text, fontSize: scale(18), fontWeight: '700' },
+  emptySub: { color: C.sub, fontSize: scale(14), textAlign: 'center', marginTop: 6 },
 
   row: {
     flexDirection: 'row',
@@ -148,9 +160,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   rowMain: { gap: 6 },
-  rowDate: { color: C.text, fontWeight: '600', fontSize: 15 },
+  rowDate: { color: C.text, fontWeight: '600', fontSize: scale(15) },
   rowMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rowTime: { color: C.sub, fontSize: 12 },
+  rowTime: { color: C.sub, fontSize: scale(12) },
   dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: C.muted },
   connPill: {
     backgroundColor: C.s3,
@@ -158,14 +170,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  connPillText: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  connPillText: { color: C.muted, fontSize: scale(9), fontWeight: '700', letterSpacing: 0.5 },
   rowRight: { alignItems: 'flex-end' },
   rowShots: {
     color: C.accent,
-    fontSize: 24,
+    fontSize: scale(24),
     fontWeight: '700',
     fontVariant: ['tabular-nums' as const],
     lineHeight: 28,
   },
-  rowShotsLabel: { color: C.sub, fontSize: 10 },
+  rowShotsLabel: { color: C.sub, fontSize: scale(10) },
 });

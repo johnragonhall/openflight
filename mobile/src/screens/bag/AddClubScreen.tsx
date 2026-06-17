@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -12,10 +12,17 @@ import type { ClubCategory, ClubTypeOption } from '../../types/bag';
 import { createClub } from '../../db/bagDatabase';
 import { ClubIcon } from '../../components/ClubIcon';
 import { PressableScale } from '../../components/PressableScale';
-import { C, R } from '../../theme';
+import { R } from '../../theme';
+import { useThemeColors, type Palette } from '../../state/useThemeColors';
+import { useFontScale } from '../../state/useFontScale';
+import { useT } from '../../i18n/useT';
 
 export function AddClubScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
 
   const [selectedCategory, setSelectedCategory] = useState<ClubCategory>('driver');
   const [selectedType, setSelectedType] = useState<ClubTypeOption>(CLUB_CATEGORIES[0].types[0]);
@@ -46,8 +53,8 @@ export function AddClubScreen() {
         bag_position: 0,
       });
       navigation.goBack();
-    } catch (e) {
-      Alert.alert('Error', 'Could not save club. Please try again.');
+    } catch {
+      Alert.alert(t('clubErrorTitle'), t('clubSaveError'));
       setSaving(false);
     }
   };
@@ -66,7 +73,7 @@ export function AddClubScreen() {
 
           {/* Category carousel */}
           <View style={s.section}>
-            <Text style={s.sectionLabel}>CLUB TYPE</Text>
+            <Text style={s.sectionLabel}>{t('clubTypeLabel')}</Text>
             <ScrollView
               ref={carouselRef}
               horizontal
@@ -101,10 +108,10 @@ export function AddClubScreen() {
             </ScrollView>
           </View>
 
-          {/* Sub-type chips — only show when category has multiple options */}
+          {/* Sub-type chips - only show when category has multiple options */}
           {catDef.types.length > 1 && (
             <View style={s.section}>
-              <Text style={s.sectionLabel}>CLUB</Text>
+              <Text style={s.sectionLabel}>{t('clubPickLabel')}</Text>
               <View style={s.chipGrid}>
                 {catDef.types.map((type) => {
                   const active = type.key === selectedType.key;
@@ -130,15 +137,15 @@ export function AddClubScreen() {
 
           {/* Brand + Name inputs */}
           <View style={s.section}>
-            <Text style={s.sectionLabel}>DETAILS</Text>
+            <Text style={s.sectionLabel}>{t('clubDetailsLabel')}</Text>
             <View style={s.inputGroup}>
               <View style={s.inputRow}>
-                <Text style={s.inputLabel}>Brand</Text>
+                <Text style={s.inputLabel}>{t('clubBrand')}</Text>
                 <TextInput
                   style={s.input}
                   value={brand}
                   onChangeText={setBrand}
-                  placeholder="e.g. TaylorMade, Callaway, Ping…"
+                  placeholder={t('clubBrandPh')}
                   placeholderTextColor={C.muted}
                   autoCapitalize="words"
                   autoCorrect={false}
@@ -147,12 +154,12 @@ export function AddClubScreen() {
                 />
               </View>
               <View style={[s.inputRow, s.inputRowBorder]}>
-                <Text style={s.inputLabel}>Name</Text>
+                <Text style={s.inputLabel}>{t('clubNameLabel')}</Text>
                 <TextInput
                   style={s.input}
                   value={name}
                   onChangeText={setName}
-                  placeholder="Optional — e.g. Qi10 LS, Stealth 2"
+                  placeholder={t('clubNamePh')}
                   placeholderTextColor={C.muted}
                   autoCapitalize="words"
                   autoCorrect={false}
@@ -166,7 +173,7 @@ export function AddClubScreen() {
 
           {/* Preview */}
           <View style={s.preview}>
-            <Text style={s.previewLabel}>Preview</Text>
+            <Text style={s.previewLabel}>{t('clubPreview')}</Text>
             <View style={s.previewRow}>
               <View style={s.previewIcon}>
                 <ClubIcon category={selectedCategory} size={28} color={C.accent} />
@@ -175,7 +182,7 @@ export function AddClubScreen() {
                 <Text style={s.previewAbbrev}>{selectedType.label}</Text>
                 <Text style={s.previewName}>{previewName}</Text>
               </View>
-              <Text style={s.previewCarry}>— yds</Text>
+              <Text style={s.previewCarry}>- yds</Text>
             </View>
           </View>
 
@@ -193,7 +200,7 @@ export function AddClubScreen() {
             accessibilityState={{ disabled: saving, busy: saving }}
           >
             <Text style={s.saveBtnText}>
-              {saving ? 'Adding…' : 'Add to Bag'}
+              {saving ? t('clubAdding') : t('clubAddToBag')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -204,7 +211,7 @@ export function AddClubScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   flex: { flex: 1 },
   scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 24, gap: 28 },
@@ -212,7 +219,7 @@ const s = StyleSheet.create({
   section: { gap: 10 },
   sectionLabel: {
     color: C.muted,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     letterSpacing: 1.0,
     marginLeft: 4,
@@ -244,7 +251,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   catIconWrapActive: { backgroundColor: C.accentDim },
-  catLabel: { color: C.sub, fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  catLabel: { color: C.sub, fontSize: scale(11), fontWeight: '600', textAlign: 'center' },
   catLabelActive: { color: C.accent },
 
   // Sub-type chips
@@ -261,7 +268,7 @@ const s = StyleSheet.create({
     backgroundColor: C.accentSurface,
     borderColor: C.accent,
   },
-  chipText: { color: C.sub, fontSize: 14, fontWeight: '600' },
+  chipText: { color: C.sub, fontSize: scale(14), fontWeight: '600' },
   chipTextActive: { color: C.accent },
 
   // Inputs
@@ -286,14 +293,14 @@ const s = StyleSheet.create({
   },
   inputLabel: {
     color: C.muted,
-    fontSize: 14,
+    fontSize: scale(14),
     fontWeight: '600',
     width: 46,
   },
   input: {
     flex: 1,
     color: C.text,
-    fontSize: 15,
+    fontSize: scale(15),
   },
 
   // Preview
@@ -305,7 +312,7 @@ const s = StyleSheet.create({
     borderColor: C.line,
     padding: 14,
   },
-  previewLabel: { color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  previewLabel: { color: C.muted, fontSize: scale(10), fontWeight: '700', letterSpacing: 0.8 },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   previewIcon: {
     width: 40,
@@ -318,11 +325,11 @@ const s = StyleSheet.create({
   previewInfo: { flex: 1, gap: 2 },
   previewAbbrev: {
     color: C.accent,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '800',
   },
-  previewName: { color: C.text, fontSize: 15, fontWeight: '600' },
-  previewCarry: { color: C.muted, fontSize: 13 },
+  previewName: { color: C.text, fontSize: scale(15), fontWeight: '600' },
+  previewCarry: { color: C.muted, fontSize: scale(13) },
 
   // Footer
   footer: {
@@ -339,5 +346,5 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   saveBtnDisabled: { opacity: 0.5 },
-  saveBtnText: { color: C.bg, fontSize: 16, fontWeight: '800' },
+  saveBtnText: { color: C.bg, fontSize: scale(16), fontWeight: '800' },
 });

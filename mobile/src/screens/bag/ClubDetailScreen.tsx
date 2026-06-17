@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   Alert, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
@@ -16,13 +16,21 @@ import type { ShotHistoryRow } from '../../db/bagDatabase';
 import type { Club } from '../../types/bag';
 import { getClubDisplayName, getTypeLabel } from '../../types/bag';
 import { ClubIcon } from '../../components/ClubIcon';
-import { PressableScale } from '../../components/PressableScale';
-import { C, R } from '../../theme';
+import { R } from '../../theme';
+import { useThemeColors, type Palette } from '../../state/useThemeColors';
+import { useFontScale } from '../../state/useFontScale';
+import { useT } from '../../i18n/useT';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'BagClubDetail'>;
+type SubStyles = ReturnType<typeof makeSs>;
 
 export function ClubDetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const s = useMemo(() => makeStyles(C, scale), [C, scale]);
+  const ss = useMemo(() => makeSs(C, scale), [C, scale]);
   const { params } = useRoute<Props['route']>();
   const { clubId } = params;
 
@@ -50,12 +58,12 @@ export function ClubDetailScreen() {
 
   const handleMoveToSpare = () => {
     Alert.alert(
-      'Move to Spare?',
-      `${getClubDisplayName(club!)} will be removed from your active bag but kept in Spare Clubs.`,
+      t('alertMoveSpareTitle'),
+      t('alertMoveSpareBody', { club: getClubDisplayName(club!) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Move to Spare',
+          text: t('alertMoveSpareConfirm'),
           onPress: async () => {
             await moveClubToSpare(clubId);
             navigation.goBack();
@@ -67,12 +75,12 @@ export function ClubDetailScreen() {
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete Club?',
-      `This will permanently delete ${getClubDisplayName(club!)} from your bag.`,
+      t('alertDeleteClubTitle'),
+      t('alertDeleteClubBody', { club: getClubDisplayName(club!) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('alertDeleteConfirm'),
           style: 'destructive',
           onPress: async () => {
             await deleteClub(clubId);
@@ -84,10 +92,10 @@ export function ClubDetailScreen() {
   };
 
   const handleDeleteShot = (shotId: string) => {
-    Alert.alert('Delete Shot?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('alertDeleteShotTitle'), t('alertDeleteShotBody'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('alertDeleteConfirm'),
         style: 'destructive',
         onPress: async () => {
           await deleteShot(shotId);
@@ -138,11 +146,11 @@ export function ClubDetailScreen() {
 
         {/* Stats row */}
         <View style={s.statsRow}>
-          <StatTile label="AVG CARRY" value={avgCarry != null ? `${avgCarry}` : '—'} unit="yds" large />
-          <StatTile label="BEST" value={maxCarry != null ? `${maxCarry}` : '—'} unit="yds" />
-          <StatTile label="FLOOR" value={minCarry != null ? `${minCarry}` : '—'} unit="yds" />
+          <StatTile label="AVG CARRY" value={avgCarry != null ? `${avgCarry}` : '-'} unit="yds" large ss={ss} C={C} />
+          <StatTile label="BEST" value={maxCarry != null ? `${maxCarry}` : '-'} unit="yds" ss={ss} C={C} />
+          <StatTile label="FLOOR" value={minCarry != null ? `${minCarry}` : '-'} unit="yds" ss={ss} C={C} />
           {consistency != null && (
-            <StatTile label="CONSIST." value={`${consistency}%`} accent />
+            <StatTile label="CONSIST." value={`${consistency}%`} accent ss={ss} C={C} />
           )}
         </View>
 
@@ -157,6 +165,8 @@ export function ClubDetailScreen() {
                   shot={shot}
                   isLast={i === shots.length - 1}
                   onDelete={() => handleDeleteShot(shot.id)}
+                  ss={ss}
+                  C={C}
                 />
               ))}
             </View>
@@ -177,10 +187,10 @@ export function ClubDetailScreen() {
             onPress={handleMoveToSpare}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Move to spare clubs"
+            accessibilityLabel={t('a11yMoveToSpare')}
           >
             <Ionicons name="archive-outline" size={16} color={C.sub} />
-            <Text style={s.spareBtnText}>Move to Spare Clubs</Text>
+            <Text style={s.spareBtnText}>{t('moveToSpareClubs')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={s.deleteBtn}
@@ -190,7 +200,7 @@ export function ClubDetailScreen() {
             accessibilityLabel={`Delete ${club ? getClubDisplayName(club) : 'club'}`}
           >
             <Ionicons name="trash-outline" size={16} color={C.errText} />
-            <Text style={s.deleteBtnText}>Delete Club</Text>
+            <Text style={s.deleteBtnText}>{t('deleteClubBtn')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -202,9 +212,9 @@ export function ClubDetailScreen() {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function StatTile({
-  label, value, unit, large, accent,
+  label, value, unit, large, accent, ss, C,
 }: {
-  label: string; value: string; unit?: string; large?: boolean; accent?: boolean;
+  label: string; value: string; unit?: string; large?: boolean; accent?: boolean; ss: SubStyles; C: Palette;
 }) {
   return (
     <View style={ss.tile}>
@@ -220,11 +230,13 @@ function StatTile({
 }
 
 function ShotRow({
-  shot, isLast, onDelete,
+  shot, isLast, onDelete, ss, C,
 }: {
   shot: ShotHistoryRow;
   isLast: boolean;
   onDelete: () => void;
+  ss: SubStyles;
+  C: Palette;
 }) {
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
   const date = new Date(shot.recorded_at);
@@ -260,7 +272,7 @@ function ShotRow({
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scroll: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 48, gap: 20 },
 
@@ -286,7 +298,7 @@ const s = StyleSheet.create({
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   heroAbbrev: {
     color: C.accent,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '800',
     backgroundColor: C.accentDim,
     paddingHorizontal: 7,
@@ -294,9 +306,9 @@ const s = StyleSheet.create({
     borderRadius: R.xs,
     overflow: 'hidden',
   },
-  heroBrand: { color: C.muted, fontSize: 12 },
-  heroName: { color: C.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  heroShotCount: { color: C.sub, fontSize: 12 },
+  heroBrand: { color: C.muted, fontSize: scale(12) },
+  heroName: { color: C.text, fontSize: scale(20), fontWeight: '800', letterSpacing: -0.5 },
+  heroShotCount: { color: C.sub, fontSize: scale(12) },
 
   statsRow: {
     flexDirection: 'row',
@@ -304,7 +316,7 @@ const s = StyleSheet.create({
   },
 
   historySection: { gap: 10 },
-  sectionLabel: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1.0, marginLeft: 4 },
+  sectionLabel: { color: C.muted, fontSize: scale(11), fontWeight: '700', letterSpacing: 1.0, marginLeft: 4 },
   historyList: {
     backgroundColor: C.s1,
     borderRadius: R.md,
@@ -322,8 +334,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  noShotsText: { color: C.sub, fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  noShotsSub: { color: C.muted, fontSize: 12, textAlign: 'center', lineHeight: 17 },
+  noShotsText: { color: C.sub, fontSize: scale(14), fontWeight: '600', textAlign: 'center' },
+  noShotsSub: { color: C.muted, fontSize: scale(12), textAlign: 'center', lineHeight: 17 },
 
   actions: { gap: 10 },
   spareBtn: {
@@ -337,7 +349,7 @@ const s = StyleSheet.create({
     borderColor: C.line,
     paddingVertical: 14,
   },
-  spareBtnText: { color: C.sub, fontSize: 15, fontWeight: '600' },
+  spareBtnText: { color: C.sub, fontSize: scale(15), fontWeight: '600' },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,10 +361,10 @@ const s = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.3)',
     paddingVertical: 14,
   },
-  deleteBtnText: { color: C.errText, fontSize: 15, fontWeight: '600' },
+  deleteBtnText: { color: C.errText, fontSize: scale(15), fontWeight: '600' },
 });
 
-const ss = StyleSheet.create({
+const makeSs = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   tile: {
     flex: 1,
     backgroundColor: C.s1,
@@ -362,11 +374,11 @@ const ss = StyleSheet.create({
     padding: 12,
     gap: 4,
   },
-  tileLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+  tileLabel: { color: C.muted, fontSize: scale(9), fontWeight: '700', letterSpacing: 0.8 },
   tileValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
-  tileValue: { color: C.sub, fontSize: 16, fontWeight: '700' },
-  tileValueLg: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  tileUnit: { color: C.muted, fontSize: 10 },
+  tileValue: { color: C.sub, fontSize: scale(16), fontWeight: '700' },
+  tileValueLg: { color: C.text, fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5 },
+  tileUnit: { color: C.muted, fontSize: scale(10) },
 
   shotRow: {
     flexDirection: 'row',
@@ -380,12 +392,12 @@ const ss = StyleSheet.create({
     borderBottomColor: C.line,
   },
   shotLeft: { width: 68, gap: 2 },
-  shotDate: { color: C.sub, fontSize: 12, fontWeight: '500' },
-  shotTime: { color: C.muted, fontSize: 10 },
+  shotDate: { color: C.sub, fontSize: scale(12), fontWeight: '500' },
+  shotTime: { color: C.muted, fontSize: scale(10) },
   shotCenter: { flex: 1 },
-  shotStat: { color: C.sub, fontSize: 12 },
+  shotStat: { color: C.sub, fontSize: scale(12) },
   shotRight: { flexDirection: 'row', alignItems: 'baseline', gap: 2, width: 60, justifyContent: 'flex-end' },
-  shotCarry: { color: C.text, fontSize: 15, fontWeight: '700' },
-  shotCarryUnit: { color: C.muted, fontSize: 10 },
+  shotCarry: { color: C.text, fontSize: scale(15), fontWeight: '700' },
+  shotCarryUnit: { color: C.muted, fontSize: scale(10) },
   deleteBtn: { paddingLeft: 4 },
 });
