@@ -67,11 +67,15 @@ _LAN_ORIGIN_RE = re.compile(
     r"|192\.168\.\d{1,3}\.\d{1,3})"
     r"(:\d{1,5})?$"
 )
-CORS(app, origins=_LAN_ORIGIN_RE.pattern)
-socketio = SocketIO(app, async_mode="threading")
+_cors_allow = lambda o: bool(_LAN_ORIGIN_RE.match(o or ""))  # noqa: E731
+CORS(app, origins=_cors_allow)
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins=_cors_allow)
 
 # Generated at startup; printed to console for operator use
 _ADMIN_TOKEN: str = secrets.token_hex(16)
+# Separate token for the MJPEG stream endpoint — appears in URL query params
+# (and therefore server access logs), so kept distinct from the admin token.
+_CAMERA_TOKEN: str = secrets.token_hex(16)
 
 # ------------------------------------------------------------------
 # BLE pairing secret — persisted across restarts so the mobile app
@@ -1222,7 +1226,7 @@ def generate_mjpeg():
 @app.route("/camera/stream")
 def camera_stream():
     """MJPEG stream endpoint."""
-    if request.args.get("token") != _ADMIN_TOKEN:
+    if request.args.get("token") != _CAMERA_TOKEN:
         return "Unauthorized", 401
     if not camera_enabled or not camera_streaming:
         return "Camera not available", 503
@@ -1421,7 +1425,7 @@ def handle_connect():
     """Handle client connection."""
     print("Client connected")
     if request.remote_addr in ("127.0.0.1", "::1"):
-        socketio.emit("admin_token", {"token": _ADMIN_TOKEN}, to=request.sid)
+        socketio.emit("admin_token", {"token": _ADMIN_TOKEN, "camera_token": _CAMERA_TOKEN}, to=request.sid)
     if monitor:
         stats = monitor.get_session_stats()
         shots = [shot_to_dict(s) for s in monitor.get_shots()]
