@@ -4,9 +4,10 @@ export interface A11yPrefs {
   reduceMotion: boolean;
   highContrast: boolean;
   largeText: boolean;
+  colorBlind: boolean;
 }
 
-const DEFAULTS: A11yPrefs = { reduceMotion: false, highContrast: false, largeText: false };
+const DEFAULTS: A11yPrefs = { reduceMotion: false, highContrast: false, largeText: false, colorBlind: false };
 
 const STORAGE_KEY = 'openflight.a11y';
 
@@ -33,6 +34,7 @@ export function applyA11yClasses(prefs: A11yPrefs): void {
   el.classList.toggle('a11y-reduce-motion', prefs.reduceMotion);
   el.classList.toggle('a11y-high-contrast', prefs.highContrast);
   el.classList.toggle('a11y-large-text', prefs.largeText);
+  el.classList.toggle('a11y-color-blind', prefs.colorBlind);
 }
 
 export function useAccessibilitySettings() {
