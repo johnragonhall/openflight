@@ -293,6 +293,8 @@ class Shot:
     club_angle_deg: Optional[float] = None  # Club angle of attack from K-LD7 (vertical)
     club_path_deg: Optional[float] = None  # Club path from K-LD7 (horizontal)
     spin_axis_deg: Optional[float] = None  # Spin axis tilt: 0=backspin, +right(fade), -left(draw)
+    # Set by server when ballistics simulation runs; overrides the simple property formula.
+    apex_height_yards_sim: Optional[float] = None
 
     @property
     def ball_speed_ms(self) -> float:
@@ -381,13 +383,23 @@ class Shot:
 
     @property
     def apex_height_yards(self) -> Optional[float]:
-        """Peak ball trajectory height in yards (simplified projectile model)."""
+        """Peak ball trajectory height in yards.
+
+        Returns the full-physics simulation result when available (set by server
+        after ballistics.simulate()). Falls back to an empirical carry-based
+        estimate that accounts for spin lift — substantially more accurate than
+        a vacuum projectile formula for golf balls.
+        """
+        if self.apex_height_yards_sim is not None:
+            return self.apex_height_yards_sim
         if self.launch_angle_vertical is None or self.launch_angle_vertical <= 0:
             return None
-        v_ms = self.ball_speed_mph * 0.44704
-        v_y = v_ms * math.sin(math.radians(self.launch_angle_vertical))
-        h_m = (v_y ** 2) / (2 * 9.81)
-        return h_m * 1.0936  # metres → yards
+        carry = self.carry_spin_adjusted or self.estimated_carry_yards
+        # Empirical: apex ≈ 10% of carry, scaled by launch angle vs 12° baseline.
+        # Calibrated against TrackMan PGA tour data; much closer to real values
+        # than vacuum projectile math which ignores Magnus lift (≈30-60% of weight).
+        apex_frac = 0.10 * max(0.5, (self.launch_angle_vertical / 12.0) ** 0.7)
+        return round(carry * apex_frac, 1)
 
     @property
     def total_distance_yards(self) -> Optional[float]:

@@ -1961,6 +1961,7 @@ def on_shot_detected(shot: Shot):
         if conditions is not None:
             trajectory = simulate(conditions)
             shot.carry_spin_adjusted = trajectory.carry_yards
+            shot.apex_height_yards_sim = trajectory.apex_yards
             logger.info(
                 "[SERVER] Ballistic carry: %.0f yds (spin: %.0f rpm, source: %s)",
                 shot.carry_spin_adjusted,
