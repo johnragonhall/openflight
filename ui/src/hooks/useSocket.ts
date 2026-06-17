@@ -4,6 +4,7 @@ import type { Shot, SessionStats, SessionState, TriggerDiagnostic, TriggerStatus
 import { useShotActions } from '../state/useShotActions';
 import { getServerOrigin } from '../utils/serverOrigin';
 import type { A11yPrefs } from '../state/useAccessibilitySettings';
+import type { CloudSyncStatus } from '../types/cloud';
 
 const SOCKET_URL = getServerOrigin();
 
@@ -68,6 +69,7 @@ export function useSocket() {
 
   const [connected, setConnected] = useState(false);
   const [adminToken, setAdminToken] = useState('');
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus | null>(null);
   const [cameraToken, setCameraToken] = useState('');
   const [mockMode, setMockMode] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
@@ -110,6 +112,7 @@ export function useSocket() {
       console.log('Connected to server');
       setConnected(true);
       newSocket.emit('get_trigger_status');
+      newSocket.emit('get_cloud_status');
     });
 
     newSocket.on('admin_token', (data: { token: string; camera_token?: string }) => {
@@ -119,6 +122,10 @@ export function useSocket() {
         cameraTokenRef.current = data.camera_token;
         setCameraToken(data.camera_token);
       }
+    });
+
+    newSocket.on('cloud_status', (data: CloudSyncStatus) => {
+      setCloudStatus(data);
     });
 
     newSocket.on('disconnect', () => {
@@ -297,6 +304,11 @@ export function useSocket() {
     socketRef.current?.emit('remote_key', { key });
   }, []);
 
+  /** Pause or resume cloud uploads. The server gates this to localhost (the kiosk). */
+  const setCloudSync = useCallback((enabled: boolean) => {
+    socketRef.current?.emit('set_cloud_sync', { enabled, token: adminTokenRef.current });
+  }, []);
+
   return {
     connected,
     adminToken,
@@ -319,5 +331,7 @@ export function useSocket() {
     toggleCameraStream,
     shutdown,
     sendRemoteKey,
+    cloudStatus,
+    setCloudSync,
   };
 }
