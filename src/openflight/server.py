@@ -1555,6 +1555,9 @@ def handle_set_radar_config(data):
     """Update radar configuration."""
     global radar_config  # pylint: disable=global-statement
 
+    if not isinstance(data, dict) or data.get("token") != _ADMIN_TOKEN:
+        return
+
     if not monitor or mock_mode:
         log_session_error(
             "Radar config update rejected: radar not connected",
