@@ -1391,7 +1391,8 @@ def find_impact_frames(
         energies.append(pos_energy + neg_energy)
 
     energies = np.array(energies)
-    if np.median(energies) <= 0:
+    # No frames -> empty array; short-circuit before np.median warns on it.
+    if energies.size == 0 or np.median(energies) <= 0:
         return []
 
     # Frames where high-velocity energy exceeds median by threshold factor

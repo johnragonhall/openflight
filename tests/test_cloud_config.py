@@ -1,6 +1,7 @@
 """Tests for the openflight-cloud config module."""
 
 import json
+import os
 import stat
 
 import pytest
@@ -45,8 +46,11 @@ class TestSaveConfig:
         cfg.save_config(config, path)
 
         assert path.exists()
-        mode = stat.S_IMODE(path.stat().st_mode)
-        assert mode == 0o600
+        # chmod(0o600) is a no-op on Windows (file stays 0o666); assert the
+        # POSIX mode only where it applies.
+        if os.name != "nt":
+            mode = stat.S_IMODE(path.stat().st_mode)
+            assert mode == 0o600
 
     def test_round_trips_through_load(self, tmp_path):
         path = tmp_path / "cloud.json"
