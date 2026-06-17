@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CameraStatus } from '../hooks/useSocket';
+import { useLanguage } from '../state/useLanguage';
 import { getServerOrigin } from '../utils/serverOrigin';
 import './CameraFeed.css';
 
@@ -13,12 +14,12 @@ interface CameraFeedProps {
 export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream, streamToken }: CameraFeedProps) {
   const [streamError, setStreamError] = useState(false);
   const [prevStreaming, setPrevStreaming] = useState(false);
+  const { t } = useLanguage();
   const { available, enabled, streaming, ball_detected, ball_confidence } = cameraStatus;
   const streamUrl = streamToken
     ? `${getServerOrigin()}/camera/stream?token=${encodeURIComponent(streamToken)}`
     : `${getServerOrigin()}/camera/stream`;
 
-  // Reset error when streaming starts
   if (streaming && !prevStreaming) {
     setStreamError(false);
   }
@@ -31,8 +32,8 @@ export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream, strea
       <div className="camera-feed camera-feed--unavailable">
         <div className="camera-feed__message">
           <span className="camera-feed__icon">📷</span>
-          <h3>Camera Not Available</h3>
-          <p>Start the server with --camera flag to enable camera support</p>
+          <h3>{t('cameraNotAvailable')}</h3>
+          <p>{t('cameraNotAvailableSub')}</p>
         </div>
       </div>
     );
@@ -41,20 +42,20 @@ export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream, strea
   return (
     <div className="camera-feed">
       <div className="camera-feed__header">
-        <h2 className="camera-feed__title">Camera Feed</h2>
+        <h2 className="camera-feed__title">{t('cameraFeed')}</h2>
         <div className="camera-feed__controls">
           <button
             className={`camera-feed__button ${enabled ? 'camera-feed__button--active' : ''}`}
             onClick={onToggleCamera}
           >
-            {enabled ? 'Disable Camera' : 'Enable Camera'}
+            {enabled ? t('disableCamera') : t('enableCamera')}
           </button>
           {enabled && (
             <button
               className={`camera-feed__button ${streaming ? 'camera-feed__button--streaming' : ''}`}
               onClick={onToggleStream}
             >
-              {streaming ? 'Stop Stream' : 'Start Stream'}
+              {streaming ? t('stopStream') : t('startStream')}
             </button>
           )}
         </div>
@@ -64,38 +65,38 @@ export function CameraFeed({ cameraStatus, onToggleCamera, onToggleStream, strea
         {!enabled ? (
           <div className="camera-feed__message">
             <span className="camera-feed__icon">📷</span>
-            <h3>Camera Disabled</h3>
-            <p>Click "Enable Camera" to start ball detection</p>
+            <h3>{t('cameraDisabled')}</h3>
+            <p>{t('cameraDisabledSub')}</p>
           </div>
         ) : !streaming ? (
           <div className="camera-feed__message">
             <span className="camera-feed__icon">🎥</span>
-            <h3>Stream Paused</h3>
-            <p>Ball detection is active. Click "Start Stream" to view live feed.</p>
+            <h3>{t('streamPaused')}</h3>
+            <p>{t('streamPausedSub')}</p>
             <div className={`camera-feed__detection ${ball_detected ? 'camera-feed__detection--detected' : ''}`}>
-              {ball_detected ? `Ball Detected (${Math.round(ball_confidence * 100)}%)` : 'No Ball Detected'}
+              {ball_detected ? `${t('ballDetected')} (${Math.round(ball_confidence * 100)}%)` : t('noBallDetected')}
             </div>
           </div>
         ) : streamError ? (
           <div className="camera-feed__message camera-feed__message--error">
             <span className="camera-feed__icon">⚠️</span>
-            <h3>Stream Error</h3>
-            <p>Could not load camera stream</p>
+            <h3>{t('streamError')}</h3>
+            <p>{t('streamErrorSub')}</p>
             <button className="camera-feed__button" onClick={() => setStreamError(false)}>
-              Retry
+              {t('retry')}
             </button>
           </div>
         ) : (
           <div className="camera-feed__stream">
             <img
               src={streamUrl}
-              alt="Camera Feed"
+              alt={t('cameraFeed')}
               className="camera-feed__video"
               onError={() => setStreamError(true)}
             />
             <div className="camera-feed__overlay">
               <div className={`camera-feed__status ${ball_detected ? 'camera-feed__status--detected' : ''}`}>
-                {ball_detected ? `Ball: ${Math.round(ball_confidence * 100)}%` : 'Searching...'}
+                {ball_detected ? `${t('ballDetected')}: ${Math.round(ball_confidence * 100)}%` : `${t('noBallDetected')}…`}
               </div>
             </div>
           </div>

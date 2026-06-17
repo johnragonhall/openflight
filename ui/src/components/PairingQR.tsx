@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../state/useLanguage';
 
 interface PairPayload {
   v: 1;
@@ -13,6 +14,7 @@ export const PairingQR = memo(function PairingQR() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<State>('idle');
   const [error, setError] = useState('');
+  const { t } = useLanguage();
 
   const generate = useCallback(async () => {
     setState('loading');
@@ -47,9 +49,9 @@ export const PairingQR = memo(function PairingQR() {
   }, []);
 
   useEffect(() => {
+    // Capture at effect time - ref may be null in cleanup after unmount
+    const canvas = canvasRef.current;
     return () => {
-      // Clear the canvas when unmounted to avoid stale secret being visible.
-      const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
@@ -59,22 +61,19 @@ export const PairingQR = memo(function PairingQR() {
 
   return (
     <div style={styles.root}>
-      <p style={styles.label}>Pair Mobile App</p>
-      <p style={styles.hint}>
-        Open the OpenFlight mobile app, go to Connection → Bluetooth → Scan QR to Pair, then show
-        this code.
-      </p>
+      <p style={styles.label}>{t('pairMobileApp')}</p>
+      <p style={styles.hint}>{t('pairMobileHint')}</p>
       {state === 'idle' && (
         <button type="button" style={styles.btn} onClick={generate}>
-          Show Pairing QR
+          {t('showPairingQR')}
         </button>
       )}
-      {state === 'loading' && <p style={styles.sub}>Generating…</p>}
+      {state === 'loading' && <p style={styles.sub}>{t('generating')}</p>}
       {state === 'error' && (
         <>
           <p style={{ ...styles.sub, color: '#ef4444' }}>{error}</p>
           <button type="button" style={styles.btn} onClick={generate}>
-            Retry
+            {t('retry')}
           </button>
         </>
       )}
@@ -88,51 +87,53 @@ export const PairingQR = memo(function PairingQR() {
       />
       {state === 'ready' && (
         <button type="button" style={{ ...styles.btn, marginTop: 10 }} onClick={() => setState('idle')}>
-          Hide QR
+          {t('hideQR')}
         </button>
       )}
     </div>
   );
 });
 
+// Sizes in rem so the card scales with the fluid root font-size across screens.
 const styles: Record<string, React.CSSProperties> = {
   root: {
     background: 'var(--surface-1, #1a1a1a)',
-    borderRadius: 10,
-    padding: '16px',
+    borderRadius: '0.625rem',
+    padding: '1rem',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 8,
+    gap: '0.5rem',
     border: '1px solid var(--line, #2a2a2a)',
   },
   label: {
     color: 'var(--text, #f5f5f5)',
     fontWeight: 700,
-    fontSize: 14,
+    fontSize: '0.875rem',
     margin: 0,
   },
   hint: {
     color: 'var(--sub, #888)',
-    fontSize: 12,
+    fontSize: '0.75rem',
     margin: 0,
     textAlign: 'center',
     lineHeight: 1.5,
-    maxWidth: 280,
+    maxWidth: '17.5rem',
   },
   sub: {
     color: 'var(--sub, #888)',
-    fontSize: 12,
+    fontSize: '0.75rem',
     margin: 0,
   },
   btn: {
     background: 'var(--accent, #22c55e)',
     color: '#000',
     border: 'none',
-    borderRadius: 8,
-    padding: '10px 20px',
+    borderRadius: '0.5rem',
+    padding: '0.625rem 1.25rem',
     fontWeight: 700,
-    fontSize: 14,
+    fontSize: '0.875rem',
     cursor: 'pointer',
+    minHeight: 'var(--touch-min)',
   },
 };

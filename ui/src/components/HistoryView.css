@@ -29,9 +29,9 @@
 .history-view__heading {
   margin: 0;
   color: var(--color-gold);
-  font-family: var(--font-display);
   font-size: clamp(1.25rem, 2vw, 1.75rem);
-  font-weight: 400;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .history-list {
@@ -55,10 +55,107 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   transition: border-color var(--transition-fast);
+  /* Skip layout/paint for off-screen cards in long session histories.
+     `auto` remembers each card's real rendered height after first paint. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4.5rem;
 }
 
-.history-card:hover {
-  border-color: rgba(212, 175, 55, 0.25);
+.history-card--clickable {
+  cursor: pointer;
+}
+
+.history-card--clickable:hover {
+  border-color: rgba(var(--gold-rgb), 0.35);
+  background: rgba(18, 18, 26, 0.94);
+}
+
+.history-card--clickable:active {
+  transform: scale(0.99);
+}
+
+.history-card__chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Session drill-down ── */
+
+.history-view--session {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.history-session__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-sm) var(--space-sm);
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(245, 240, 230, 0.08);
+}
+
+.history-session__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(245, 240, 230, 0.15);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 36px;
+  touch-action: manipulation;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.history-session__back:hover {
+  background: rgba(245, 240, 230, 0.06);
+  color: var(--color-cream);
+}
+
+.history-session__back:active {
+  transform: scale(0.97);
+}
+
+.history-session__info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.history-session__date {
+  color: var(--color-cream);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.history-session__count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.history-session__loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-session__shots {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .history-card__meta {
