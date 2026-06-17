@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- K-LD7 tracker: shots could silently lose their launch angle when the
+  stream thread appended a frame while the shot path iterated the ring
+  buffer (`snapshot_buffer` / `_radc_frames_for_extraction`). CPython
+  raises `RuntimeError: deque mutated during iteration` for this, and
+  the server's broad K-LD7 exception handler swallowed it, so the shot
+  was reported without an angle and no error was visible. Buffer reads
+  now copy under a lock; appends and resets take the same lock.
+
 ### Changed
 - Mobile `ShotTracer2D` now uses the on-device RK4 drag+Magnus model
   (`trajectory.ts`), matching `ShotTracer3D`; both fall back to the parabola only
