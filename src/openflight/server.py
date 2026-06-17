@@ -893,9 +893,15 @@ def index():
     return send_from_directory(_react_app_dir(), "index.html")
 
 
-@app.route("/display", strict_slashes=False)
-def display():
-    """Serve the React app for TV display mode."""
+@app.route("/scoreboard", strict_slashes=False)
+def scoreboard():
+    """Serve the React app for the passive scoreboard view."""
+    return send_from_directory(_react_app_dir(), "index.html")
+
+
+@app.route("/remote", strict_slashes=False)
+def remote():
+    """Serve the React app for the phone/tablet web-remote (D-pad control)."""
     return send_from_directory(_react_app_dir(), "index.html")
 
 
@@ -1657,6 +1663,25 @@ def handle_client_prefs(data=None):
         return
     sanitized = {k: bool(v) for k, v in a11y_raw.items() if k in _ALLOWED_A11Y_KEYS}
     socketio.emit("accessibility_prefs_update", {"accessibility": sanitized})
+
+
+_ALLOWED_REMOTE_KEYS = frozenset({"up", "down", "left", "right", "ok", "back"})
+
+
+@socketio.on("remote_key")
+def handle_remote_key(data=None):
+    """Relay a D-pad key from a phone/tablet web-remote to the display UI.
+
+    LAN-scoped navigation only (no auth, like client_prefs): the keys just move
+    focus / activate the focused control / dismiss a dialog. Destructive actions
+    (e.g. shutdown) still require their on-screen confirmation, so a relayed key
+    cannot trigger them in one press.
+    """
+    if not isinstance(data, dict):
+        return
+    key = data.get("key")
+    if key in _ALLOWED_REMOTE_KEYS:
+        socketio.emit("remote_key", {"key": key})
 
 
 @socketio.on("shutdown")
