@@ -8,6 +8,7 @@
   justify-content: center;
   padding: var(--space-md);
   background: rgba(0, 0, 0, 0.75);
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   animation: club-select-fade-in 0.18s ease;
 }
@@ -147,6 +148,7 @@
   .club-select,
   .club-select__panel {
     animation: none;
+    -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 }
