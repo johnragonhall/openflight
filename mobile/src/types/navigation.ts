@@ -15,8 +15,7 @@ export type RootStackParamList = {
 
 export type MainTabParamList = {
   Live: undefined;
+  Analytics: undefined;
   History: undefined;
-  Stats: undefined;
-  Range: undefined;
   Settings: undefined;
 };

@@ -2,10 +2,10 @@ import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { isValidShot } from '../types/shot';
-import type { Shot, SessionStats } from '../types/shot';
+import type { Shot } from '../types/shot';
 import { getAccessibilityPrefs } from '../state/accessibilitySettings';
 
-// RFC 1918 private ranges — allow cleartext HTTP only on local LAN.
+// RFC 1918 private ranges - allow cleartext HTTP only on local LAN.
 // External hosts must use HTTPS/WSS.
 const LAN_RE = /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/;
 
@@ -23,6 +23,8 @@ export interface SocketConnectionState {
   latestShot: Shot | null;
   mockMode: boolean;
   selectedClub: string;
+  connecting: boolean;
+  errorMessage: string | null;
   connect: (hostAndPort: string) => void;
   disconnect: () => void;
   clearSession: () => void;
@@ -88,6 +90,8 @@ export function useSocketConnection(): SocketConnectionState {
   const [latestShot, setLatestShot] = useState<Shot | null>(null);
   const [mockMode, setMockMode] = useState(false);
   const [selectedClub, setSelectedClub] = useState('driver');
+  const [connecting, setConnecting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
@@ -96,20 +100,37 @@ export function useSocketConnection(): SocketConnectionState {
       socketRef.current = null;
     }
     setConnected(false);
+    setConnecting(false);
+    setErrorMessage(null);
   }, []);
 
   const connect = useCallback(
     (hostAndPort: string) => {
       disconnect();
+      setConnecting(true);
+      setErrorMessage(null);
       const url = buildSecureUrl(hostAndPort);
-      const socket = io(url, { transports: ['websocket', 'polling'] });
+      const socket = io(url, {
+        transports: ['websocket', 'polling'],
+        timeout: 8000,
+        reconnectionAttempts: 5,
+      });
 
       socket.on('connect', () => {
         setConnected(true);
+        setConnecting(false);
+        setErrorMessage(null);
         socket.emit('get_session');
         getAccessibilityPrefs()
           .then((a11y) => socket.emit('client_prefs', { accessibility: a11y }))
           .catch(() => {});
+      });
+
+      socket.on('connect_error', (err: Error) => {
+        setConnecting(false);
+        setErrorMessage(
+          err?.message ? `Couldn't connect: ${err.message}` : "Couldn't reach the launch monitor",
+        );
       });
 
       socket.on('disconnect', () => setConnected(false));
@@ -159,6 +180,11 @@ export function useSocketConnection(): SocketConnectionState {
   }, []);
 
   const clearSession = useCallback(() => {
+    // Clear locally first so the Live screen empties immediately. In demo mode
+    // there is no socket, and even when connected the server's session_cleared
+    // echo is async - without this, the Clear button appears to do nothing.
+    setShots([]);
+    setLatestShot(null);
     socketRef.current?.emit('clear_session');
   }, []);
 
@@ -169,7 +195,7 @@ export function useSocketConnection(): SocketConnectionState {
 
   const stopDemo = useCallback(() => {
     if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
+      clearTimeout(demoIntervalRef.current);
       demoIntervalRef.current = null;
     }
     setConnected(false);
@@ -205,5 +231,5 @@ export function useSocketConnection(): SocketConnectionState {
     scheduleNext();
   }, [disconnect]);
 
-  return { connected, shots, latestShot, mockMode, selectedClub, connect, disconnect, clearSession, setClub, startDemo, stopDemo };
+  return { connected, shots, latestShot, mockMode, selectedClub, connecting, errorMessage, connect, disconnect, clearSession, setClub, startDemo, stopDemo };
 }

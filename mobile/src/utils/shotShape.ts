@@ -1,7 +1,7 @@
 import type { ShotShape } from '../types/shot';
 
 /**
- * Bag ordering by club type — used to sort BagOverview rows.
+ * Bag ordering by club type - used to sort BagOverview rows.
  * Clubs not in this list sort alphabetically after the last entry.
  */
 export const BAG_ORDER: string[] = [

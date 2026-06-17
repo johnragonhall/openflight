@@ -52,15 +52,33 @@ export function isMishit(smash_factor: number | null, club: string): boolean {
   return smash_factor < threshold;
 }
 
+/**
+ * Fill in trajectory/geometry fields for display and storage.
+ *
+ * The kiosk server is the source of truth: it runs a full RK4 flight
+ * simulator and ships apex/total/face-to-path/is_mishit in the shot
+ * payload. We keep those values when present and only fall back to the
+ * cheap local heuristics below for shots the server never touched -
+ * demo-mode shots and legacy DB rows saved before a field existed.
+ * `shot_shape` is display-only (never sent by the server) so it is always
+ * derived locally, from the resolved face-to-path.
+ */
 export function enrichShot(shot: Shot): Shot {
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
-  const face_to_path_deg = computeFaceToPath(shot.spin_axis_deg);
+  const apex_height_yards =
+    shot.apex_height_yards ??
+    computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm);
+  const total_distance_yards =
+    shot.total_distance_yards ?? computeTotalDistance(carry, shot.club);
+  const face_to_path_deg =
+    shot.face_to_path_deg ?? computeFaceToPath(shot.spin_axis_deg);
+  const is_mishit = shot.is_mishit ?? isMishit(shot.smash_factor, shot.club);
   return {
     ...shot,
-    apex_height_yards: computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm),
-    total_distance_yards: computeTotalDistance(carry, shot.club),
+    apex_height_yards,
+    total_distance_yards,
     face_to_path_deg,
-    is_mishit: isMishit(shot.smash_factor, shot.club),
+    is_mishit,
     shot_shape: classifyShotShape(face_to_path_deg, shot.launch_angle_horizontal),
   };
 }
@@ -69,8 +87,8 @@ export function computeTrajectoryPoints(
   carry_yards: number,
   apex_yards: number,
   numPoints = 60,
-): Array<{ x: number; y: number }> {
-  const points: Array<{ x: number; y: number }> = [];
+): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [];
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
     const x = carry_yards * t;

@@ -13,10 +13,10 @@ function h(s: string | number | null | undefined): string {
 
 function row(shot: Shot, i: number): string {
   const carry = (shot.carry_spin_adjusted ?? shot.estimated_carry_yards).toFixed(0);
-  const spin = shot.spin_rpm !== null ? Math.round(shot.spin_rpm).toLocaleString() : '—';
-  const launch = shot.launch_angle_vertical !== null ? shot.launch_angle_vertical.toFixed(1) + '°' : '—';
-  const club = shot.club_speed_mph !== null ? shot.club_speed_mph.toFixed(1) : '—';
-  const smash = shot.smash_factor !== null ? shot.smash_factor.toFixed(2) : '—';
+  const spin = shot.spin_rpm !== null ? Math.round(shot.spin_rpm).toLocaleString() : '-';
+  const launch = shot.launch_angle_vertical !== null ? shot.launch_angle_vertical.toFixed(1) + '°' : '-';
+  const club = shot.club_speed_mph !== null ? shot.club_speed_mph.toFixed(1) : '-';
+  const smash = shot.smash_factor !== null ? shot.smash_factor.toFixed(2) : '-';
   const time = new Date(shot.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `<tr>
     <td>${i + 1}</td><td>${h(time)}</td><td>${h(shot.club.toUpperCase())}</td>

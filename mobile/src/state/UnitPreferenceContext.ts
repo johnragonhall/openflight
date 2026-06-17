@@ -1,11 +1,9 @@
 import { createContext } from 'react';
 import type {
-  UnitSystem, SpeedUnit, DistanceUnit, TemperatureUnit, SupportedLanguage,
+  SpeedUnit, DistanceUnit, TemperatureUnit, SupportedLanguage,
 } from '../utils/units';
 
 export interface UnitPreferenceContextValue {
-  unitSystem: UnitSystem;
-  setUnitSystem: (unitSystem: UnitSystem) => void;
   speedUnit: SpeedUnit;
   distanceUnit: DistanceUnit;
   temperatureUnit: TemperatureUnit;
@@ -17,8 +15,6 @@ export interface UnitPreferenceContextValue {
 }
 
 export const UnitPreferenceContext = createContext<UnitPreferenceContextValue>({
-  unitSystem: 'imperial',
-  setUnitSystem: () => {},
   speedUnit: 'mph',
   distanceUnit: 'yards',
   temperatureUnit: 'fahrenheit',

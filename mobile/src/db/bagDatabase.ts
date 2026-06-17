@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { getDatabase, getLifetimeStatsByClub } from './database';
-import type { Club, ClubWithStats, ClubCategory, ClubCategoryDef } from '../types/bag';
-import { SHOT_CLUB_TO_TYPE_KEY, getShotClubForTypeKey } from '../types/bag';
+import type { Club, ClubWithStats, ClubCategory } from '../types/bag';
+import { getShotClubForTypeKey } from '../types/bag';
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -20,8 +20,12 @@ export async function initBagTables(): Promise<void> {
     )
   `);
   // Idempotent migration: add club_def_id to shots for future explicit tagging
-  await db.execute('ALTER TABLE shots ADD COLUMN club_def_id TEXT').catch(() => {});
-  await db.execute('CREATE INDEX IF NOT EXISTS idx_clubs_bag ON clubs(in_bag, bag_position)').catch(() => {});
+  await db.execute('ALTER TABLE shots ADD COLUMN club_def_id TEXT').catch((e: unknown) => {
+    if (!String(e).toLowerCase().includes('duplicate column')) throw e;
+  });
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_clubs_bag ON clubs(in_bag, bag_position)').catch((e: unknown) => {
+    if (!String(e).toLowerCase().includes('already exists')) throw e;
+  });
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -38,7 +42,7 @@ export async function createClub(
     const res = await db.execute(
       'SELECT COALESCE(MAX(bag_position), -1) + 1 AS next FROM clubs WHERE in_bag = 1',
     );
-    position = (res.rows as Array<{ next: number }>)?.[0]?.next ?? 0;
+    position = (res.rows as { next: number }[])?.[0]?.next ?? 0;
   }
 
   await db.execute(
@@ -115,7 +119,7 @@ export async function moveClubToBag(id: string): Promise<void> {
   const res = await db.execute(
     'SELECT COALESCE(MAX(bag_position), -1) + 1 AS next FROM clubs WHERE in_bag = 1',
   );
-  const position = (res.rows as Array<{ next: number }>)?.[0]?.next ?? 0;
+  const position = (res.rows as { next: number }[])?.[0]?.next ?? 0;
   await db.execute(
     'UPDATE clubs SET in_bag = 1, bag_position = ? WHERE id = ?',
     [position, id],

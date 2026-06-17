@@ -1,5 +1,5 @@
 export const C = {
-  // Backgrounds — layered depth (matches kiosk: slightly blue-dark)
+  // Backgrounds - layered depth (matches kiosk: slightly blue-dark)
   bg: '#0a0a0f',
   s0: '#0e0e14',
   s1: '#12121a',
@@ -10,14 +10,14 @@ export const C = {
   line: '#1c1820',
   lineMid: '#28241e',
 
-  // Accent — premium gold (matches kiosk --color-gold)
+  // Accent - premium gold (matches kiosk --color-gold)
   accent: '#d4af37',
   accentDim: '#2a2010',
   accentSurface: '#1a1408',
   accentBright: '#f4cf47',
   accentMuted: '#6b5520',
 
-  // Text — cream family (matches kiosk --color-cream)
+  // Text - cream family (matches kiosk --color-cream)
   text: '#f5f0e6',
   sub: '#b5afa4',
   muted: '#857d75',
@@ -34,7 +34,7 @@ export const C = {
   okSurface: '#0a2318',
   okMuted: '#166534',
 
-  // Mock/demo mode badge (purple — distinct from brand palette)
+  // Mock/demo mode badge (purple - distinct from brand palette)
   mockSurface: '#3b0764',
   mockText: '#e879f9',
 

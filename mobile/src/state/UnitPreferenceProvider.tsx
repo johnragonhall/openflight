@@ -1,9 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
-  SpeedUnit, DistanceUnit, TemperatureUnit, SupportedLanguage, UnitSystem,
+  SpeedUnit, DistanceUnit, TemperatureUnit, SupportedLanguage,
 } from '../utils/units';
-import { deriveUnitSystem } from '../utils/units';
 import { UnitPreferenceContext } from './UnitPreferenceContext';
 
 const KEYS = {
@@ -82,21 +81,7 @@ export function UnitPreferenceProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(KEYS.language, lang).catch(() => {});
   }, []);
 
-  // Backward compat: maps imperial/metric to granular speed+distance
-  const setUnitSystem = useCallback((system: UnitSystem) => {
-    const speedUnit: SpeedUnit = system === 'metric' ? 'kmh' : 'mph';
-    const distanceUnit: DistanceUnit = system === 'metric' ? 'meters' : 'yards';
-    setPrefs(p => ({ ...p, speedUnit, distanceUnit }));
-    AsyncStorage.multiSet([
-      [KEYS.speed, speedUnit],
-      [KEYS.distance, distanceUnit],
-      [KEYS.legacy, system],
-    ]).catch(() => {});
-  }, []);
-
   const value = useMemo(() => ({
-    unitSystem: deriveUnitSystem(prefs.speedUnit, prefs.distanceUnit),
-    setUnitSystem,
     speedUnit: prefs.speedUnit,
     distanceUnit: prefs.distanceUnit,
     temperatureUnit: prefs.temperatureUnit,
@@ -105,7 +90,7 @@ export function UnitPreferenceProvider({ children }: { children: ReactNode }) {
     setDistanceUnit,
     setTemperatureUnit,
     setLanguage,
-  }), [prefs, setUnitSystem, setSpeedUnit, setDistanceUnit, setTemperatureUnit, setLanguage]);
+  }), [prefs, setSpeedUnit, setDistanceUnit, setTemperatureUnit, setLanguage]);
 
   return (
     <UnitPreferenceContext.Provider value={value}>{children}</UnitPreferenceContext.Provider>

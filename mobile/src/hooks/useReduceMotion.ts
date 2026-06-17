@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
-import { getAccessibilityPrefs } from '../state/accessibilitySettings';
+import { useAccessibility } from '../state/useAccessibility';
 
 /**
- * Returns true when reduce motion is active — either via the OS setting
- * (iOS/Android) or the in-app accessibility preference.
+ * Returns true when reduce motion is active - either via the OS setting
+ * (iOS/Android) or the in-app accessibility preference. The in-app value is
+ * sourced from AccessibilityContext so it updates live when toggled.
  */
 export function useReduceMotion(): boolean {
   const [osReduceMotion, setOsReduceMotion] = useState(false);
-  const [appReduceMotion, setAppReduceMotion] = useState(false);
+  const { prefs } = useAccessibility();
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setOsReduceMotion).catch(() => {});
@@ -16,11 +17,5 @@ export function useReduceMotion(): boolean {
     return () => sub.remove();
   }, []);
 
-  useEffect(() => {
-    getAccessibilityPrefs()
-      .then((p) => setAppReduceMotion(p.reduceMotion))
-      .catch(() => {});
-  }, []);
-
-  return osReduceMotion || appReduceMotion;
+  return osReduceMotion || prefs.reduceMotion;
 }
