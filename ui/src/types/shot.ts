@@ -19,6 +19,8 @@ export interface Shot {
   spin_rpm: number | null;
   spin_confidence: number | null;
   spin_quality: 'high' | 'medium' | 'low' | null;
+  // Provenance of spin_rpm: 'calculated' (kinematic estimate) vs measured radar
+  spin_source?: 'measured' | 'calculated' | string | null;
   carry_spin_adjusted: number | null;
   // Computed trajectory / geometry fields (sent by server)
   apex_height_yards?: number | null;

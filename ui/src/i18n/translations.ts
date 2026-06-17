@@ -10,7 +10,7 @@ const en = {
   ballSpeed: 'Ball Speed', estCarry: 'Est. Carry', clubSpeed: 'Club Speed',
   vLaunch: 'V. Launch', clubAoA: 'Club AoA', clubPath: 'Club Path',
   spinAxis: 'Spin Axis', hLaunch: 'H. Launch', spinRate: 'Spin Rate',
-  smash: 'smash', spinAdj: 'spin-adjusted', radar: 'radar',
+  smash: 'smash', spinAdj: 'spin-adjusted', radar: 'radar', estimated: 'estimated',
   straight: 'straight', draw: 'Draw', fade: 'Push Slice',
   slightDraw: 'Draw', slightFade: 'Fade',
   strongDraw: 'Hook', strongFade: 'Slice',

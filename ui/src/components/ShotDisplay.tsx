@@ -193,6 +193,13 @@ export function ShotDisplay({ shot, animate = false }: ShotDisplayProps) {
             value={hasSpin ? fmtSpin(shot.spin_rpm) : '-'}
             unit={hasSpin ? 'rpm' : undefined}
             label={t('spinRate')}
+            subtext={
+              hasSpin && shot.spin_source
+                ? shot.spin_source === 'calculated'
+                  ? t('estimated')
+                  : t('radar')
+                : undefined
+            }
             variant="spin"
             confidence={quality.spin}
           />
