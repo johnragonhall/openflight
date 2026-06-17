@@ -1634,12 +1634,19 @@ def handle_set_radar_config(data):
         socketio.emit("radar_config_error", {"error": "Failed to apply radar config"})
 
 
+_ALLOWED_A11Y_KEYS: frozenset = frozenset({"reduceMotion", "highContrast", "largeText"})
+
+
 @socketio.on("client_prefs")
 def handle_client_prefs(data=None):
     """Receive preference update from mobile app and broadcast to kiosk UI."""
     if not isinstance(data, dict):
         return
-    socketio.emit("accessibility_prefs_update", data)
+    a11y_raw = data.get("accessibility")
+    if not isinstance(a11y_raw, dict):
+        return
+    sanitized = {k: bool(v) for k, v in a11y_raw.items() if k in _ALLOWED_A11Y_KEYS}
+    socketio.emit("accessibility_prefs_update", {"accessibility": sanitized})
 
 
 @socketio.on("shutdown")
