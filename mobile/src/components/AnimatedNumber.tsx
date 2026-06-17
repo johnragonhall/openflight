@@ -39,7 +39,7 @@ export const AnimatedNumber = React.memo(function AnimatedNumber({
       anim.stop();
       animVal.removeListener(id);
     };
-  }, [value]);
+  }, [value, animVal, duration]);
 
   const text = formatter ? formatter(displayed) : String(Math.round(displayed));
   return (

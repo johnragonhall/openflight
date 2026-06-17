@@ -10,7 +10,7 @@ interface Props {
 
 /**
  * Stylised golf club silhouette icon (face-on profile view).
- * Each category renders a distinct head shape — Driver has the largest
+ * Each category renders a distinct head shape - Driver has the largest
  * crown, irons/wedges render a thin blade with score lines,
  * putter is a flat mallet.
  */
@@ -33,7 +33,7 @@ function ClubShape({ category, color }: { category: ClubCategory; color: string 
     case 'driver':
       return (
         <G>
-          {/* Shaft — angled slightly */}
+          {/* Shaft - angled slightly */}
           <Line
             x1={22} y1={3} x2={20} y2={22}
             stroke={shaftColor} strokeWidth={1.6} strokeLinecap="round"
@@ -90,7 +90,7 @@ function ClubShape({ category, color }: { category: ClubCategory; color: string 
             x1={20} y1={26} x2={18} y2={30}
             stroke={shaftColor} strokeWidth={2} strokeLinecap="round"
           />
-          {/* Compact head — between wood and iron */}
+          {/* Compact head - between wood and iron */}
           <Path
             d="M15 30 Q7 30 6 39 Q5 49 20 52 Q35 49 34 39 Q33 30 25 30 Z"
             fill={headFill}
@@ -110,7 +110,7 @@ function ClubShape({ category, color }: { category: ClubCategory; color: string 
             x1={27} y1={3} x2={24} y2={35}
             stroke={shaftColor} strokeWidth={1.6} strokeLinecap="round"
           />
-          {/* Thin angled blade — wider at toe, narrow at heel top */}
+          {/* Thin angled blade - wider at toe, narrow at heel top */}
           <Path
             d="M6 37 L28 34 L28 48 L6 51 Z"
             fill={headFill}

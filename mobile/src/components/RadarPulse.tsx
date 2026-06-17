@@ -1,14 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { C } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
 
 interface RingProps {
   delay: number;
   size: number;
   color: string;
+  styles: ReturnType<typeof makeStyles>;
 }
 
-function PulseRing({ delay, size, color }: RingProps) {
+function PulseRing({ delay, size, color, styles }: RingProps) {
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -26,7 +28,7 @@ function PulseRing({ delay, size, color }: RingProps) {
     );
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [anim, delay]);
 
   const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.08, 1] });
   const opacity = anim.interpolate({
@@ -58,12 +60,16 @@ interface Props {
   label?: string;
 }
 
-export function RadarPulse({ size = 160, color = C.accent, rings = 3, label }: Props) {
+export function RadarPulse({ size = 160, color: colorProp, rings = 3, label }: Props) {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
+  const color = colorProp ?? C.accent;
   return (
     <View style={styles.container}>
       <View style={[styles.ringWrap, { width: size, height: size }]}>
         {Array.from({ length: rings }, (_, i) => (
-          <PulseRing key={i} delay={i * 750} size={size} color={color} />
+          <PulseRing key={i} delay={i * 750} size={size} color={color} styles={styles} />
         ))}
         <View style={[styles.centerDot, { backgroundColor: color }]} />
       </View>
@@ -72,7 +78,7 @@ export function RadarPulse({ size = 160, color = C.accent, rings = 3, label }: P
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { alignItems: 'center', gap: 20 },
   ringWrap: { alignItems: 'center', justifyContent: 'center' },
   ring: {
@@ -85,7 +91,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   label: {
-    fontSize: 13,
+    fontSize: scale(13),
     fontWeight: '600',
     letterSpacing: 0.4,
   },

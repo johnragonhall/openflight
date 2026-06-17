@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { Shot, ShotShape } from '../types/shot';
 import { classifyShotShape } from '../utils/shotShape';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
 
 interface Props {
   /** Pre-classified shots or raw shots (classified on the fly if shot_shape missing). */
@@ -15,6 +16,8 @@ const FADE_FAMILY: ShotShape[] = ['fade', 'slice', 'push-slice'];
 const NEUTRAL_FAMILY: ShotShape[] = ['straight', 'push', 'pull'];
 
 export function ShapeBar({ shapes, height = 8 }: Props) {
+  const C = useThemeColors();
+  const styles = useMemo(() => makeStyles(C), [C]);
   const valid = shapes.filter((s): s is ShotShape => s != null);
   if (valid.length === 0) return <View style={[styles.empty, { height }]} />;
 
@@ -45,7 +48,7 @@ export function shapesFromShots(shots: Shot[]): (ShotShape | null)[] {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette) => StyleSheet.create({
   bar: {
     flexDirection: 'row',
     borderRadius: R.xs,

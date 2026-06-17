@@ -14,7 +14,7 @@ interface Props extends Omit<TouchableOpacityProps, 'style'> {
 }
 
 // HIG: minimum touch target 44×44pt. hitSlop extends the touch region without
-// changing visual size — appropriate for small utility controls.
+// changing visual size - appropriate for small utility controls.
 const DEFAULT_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 };
 
 export const PressableScale = React.memo(function PressableScale({

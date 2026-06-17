@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
@@ -9,8 +9,12 @@ import {
   getDistanceUnit,
   getSpeedUnit,
 } from '../utils/units';
+import { ShotQualityRow } from './ShotQualityRow';
 import { MetricCard } from './MetricCard';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT, type TFunction } from '../i18n/useT';
 
 function getLaunchQuality(confidence: number | null): 'high' | 'medium' | 'low' | null {
   if (confidence === null) return null;
@@ -19,10 +23,10 @@ function getLaunchQuality(confidence: number | null): 'high' | 'medium' | 'low' 
   return 'low';
 }
 
-function spinAxisLabel(deg: number): string {
-  if (deg > 2) return 'fade';
-  if (deg < -2) return 'draw';
-  return 'straight';
+function spinAxisLabel(deg: number, t: TFunction): string {
+  if (deg > 2) return t('slightFade');
+  if (deg < -2) return t('slightDraw');
+  return t('straight');
 }
 
 // Format a signed degree value with a leading '+' for positives (e.g. "+1.5", "-2.0").
@@ -32,7 +36,11 @@ function signedDegrees(value: number | null): string | null {
 }
 
 export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Shot }) {
-  const { unitSystem } = useUnitPreference();
+  const { speedUnit, distanceUnit } = useUnitPreference();
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
 
   const entryAnim = useRef(new Animated.Value(0)).current;
   const prevIdRef = useRef<string | undefined>(undefined);
@@ -55,8 +63,10 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
 
   const carry = shot.carry_spin_adjusted ?? shot.estimated_carry_yards;
   const carrySubtext = shot.carry_spin_adjusted
-    ? 'spin-adjusted'
-    : formatCarryRange(shot.carry_range, unitSystem);
+    ? t('spinAdj')
+    : shot.carry_range
+      ? formatCarryRange(shot.carry_range, distanceUnit)
+      : undefined;
 
   const launchConf = getLaunchQuality(shot.launch_angle_confidence);
   const launchAngle =
@@ -68,7 +78,7 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
   const spinAxis = signedDegrees(shot.spin_axis_deg);
   const spin = shot.spin_rpm !== null ? Math.round(shot.spin_rpm).toLocaleString() : null;
   const clubSpeed = shot.club_speed_mph !== null
-    ? formatSpeed(shot.club_speed_mph, unitSystem, 1)
+    ? formatSpeed(shot.club_speed_mph, speedUnit, 1)
     : null;
 
   return (
@@ -84,36 +94,36 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
 
       <View style={styles.primaryRow}>
         <MetricCard
-          label="Ball Speed"
-          value={formatSpeed(shot.ball_speed_mph, unitSystem, 1)}
-          unit={getSpeedUnit(unitSystem)}
+          label={t('ballSpeed')}
+          value={formatSpeed(shot.ball_speed_mph, speedUnit, 1)}
+          unit={getSpeedUnit(speedUnit)}
           size="primary"
           flex={1}
           animateRawValue={shot.ball_speed_mph}
-          animateFormatter={(v) => formatSpeed(v, unitSystem, 1)}
+          animateFormatter={(v) => formatSpeed(v, speedUnit, 1)}
         />
         <MetricCard
-          label="Carry"
-          value={formatDistance(carry, unitSystem, 0)}
-          unit={getDistanceUnit(unitSystem)}
+          label={t('estCarry')}
+          value={formatDistance(carry, distanceUnit, 0)}
+          unit={getDistanceUnit(distanceUnit)}
           subtext={carrySubtext}
           size="primary"
           flex={1}
           animateRawValue={carry}
-          animateFormatter={(v) => formatDistance(v, unitSystem, 0)}
+          animateFormatter={(v) => formatDistance(v, distanceUnit, 0)}
         />
       </View>
 
       <View style={styles.secondaryGrid}>
         <MetricCard
-          label="Club Speed"
+          label={t('clubSpeed')}
           value={clubSpeed}
-          unit={clubSpeed ? getSpeedUnit(unitSystem) : undefined}
-          subtext={shot.smash_factor ? `${shot.smash_factor.toFixed(2)} smash` : undefined}
+          unit={clubSpeed ? getSpeedUnit(speedUnit) : undefined}
+          subtext={shot.smash_factor ? `${shot.smash_factor.toFixed(2)} ${t('smash')}` : undefined}
           dim={clubSpeed === null}
         />
         <MetricCard
-          label="V. Launch"
+          label={t('vLaunch')}
           value={launchAngle}
           unit={launchAngle ? '°' : undefined}
           subtext={shot.angle_source ?? undefined}
@@ -121,7 +131,7 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
           dim={launchAngle === null}
         />
         <MetricCard
-          label="Spin"
+          label={t('spinRate')}
           value={spin}
           unit={spin ? 'rpm' : undefined}
           confidence={spin ? shot.spin_quality : null}
@@ -129,26 +139,26 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
         />
         {shot.club_angle_deg !== null && (
           <MetricCard
-            label="Club AoA"
+            label={t('clubAoA')}
             value={shot.club_angle_deg.toFixed(1)}
             unit="°"
-            subtext="radar"
+            subtext={t('radar')}
           />
         )}
         {clubPath !== null && (
-          <MetricCard label="Club Path" value={clubPath} unit="°" subtext="radar" />
+          <MetricCard label={t('clubPath')} value={clubPath} unit="°" subtext={t('radar')} />
         )}
         {spinAxis !== null && shot.spin_axis_deg !== null && (
           <MetricCard
-            label="Spin Axis"
+            label={t('spinAxis')}
             value={spinAxis}
             unit="°"
-            subtext={spinAxisLabel(shot.spin_axis_deg)}
+            subtext={spinAxisLabel(shot.spin_axis_deg, t)}
           />
         )}
         {hLaunch !== null && (
           <MetricCard
-            label="H. Launch"
+            label={t('hLaunch')}
             value={hLaunch}
             unit="°"
             subtext={shot.angle_source ?? undefined}
@@ -156,11 +166,14 @@ export const ShotDisplay = React.memo(function ShotDisplay({ shot }: { shot: Sho
           />
         )}
       </View>
+
+      {/* Kiosk-parity Low/Perfect/High + Left/Perfect/Right quality chips */}
+      <ShotQualityRow shot={shot} />
     </Animated.View>
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { paddingHorizontal: 8, paddingTop: 8 },
   headerRow: {
     flexDirection: 'row',
@@ -177,8 +190,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  club: { color: C.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-  timestamp: { color: C.sub, fontSize: 12 },
+  club: { color: C.accent, fontSize: scale(12), fontWeight: '700', letterSpacing: 1 },
+  timestamp: { color: C.sub, fontSize: scale(12) },
   primaryRow: { flexDirection: 'row', marginBottom: 2 },
   secondaryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
 });

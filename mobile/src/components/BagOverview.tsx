@@ -1,17 +1,25 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, StyleSheet, Text, View } from 'react-native';
 import type { ClubLifetimeStat } from '../types/shot';
 import { getLifetimeStatsByClub } from '../db/database';
 import { sortByBagOrder } from '../utils/shotShape';
 import { ClubDetailSheet, formatClubName } from './ClubDetailSheet';
 import { PressableScale } from './PressableScale';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
+
+type Styles = ReturnType<typeof makeStyles>;
 
 /**
  * All-time bag overview. Fetches lifetime stats from SQLite and renders
  * a sorted FlatList. Tapping a row opens ClubDetailSheet.
  */
 export function BagOverview() {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   const [stats, setStats] = useState<ClubLifetimeStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,8 +27,6 @@ export function BagOverview() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     getLifetimeStatsByClub()
       .then((rows) => {
         if (cancelled) return;
@@ -36,9 +42,9 @@ export function BagOverview() {
 
   const handleClose = useCallback(() => setSelected(null), []);
 
-  if (loading) return <BagSkeleton />;
-  if (error) return <BagError message={error} />;
-  if (stats.length === 0) return <BagEmpty />;
+  if (loading) return <BagSkeleton styles={styles} />;
+  if (error) return <BagError message={error} styles={styles} C={C} />;
+  if (stats.length === 0) return <BagEmpty styles={styles} />;
 
   return (
     <>
@@ -47,7 +53,7 @@ export function BagOverview() {
         keyExtractor={(item) => item.club}
         contentContainerStyle={styles.list}
         renderItem={({ item, index }) => (
-          <ClubRow stat={item} index={index} onPress={() => setSelected(item)} />
+          <ClubRow stat={item} index={index} onPress={() => setSelected(item)} styles={styles} />
         )}
         scrollEnabled={false}
       />
@@ -64,9 +70,9 @@ export function BagOverview() {
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-interface RowProps { stat: ClubLifetimeStat; index: number; onPress: () => void }
+interface RowProps { stat: ClubLifetimeStat; index: number; onPress: () => void; styles: Styles }
 
-function ClubRow({ stat, index, onPress }: RowProps) {
+function ClubRow({ stat, index, onPress, styles }: RowProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -123,7 +129,7 @@ function ClubRow({ stat, index, onPress }: RowProps) {
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
-function BagSkeleton() {
+function BagSkeleton({ styles }: { styles: Styles }) {
   return (
     <View style={styles.list}>
       {[0, 1, 2, 3, 4].map((i) => (
@@ -133,25 +139,27 @@ function BagSkeleton() {
   );
 }
 
-function BagEmpty() {
+function BagEmpty({ styles }: { styles: Styles }) {
+  const t = useT();
   return (
     <View style={styles.emptyWrap}>
-      <Text style={styles.emptyTitle}>No shots recorded yet</Text>
-      <Text style={styles.emptySub}>Hit balls during a session to build your bag overview</Text>
+      <Text style={styles.emptyTitle}>{t('noShots')}</Text>
+      <Text style={styles.emptySub}>{t('bagOverviewEmptySub')}</Text>
     </View>
   );
 }
 
-function BagError({ message }: { message: string }) {
+function BagError({ message, styles, C }: { message: string; styles: Styles; C: Palette }) {
+  const t = useT();
   return (
     <View style={styles.emptyWrap}>
-      <Text style={[styles.emptyTitle, { color: C.err }]}>Failed to load bag data</Text>
+      <Text style={[styles.emptyTitle, { color: C.err }]}>{t('bagLoadFailed')}</Text>
       <Text style={styles.emptySub}>{message}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   list: { paddingHorizontal: 16, gap: 8, paddingBottom: 20 },
   row: {
     flexDirection: 'row',
@@ -173,17 +181,17 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     alignSelf: 'flex-start',
   },
-  clubPillText: { color: C.accent, fontSize: 11, fontWeight: '700' },
-  shotCount: { color: C.muted, fontSize: 10 },
+  clubPillText: { color: C.accent, fontSize: scale(11), fontWeight: '700' },
+  shotCount: { color: C.muted, fontSize: scale(10) },
   rowCenter: { flex: 1, gap: 2 },
-  carryValue: { color: C.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  carryUnit: { color: C.muted, fontSize: 10 },
-  totalValue: { color: C.sub, fontSize: 11 },
+  carryValue: { color: C.text, fontSize: scale(20), fontWeight: '800', letterSpacing: -0.5 },
+  carryUnit: { color: C.muted, fontSize: scale(10) },
+  totalValue: { color: C.sub, fontSize: scale(11) },
   rowRight: { width: 80, gap: 4 },
-  rangeValue: { color: C.sub, fontSize: 12, fontWeight: '600' },
-  rangeUnit: { color: C.muted, fontSize: 9 },
-  chevron: { color: C.muted, fontSize: 18 },
+  rangeValue: { color: C.sub, fontSize: scale(12), fontWeight: '600' },
+  rangeUnit: { color: C.muted, fontSize: scale(9) },
+  chevron: { color: C.muted, fontSize: scale(18) },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
-  emptyTitle: { color: C.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  emptySub: { color: C.sub, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { color: C.text, fontSize: scale(16), fontWeight: '700', textAlign: 'center' },
+  emptySub: { color: C.sub, fontSize: scale(13), textAlign: 'center', lineHeight: 18 },
 });

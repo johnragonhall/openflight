@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Modal,
   ScrollView,
@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CLUBS_BY_TYPE } from '../data/clubs';
-import { C } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
 
 interface ClubPickerProps {
   visible: boolean;
@@ -19,13 +21,17 @@ interface ClubPickerProps {
 }
 
 export function ClubPicker({ visible, selectedClub, onSelect, onClose }: ClubPickerProps) {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Select Club</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Text style={styles.doneButton}>Done</Text>
+          <Text style={styles.title}>{t('selectClubTitle')}</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('a11yCloseClubSelect')}>
+            <Text style={styles.doneButton}>{t('doneBtn')}</Text>
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -44,6 +50,9 @@ export function ClubPicker({ visible, selectedClub, onSelect, onClose }: ClubPic
                       onSelect(club.id);
                       onClose();
                     }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: club.id === selectedClub }}
+                    accessibilityLabel={club.label}
                   >
                     <Text
                       style={[
@@ -64,7 +73,7 @@ export function ClubPicker({ visible, selectedClub, onSelect, onClose }: ClubPic
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
@@ -75,13 +84,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.line,
   },
-  title: { color: C.text, fontSize: 18, fontWeight: '700' },
-  doneButton: { color: C.accent, fontSize: 16, fontWeight: '600' },
+  title: { color: C.text, fontSize: scale(18), fontWeight: '700' },
+  doneButton: { color: C.accent, fontSize: scale(16), fontWeight: '600' },
   scrollContent: { padding: 20, paddingBottom: 40 },
   group: { marginBottom: 24 },
   groupLabel: {
     color: C.muted,
-    fontSize: 11,
+    fontSize: scale(11),
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -97,6 +106,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   clubButtonSelected: { backgroundColor: C.accent },
-  clubLabel: { color: C.text, fontWeight: '700', fontSize: 15 },
+  clubLabel: { color: C.text, fontWeight: '700', fontSize: scale(15) },
   clubLabelSelected: { color: C.bg },
 });

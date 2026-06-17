@@ -2,7 +2,9 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import type { ClubSessionPoint } from '../types/shot';
-import { C } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
 
 interface Props {
   data: ClubSessionPoint[];
@@ -13,6 +15,10 @@ interface Props {
 const PAD = { top: 8, bottom: 20, left: 32, right: 8 };
 
 export function TrendLineChart({ data, width, height = 100 }: Props) {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
   const { points, minY, maxY, pathD } = useMemo(() => {
     if (data.length === 0) return { points: [], minY: 0, maxY: 0, pathD: '' };
 
@@ -39,7 +45,7 @@ export function TrendLineChart({ data, width, height = 100 }: Props) {
   if (data.length === 0) {
     return (
       <View style={[styles.empty, { width, height }]}>
-        <Text style={styles.emptyText}>Not enough data</Text>
+        <Text style={styles.emptyText}>{t('chartNotEnoughData')}</Text>
       </View>
     );
   }
@@ -88,7 +94,7 @@ function fmtDate(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   empty: { alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: C.muted, fontSize: 11 },
+  emptyText: { color: C.muted, fontSize: scale(11) },
 });

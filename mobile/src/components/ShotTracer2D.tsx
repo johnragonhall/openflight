@@ -5,17 +5,26 @@ import Svg, {
 } from 'react-native-svg';
 import type { Shot } from '../types/shot';
 import { computeApexHeight, computeTrajectoryPoints } from '../utils/ballistics';
+import { launchFromShot, simulateTrajectory } from '../utils/trajectory';
 import { useUnitPreference } from '../state/useUnitPreference';
-import { C } from '../theme';
+import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
 
-// Animated SVG path — strokeDashoffset drives the draw-on animation
+// Animated SVG path - strokeDashoffset drives the draw-on animation
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+// Cinematic flight draw: ~1.2s with a strong ease-out so the trace leaves the
+// tee fast and settles into the landing (matches the ball decelerating).
+const TRACE_DURATION_MS = 1200;
+const TRACE_EASING = Easing.bezier(0.23, 1, 0.32, 1);
 
 interface Props { shot: Shot; height?: number }
 
 export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 168 }: Props) {
   const { width } = useWindowDimensions();
-  const { unitSystem } = useUnitPreference();
+  const { distanceUnit } = useUnitPreference();
+  const C = useThemeColors();
+  const styles = useMemo(() => makeStyles(C), [C]);
 
   const W = width;
   const H = height;
@@ -26,20 +35,38 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
 
+  // Real flight path from on-device physics (RK4 drag+Magnus); falls back to a
+  // parabola when there's no vertical launch angle. Side view: x=downrange, y=height.
+  const launch = useMemo(() => launchFromShot(shot), [shot]);
+  const traj = useMemo(() => (launch ? simulateTrajectory(launch) : null), [launch]);
+
   const carry = Math.max(
-    shot.carry_spin_adjusted ?? shot.estimated_carry_yards,
+    traj ? traj.carryYards : (shot.carry_spin_adjusted ?? shot.estimated_carry_yards),
     1,
   );
   const apex = Math.max(
-    shot.apex_height_yards ??
-      computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm) ??
-      carry * 0.12,
+    traj
+      ? traj.apexYards
+      : (shot.apex_height_yards
+          ?? computeApexHeight(shot.ball_speed_mph, shot.launch_angle_vertical, shot.spin_rpm)
+          ?? carry * 0.12),
     1,
   );
 
-  const pts = useMemo(() => computeTrajectoryPoints(carry, apex), [carry, apex]);
+  const pts = useMemo(
+    () => (traj ? traj.points.map((p) => ({ x: p.x, y: p.z })) : computeTrajectoryPoints(carry, apex)),
+    [traj, carry, apex],
+  );
 
-  // Coordinate helpers — inline so useMemo can capture them
+  // Apex marker at the true max-height sample (physics apex isn't at carry/2).
+  const apexX = useMemo(() => {
+    let bestX = carry / 2;
+    let bestY = -Infinity;
+    for (const p of pts) if (p.y > bestY) { bestY = p.y; bestX = p.x; }
+    return bestX;
+  }, [pts, carry]);
+
+  // Coordinate helpers - inline so useMemo can capture them
   const toX = (x: number) => PAD_L + (x / carry) * plotW;
   const toY = (y: number) => PAD_T + (1 - y / (apex * 1.18)) * plotH;
   const groundY = toY(0);
@@ -68,20 +95,26 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
   pathLenRef.current = pathLength;
 
   const shotId = shot.id ?? shot.timestamp;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    if (reduceMotion) {
+      // Reduced motion: show the fully-drawn arc immediately, no sweep.
+      dashAnim.setValue(0);
+      return;
+    }
     dashAnim.setValue(pathLenRef.current + 8);
     Animated.timing(dashAnim, {
       toValue: 0,
-      duration: 940,
-      easing: Easing.out(Easing.cubic),
+      duration: TRACE_DURATION_MS,
+      easing: TRACE_EASING,
       useNativeDriver: false,
     }).start();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shotId]);
+  }, [shotId, reduceMotion]);
 
   // Yards in metric → meters; otherwise rounded yards. Suffix added when `withUnit`.
-  const isMetric = unitSystem === 'metric';
+  const isMetric = distanceUnit === 'meters';
   const formatYards = (yards: number, withUnit: boolean): string => {
     const value = (isMetric ? yards * 0.9144 : yards).toFixed(0);
     if (!withUnit) return value;
@@ -99,7 +132,11 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
   const dashArrayStr = `${pathLength + 8} ${pathLength + 8}`;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       <Svg width={W} height={H}>
         <Defs>
           {/* Sky gradient: deep indigo → near-black green-tinted */}
@@ -158,7 +195,7 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
 
         {/* === Animated trajectory (3 glow layers + main line) === */}
 
-        {/* Outer glow — widest, most transparent */}
+        {/* Outer glow - widest, most transparent */}
         <AnimatedPath
           d={d}
           stroke="rgba(34,197,94,0.07)"
@@ -191,14 +228,14 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
 
         {/* Apex marker */}
         <Circle
-          cx={toX(carry / 2)}
+          cx={toX(apexX)}
           cy={toY(apex)}
           r={2.5}
           fill={C.accent}
           fillOpacity={0.7}
         />
         <SvgText
-          x={toX(carry / 2)}
+          x={toX(apexX)}
           y={toY(apex) - 7}
           fill={C.accentBright}
           fontSize={8.5}
@@ -228,7 +265,7 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
           fontWeight="700"
         >{distLabel}</SvgText>
 
-        {/* Club label — top-right corner */}
+        {/* Club label - top-right corner */}
         <SvgText
           x={W - PAD_R}
           y={PAD_T + 9}
@@ -243,6 +280,6 @@ export const ShotTracer2D = React.memo(function ShotTracer2D({ shot, height = 16
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette) => StyleSheet.create({
   container: { backgroundColor: C.canvas2d, overflow: 'hidden' },
 });

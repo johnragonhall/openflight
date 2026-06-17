@@ -1,7 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { AnimatedNumber } from './AnimatedNumber';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+
+type Styles = ReturnType<typeof makeStyles>;
 
 interface MetricCardProps {
   label: string;
@@ -12,7 +16,7 @@ interface MetricCardProps {
   confidence?: 'high' | 'medium' | 'low' | null;
   size?: 'primary' | 'default';
   flex?: number;
-  /** Raw numeric value — when provided, the display animates to this number */
+  /** Raw numeric value - when provided, the display animates to this number */
   animateRawValue?: number | null;
   /** Formatter applied to the animating raw value */
   animateFormatter?: (v: number) => string;
@@ -23,8 +27,10 @@ const FILLED_DOTS: Record<'high' | 'medium' | 'low', number> = { high: 3, medium
 
 const ConfidenceDots = React.memo(function ConfidenceDots({
   level,
+  styles,
 }: {
   level: 'high' | 'medium' | 'low';
+  styles: Styles;
 }) {
   const filled = FILLED_DOTS[level];
   return (
@@ -49,8 +55,12 @@ export const MetricCard = React.memo(function MetricCard({
   animateRawValue,
   animateFormatter,
 }: MetricCardProps) {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
+
   const isEmpty = value === null || value === undefined;
-  const display = isEmpty ? '—' : String(value);
+  const display = isEmpty ? '-' : String(value);
   const isPrimary = size === 'primary';
 
   // Flash highlight on primary card when value updates
@@ -75,8 +85,20 @@ export const MetricCard = React.memo(function MetricCard({
     outputRange: [C.line, C.accentMuted],
   });
 
+  // Combine the tiles' text into one VoiceOver/TalkBack stop, e.g.
+  // "Ball Speed: 150 mph, spin-adjusted, high confidence" instead of 4 nodes.
+  const a11yLabel = isEmpty
+    ? `${label}: no data`
+    : [
+        `${label}: ${display}${unit ? ' ' + unit : ''}`,
+        subtext,
+        confidence ? `${confidence} confidence` : undefined,
+      ].filter(Boolean).join(', ');
+
   return (
     <Animated.View
+      accessible
+      accessibilityLabel={a11yLabel}
       style={[
         styles.card,
         isPrimary ? styles.cardPrimary : styles.cardDefault,
@@ -118,12 +140,12 @@ export const MetricCard = React.memo(function MetricCard({
       {subtext != null && !isEmpty && (
         <Text style={styles.subtext} numberOfLines={1}>{subtext}</Text>
       )}
-      {confidence != null && !isEmpty && <ConfidenceDots level={confidence} />}
+      {confidence != null && !isEmpty && <ConfidenceDots level={confidence} styles={styles} />}
     </Animated.View>
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   card: {
     backgroundColor: C.s2,
     borderRadius: R.md,
@@ -146,7 +168,7 @@ const styles = StyleSheet.create({
 
   label: {
     color: C.sub,
-    fontSize: 10,
+    fontSize: scale(10),
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
@@ -154,7 +176,7 @@ const styles = StyleSheet.create({
   },
   labelPrimary: {
     color: C.sub,
-    fontSize: 11,
+    fontSize: scale(11),
   },
 
   valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
@@ -165,11 +187,11 @@ const styles = StyleSheet.create({
   },
   valueDefault: {
     color: C.text,
-    fontSize: 26,
+    fontSize: scale(26),
   },
   valuePrimary: {
     color: C.text,
-    fontSize: 52,
+    fontSize: scale(52),
     fontWeight: '800',
     letterSpacing: -1,
   },
@@ -177,17 +199,17 @@ const styles = StyleSheet.create({
 
   unit: {
     color: C.sub,
-    fontSize: 12,
+    fontSize: scale(12),
     fontWeight: '500',
   },
   unitPrimary: {
     color: C.sub,
-    fontSize: 16,
+    fontSize: scale(16),
     fontWeight: '600',
     marginBottom: 2,
   },
 
-  subtext: { color: C.sub, fontSize: 10, marginTop: 4 },
+  subtext: { color: C.sub, fontSize: scale(10), marginTop: 4 },
 
   dotsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 6 },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
@@ -195,7 +217,7 @@ const styles = StyleSheet.create({
   dotOff: { backgroundColor: C.muted },
   dotLabel: {
     color: C.sub,
-    fontSize: 9,
+    fontSize: scale(9),
     marginLeft: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.3,

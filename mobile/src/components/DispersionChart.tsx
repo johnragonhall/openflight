@@ -3,20 +3,25 @@ import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Line, G, Text as SvgText, Ellipse } from 'react-native-svg';
 import type { Shot } from '../types/shot';
 import { useUnitPreference } from '../state/useUnitPreference';
-import { C } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
 
 interface Point { x: number; y: number; club: string; isMishit: boolean }
 
-const CLUB_COLORS: Record<string, string> = {
-  driver: C.accent,
-  '3-wood': '#16a34a',
-  '5-wood': '#15803d',
-  hybrid: '#0ea5e9',
-  default: C.warn,
-};
+function clubColors(C: Palette): Record<string, string> {
+  return {
+    driver: C.accent,
+    '3-wood': '#16a34a',
+    '5-wood': '#15803d',
+    hybrid: '#0ea5e9',
+    default: C.warn,
+  };
+}
 
-function clubColor(club: string): string {
-  return CLUB_COLORS[club] ?? CLUB_COLORS.default;
+function clubColor(club: string, C: Palette): string {
+  const colors = clubColors(C);
+  return colors[club] ?? colors.default;
 }
 
 interface Props {
@@ -26,7 +31,11 @@ interface Props {
 
 export const DispersionChart = React.memo(function DispersionChart({ shots, selectedClub }: Props) {
   const { width } = useWindowDimensions();
-  const { unitSystem } = useUnitPreference();
+  const { distanceUnit } = useUnitPreference();
+  const C = useThemeColors();
+  const { scale: scaleFont } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scaleFont), [C, scaleFont]);
   const W = width - 32;
   const H = 220;
   const padX = 36;
@@ -52,7 +61,7 @@ export const DispersionChart = React.memo(function DispersionChart({ shots, sele
   if (points.length === 0) {
     return (
       <View style={[styles.empty, { width: W, height: H }]}>
-        <Text style={styles.emptyText}>No shots to display</Text>
+        <Text style={styles.emptyText}>{t('chartNoShots')}</Text>
       </View>
     );
   }
@@ -75,7 +84,7 @@ export const DispersionChart = React.memo(function DispersionChart({ shots, sele
 
   if (maxY <= minY) return (
     <View style={[styles.empty, { width: W, height: H }]}>
-      <Text style={styles.emptyText}>No shots to display</Text>
+      <Text style={styles.emptyText}>{t('chartNoShots')}</Text>
     </View>
   );
 
@@ -88,8 +97,8 @@ export const DispersionChart = React.memo(function DispersionChart({ shots, sele
   const stdX = Math.sqrt(varX / points.length);
   const stdY = Math.sqrt(varY / points.length);
 
-  const unit = unitSystem === 'metric' ? 'm' : 'yds';
-  const scale = unitSystem === 'metric' ? 0.9144 : 1;
+  const unit = distanceUnit === 'meters' ? 'm' : 'yds';
+  const scale = distanceUnit === 'meters' ? 0.9144 : 1;
 
   const toSvgX = (val: number) => padX + ((val + maxX) / (maxX * 2)) * plotW;
   const toSvgY = (val: number) => padY + (1 - (val - minY) / (maxY - minY)) * plotH;
@@ -133,7 +142,7 @@ export const DispersionChart = React.memo(function DispersionChart({ shots, sele
           <Circle
             key={i}
             cx={toSvgX(p.x)} cy={toSvgY(p.y)}
-            r={5} fill={clubColor(p.club)}
+            r={5} fill={clubColor(p.club, C)}
             opacity={p.isMishit ? 0.4 : 0.85}
             stroke={p.isMishit ? C.err : 'none'} strokeWidth={1.5}
           />
@@ -146,8 +155,8 @@ export const DispersionChart = React.memo(function DispersionChart({ shots, sele
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   empty: { alignItems: 'center', justifyContent: 'center', backgroundColor: C.s0 },
-  emptyText: { color: C.sub, fontSize: 13 },
-  legend: { color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 2 },
+  emptyText: { color: C.sub, fontSize: scale(13) },
+  legend: { color: C.muted, fontSize: scale(10), textAlign: 'center', marginTop: 2 },
 });

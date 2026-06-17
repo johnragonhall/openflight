@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { ShotShape } from '../types/shot';
 import { shotShapeColor } from '../utils/shotShape';
-import { C, R } from '../theme';
+import { R } from '../theme';
+import { useThemeColors } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
 
 interface Props {
   shape: ShotShape | null | undefined;
@@ -33,6 +35,9 @@ const FULL_LABEL: Record<ShotShape, string> = {
 };
 
 export function ShotShapePill({ shape }: Props) {
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const styles = useMemo(() => makeStyles(scale), [scale]);
   if (!shape) return null;
   const color = shotShapeColor(shape, C);
   return (
@@ -45,7 +50,7 @@ export function ShotShapePill({ shape }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (scale: (n: number) => number) => StyleSheet.create({
   pill: {
     borderRadius: R.pill,
     borderWidth: 1,
@@ -54,7 +59,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   label: {
-    fontSize: 10,
+    fontSize: scale(10),
     fontWeight: '700',
     letterSpacing: 0.5,
   },

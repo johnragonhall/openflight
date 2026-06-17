@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useReducer, useRef } from 'react';
 import {
   Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View,
   useWindowDimensions,
@@ -7,7 +7,12 @@ import type { ClubLifetimeStat, ClubSessionPoint } from '../types/shot';
 import { getClubSessionTrend } from '../db/database';
 import { ShapeBar } from './ShapeBar';
 import { TrendLineChart } from './TrendLineChart';
-import { C, R, Anim } from '../theme';
+import { R, Anim } from '../theme';
+import { useThemeColors, type Palette } from '../state/useThemeColors';
+import { useFontScale } from '../state/useFontScale';
+import { useT } from '../i18n/useT';
+
+type Styles = ReturnType<typeof makeStyles>;
 
 interface Props {
   stat: ClubLifetimeStat | null;
@@ -18,21 +23,37 @@ interface Props {
   onClose: () => void;
 }
 
+type TrendState = { loading: boolean; trend: ClubSessionPoint[] };
+type TrendAction =
+  | { type: 'fetch' }
+  | { type: 'resolve'; data: ClubSessionPoint[] }
+  | { type: 'error' };
+
+function trendReducer(_: TrendState, action: TrendAction): TrendState {
+  switch (action.type) {
+    case 'fetch':   return { loading: true, trend: [] };
+    case 'resolve': return { loading: false, trend: action.data };
+    case 'error':   return { loading: false, trend: [] };
+  }
+}
+
 export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFadePct, onClose }: Props) {
   const { width } = useWindowDimensions();
-  const [trend, setTrend] = useState<ClubSessionPoint[]>([]);
-  const [loading, setLoading] = useState(false);
+  const C = useThemeColors();
+  const { scale } = useFontScale();
+  const t = useT();
+  const styles = useMemo(() => makeStyles(C, scale), [C, scale]);
+  const [{ trend, loading }, dispatchTrend] = useReducer(trendReducer, { loading: false, trend: [] });
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   // Slide up on open
   useEffect(() => {
     if (!stat) return;
     let cancelled = false;
-    setLoading(true);
-    setTrend([]);
+    dispatchTrend({ type: 'fetch' });
     getClubSessionTrend(stat.club)
-      .then((data) => { if (!cancelled) setTrend(data); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then((data) => { if (!cancelled) dispatchTrend({ type: 'resolve', data }); })
+      .catch(() => { if (!cancelled) dispatchTrend({ type: 'error' }); });
     slideAnim.setValue(0);
     Animated.spring(slideAnim, {
       toValue: 1,
@@ -71,7 +92,7 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
             <Text style={styles.clubName}>{formatClubName(stat.club)}</Text>
             <Text style={styles.shotCount}>{stat.shot_count} shots</Text>
           </View>
-          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close" accessibilityRole="button">
+          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel={t('close')} accessibilityRole="button">
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
         </View>
@@ -79,31 +100,31 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
           {/* Key metrics row */}
           <View style={styles.metricsRow}>
-            <MetricTile label="AVG CARRY" value={`${Math.round(carry)} yds`} large />
-            {total != null && <MetricTile label="AVG TOTAL" value={`${Math.round(total)} yds`} large />}
+            <MetricTile label="AVG CARRY" value={`${Math.round(carry)} yds`} large styles={styles} C={C} />
+            {total != null && <MetricTile label="AVG TOTAL" value={`${Math.round(total)} yds`} large styles={styles} C={C} />}
             {consistencyPct != null && (
-              <MetricTile label="CONSISTENCY" value={`${consistencyPct}%`} large accent />
+              <MetricTile label="CONSISTENCY" value={`${consistencyPct}%`} large accent styles={styles} C={C} />
             )}
           </View>
 
           {/* Carry range */}
           <View style={styles.metricsRow}>
-            <MetricTile label="MIN CARRY" value={`${Math.round(stat.min_carry)} yds`} />
-            <MetricTile label="MAX CARRY" value={`${Math.round(stat.max_carry)} yds`} />
+            <MetricTile label="MIN CARRY" value={`${Math.round(stat.min_carry)} yds`} styles={styles} C={C} />
+            <MetricTile label="MAX CARRY" value={`${Math.round(stat.max_carry)} yds`} styles={styles} C={C} />
             {stat.std_dev_carry != null && (
-              <MetricTile label="SD CARRY" value={`±${Math.round(stat.std_dev_carry)} yds`} />
+              <MetricTile label="SD CARRY" value={`±${Math.round(stat.std_dev_carry)} yds`} styles={styles} C={C} />
             )}
           </View>
 
-          {/* Shape bar — only shown when K-LD7 shape data is available */}
+          {/* Shape bar - only shown when K-LD7 shape data is available */}
           {hasShapeData && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>SHOT SHAPE</Text>
               <ShapeBar shapes={buildShapeArray(shapeDrawPct, shapeStraightPct, shapeFadePct, stat.shot_count)} height={12} />
               <View style={styles.shapeLegend}>
-                <LegendDot color={C.ok} label={`Draw/Hook ${pct(shapeDrawPct)}`} />
-                <LegendDot color={C.accent} label={`Straight ${pct(shapeStraightPct)}`} />
-                <LegendDot color={C.warn} label={`Fade/Slice ${pct(shapeFadePct)}`} />
+                <LegendDot color={C.ok} label={`Draw/Hook ${pct(shapeDrawPct)}`} styles={styles} />
+                <LegendDot color={C.accent} label={`Straight ${pct(shapeStraightPct)}`} styles={styles} />
+                <LegendDot color={C.warn} label={`Fade/Slice ${pct(shapeFadePct)}`} styles={styles} />
               </View>
             </View>
           )}
@@ -127,8 +148,8 @@ export function ClubDetailSheet({ stat, shapeDrawPct, shapeStraightPct, shapeFad
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-function MetricTile({ label, value, large, accent }: {
-  label: string; value: string; large?: boolean; accent?: boolean;
+function MetricTile({ label, value, large, accent, styles, C }: {
+  label: string; value: string; large?: boolean; accent?: boolean; styles: Styles; C: Palette;
 }) {
   return (
     <View style={styles.metricTile}>
@@ -140,7 +161,7 @@ function MetricTile({ label, value, large, accent }: {
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+function LegendDot({ color, label, styles }: { color: string; label: string; styles: Styles }) {
   return (
     <View style={styles.legendRow}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -179,7 +200,7 @@ export function formatClubName(club: string): string {
   return map[club] ?? club.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C: Palette, scale: (n: number) => number) => StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -213,10 +234,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.line,
   },
-  clubName: { color: C.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  shotCount: { color: C.sub, fontSize: 12, marginTop: 2 },
+  clubName: { color: C.text, fontSize: scale(20), fontWeight: '800', letterSpacing: -0.5 },
+  shotCount: { color: C.sub, fontSize: scale(12), marginTop: 2 },
   closeBtn: { padding: 4 },
-  closeBtnText: { color: C.muted, fontSize: 18 },
+  closeBtnText: { color: C.muted, fontSize: scale(18) },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 20, paddingBottom: 40 },
   metricsRow: {
@@ -229,15 +250,15 @@ const styles = StyleSheet.create({
     borderRadius: R.md,
     padding: 12,
   },
-  metricLabel: { color: C.muted, fontSize: 10, fontWeight: '600', letterSpacing: 0.8, marginBottom: 4 },
-  metricValue: { color: C.sub, fontSize: 15, fontWeight: '700' },
-  metricValueLarge: { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  metricLabel: { color: C.muted, fontSize: scale(10), fontWeight: '600', letterSpacing: 0.8, marginBottom: 4 },
+  metricValue: { color: C.sub, fontSize: scale(15), fontWeight: '700' },
+  metricValueLarge: { color: C.text, fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5 },
   section: { gap: 10 },
-  sectionLabel: { color: C.muted, fontSize: 10, fontWeight: '600', letterSpacing: 0.8 },
+  sectionLabel: { color: C.muted, fontSize: scale(10), fontWeight: '600', letterSpacing: 0.8 },
   shapeLegend: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 8, height: 8, borderRadius: R.pill },
-  legendLabel: { color: C.sub, fontSize: 11 },
+  legendLabel: { color: C.sub, fontSize: scale(11) },
   chartPlaceholder: { height: 120, backgroundColor: C.s2, borderRadius: R.md, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: C.muted, fontSize: 12 },
+  loadingText: { color: C.muted, fontSize: scale(12) },
 });
