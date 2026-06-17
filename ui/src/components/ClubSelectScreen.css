@@ -142,13 +142,6 @@
   transform: scale(0.95);
 }
 
-.club-select__option--selected {
-  background: rgba(var(--gold-rgb), 0.15);
-  border-color: var(--color-gold);
-  color: var(--color-gold);
-  box-shadow: 0 0 12px rgba(var(--gold-rgb), 0.2);
-}
-
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce) {
   .club-select,

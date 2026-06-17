@@ -51,11 +51,11 @@ export function ClubSelectScreen({ selectedClub, onSelect, onSkip }: ClubSelectS
               {clubs.map((club) => (
                 <button
                   key={club.id}
-                  className={`club-select__option ${selectedClub === club.id ? 'club-select__option--selected' : ''}`}
+                  className="club-select__option"
                   onClick={() => onSelect(club.id)}
                   aria-pressed={selectedClub === club.id}
                   // Land remote focus on the current club so the D-pad enters the
-                  // grid immediately (Apple HIG: meaningful initial focus on entry).
+                  // grid immediately and the user can switch clubs with left/right without an extra down press
                   autoFocus={selectedClub === club.id}
                 >
                   {club.label}
