@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Global conventions (token efficiency, engineering prefs, review workflow, templates): `~/.claude/knowledge/conventions/`
+> Skills: `~/.claude/skills/` | Agents: `~/.claude/knowledge/agents/`
+
 ## Project Overview
 
 OpenFlight is a DIY golf launch monitor using the OPS243-A Doppler radar and K-LD7 angle radars. It measures ball speed, club speed, launch angle, club path, spin rate, and carry distance.
@@ -12,80 +15,6 @@ OpenFlight is a DIY golf launch monitor using the OPS243-A Doppler radar and K-L
 - **Update `pyproject.toml` when adding dependencies.** If new Python packages are introduced, add them to the appropriate dependency list in `pyproject.toml`.
 - **Bug reports: write a failing test first.** When the user reports a bug, write a test that reproduces and confirms the bug before investigating or fixing it.
 - **Default startup is `scripts/start-kiosk.sh`.** Assume the project is started via this script unless told otherwise. It handles venv activation, UI build, and server launch.
-
-# Claude Code Prompt for Plan Mode
-
-Review this plan thoroughly before making any code changes. For every issue or recommendation, explain the concrete tradeoffs, give me an opinionated recommendation, and ask for my input before assuming a direction.
-
-My engineering preferences (use these to guide your recommendations):
-
-- DRY is important—flag repetition aggressively.
-- Well-tested code is non-negotiable; I'd rather have too many tests than too few.
-- I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
-- I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
-- Bias toward explicit over clever.
-
-## 1. Architecture review
-
-Evaluate:
-
-- Overall system design and component boundaries.
-- Dependency graph and coupling concerns.
-- Data flow patterns and potential bottlenecks.
-- Scaling characteristics and single points of failure.
-- Security architecture (auth, data access, API boundaries).
-
-## 2. Code quality review
-
-Evaluate:
-
-- Code organization and module structure.
-- DRY violations—be aggressive here.
-- Error handling patterns and missing edge cases (call these out explicitly).
-- Technical debt hotspots.
-- Areas that are over-engineered or under-engineered relative to my preferences.
-
-## 3. Test review
-
-Evaluate:
-
-- Test coverage gaps (unit, integration, e2e).
-- Test quality and assertion strength.
-- Missing edge case coverage—be thorough.
-- Untested failure modes and error paths.
-
-## 4. Performance review
-
-Evaluate:
-
-- N+1 queries and database access patterns.
-- Memory-usage concerns.
-- Caching opportunities.
-- Slow or high-complexity code paths.
-
-**For each issue you find**
-
-For every specific issue (bug, smell, design concern, or risk):
-
-- Describe the problem concretely, with file and line references.
-- Present 2–3 options, including "do nothing" where that's reasonable.
-- For each option, specify: implementation effort, risk, impact on other code, and maintenance burden.
-- Give me your recommended option and why, mapped to my preferences above.
-- Then explicitly ask whether I agree or want to choose a different direction before proceeding.
-
-**Workflow and interaction**
-
-- Do not assume my priorities on timeline or scale.
-- After each section, pause and ask for my feedback before moving on.
-
----
-
-BEFORE YOU START:
-Ask if I want one of two options:
-1/ BIG CHANGE: Work through this interactively, one section at a time (Architecture → Code Quality → Tests → Performance) with at most 4 top issues in each section.
-2/ SMALL CHANGE: Work through interactively ONE question per review section
-
-FOR EACH STAGE OF REVIEW: output the explanation and pros and cons of each stage's questions AND your opinionated recommendation and why, and then use AskUserQuestion. Also NUMBER issues and then give LETTERS for options and when using AskUserQuestion make sure each option clearly labels the issue NUMBER and option LETTER so the user doesn't get confused. Make the recommended option always the 1st option.
 
 ## Commands
 
@@ -134,7 +63,7 @@ uv run python scripts/hardware-test/test_rolling_buffer_persist.py --test
 ```bash
 scripts/start-kiosk.sh              # Default: rolling buffer + sound trigger
 scripts/start-kiosk.sh --mock       # Development mode without hardware
-scripts/start-kiosk.sh --kld7                          # With K-LD7 angle radars (auto-detects horizontal)
+scripts/start-kiosk.sh --kld7       # With K-LD7 angle radars (auto-detects horizontal)
 ```
 
 ### Sound Trigger Testing
@@ -149,7 +78,7 @@ uv run python scripts/hardware-test/test_sound_trigger_hardware.py
 
 ## Architecture
 
-```
+```text
 React UI (WebSocket) ──► Flask Server ──► RollingBufferMonitor ──► OPS243Radar
                               │                │
                               │                └── SoundTrigger (SEN-14262 → HOST_INT)
@@ -229,7 +158,7 @@ The SparkFun SEN-14262 detects club impact and triggers the OPS243-A via HOST_IN
 
 **Wiring:**
 
-```
+```text
 SEN-14262 GATE → OPS243-A HOST_INT (J3 Pin 3)
 SEN-14262 VCC  → Pi 3.3V
 SEN-14262 GND  → Pi GND (shared with OPS243-A)
@@ -240,6 +169,7 @@ A through-hole resistor must be soldered into **R17** on the SEN-14262 to reduce
 See [docs/sound-trigger-wiring.md](docs/sound-trigger-wiring.md) for full instructions.
 
 **Trigger Latency:**
+
 | Trigger | Latency | Description |
 |---------|---------|-------------|
 | `sound` | ~10μs | Hardware: SEN-14262 GATE → HOST_INT |
