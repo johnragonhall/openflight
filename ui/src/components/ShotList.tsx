@@ -244,7 +244,7 @@ function ColPicker({ open, onClose, enabled, onToggle, onReset }: ColPickerProps
   return createPortal(
     <>
       {open && <div className="sl-picker-backdrop" onClick={onClose} aria-hidden="true" />}
-      <div className={`sl-picker ${open ? 'sl-picker--open' : ''}`} role="dialog" aria-label={t('columnsBtn')} aria-modal="true">
+      <div className={`sl-picker ${open ? 'sl-picker--open' : ''}`} role="dialog" aria-label={t('columnsBtn')} aria-modal={open ? "true" : undefined} inert={!open}>
         <div className="sl-picker__header">
           <span className="sl-picker__title">{t('columnsBtn')}</span>
           <div className="sl-picker__header-actions">

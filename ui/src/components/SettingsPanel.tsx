@@ -30,8 +30,9 @@ export function A11yToggleRow({
         <span className="a11y-panel__row-sub">{sub}</span>
       </div>
       <button
+        type="button"
         role="switch"
-        aria-checked={checked}
+        aria-checked={checked ? "true" : "false"}
         className={`a11y-toggle ${checked ? 'a11y-toggle--on' : ''}`}
         onClick={() => onToggle(!checked)}
         aria-label={label}
@@ -103,6 +104,18 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
 
   useEffect(() => {
     if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose();
@@ -125,6 +138,9 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
 
   return (
     <>
+      {open && (
+        <div className="a11y-panel-backdrop" onClick={onClose} aria-hidden="true" />
+      )}
       {/* aria-modal + inert are gated on `open`: when closed the panel stays in
           the DOM (opacity:0), so without this the spatial-nav focus trap would
           scope the whole D-pad into the invisible panel. inert also removes its
@@ -139,13 +155,14 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
       >
         <div className="a11y-panel__header">
           <span className="a11y-panel__title">{t('settingsTitle')}</span>
-          <button className="a11y-panel__close" onClick={onClose} aria-label={t('a11yCloseSettings')} data-modal-dismiss>
+          <button type="button" className="a11y-panel__close" onClick={onClose} aria-label={t('a11yCloseSettings')} data-modal-dismiss>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
               <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
             </svg>
           </button>
         </div>
 
+        <div className="a11y-panel__body">
         <div className="a11y-panel__section-label">{t('unitsSection')}</div>
         <div className="a11y-panel__row a11y-panel__row--last a11y-panel__row--col">
           <div className="a11y-panel__row-text">
@@ -177,11 +194,12 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
             <span className="a11y-panel__row-sub">{t('langSub')}</span>
           </div>
           <button
+            type="button"
             ref={langBtnRef}
             className="a11y-lang-btn"
             onClick={openLangDropdown}
             aria-haspopup="listbox"
-            aria-expanded={langDropdownOpen}
+            aria-expanded={langDropdownOpen ? "true" : "false"}
             aria-label={t('langLabel')}
           >
             {selectedLang?.label}
@@ -240,6 +258,7 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
         </div>
 
         <p className="a11y-panel__footer">{t('settingsFooter')}</p>
+        </div>
       </div>
 
       {langDropdownOpen && langBtnRect && createPortal(
@@ -257,9 +276,11 @@ export function SettingsPanel({ open, onClose, prefs, onToggle, extraSections }:
             <li
               key={lang.code}
               role="option"
-              aria-selected={lang.code === language}
+              aria-selected={lang.code === language ? "true" : "false"}
+              tabIndex={0}
               className={`a11y-lang-option ${lang.code === language ? 'a11y-lang-option--selected' : ''}`}
               onClick={() => selectLang(lang.code)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectLang(lang.code); } }}
             >
               {lang.label}
             </li>
@@ -280,10 +301,11 @@ export function SettingsTrigger({ open, onClick }: TriggerProps) {
   const { t } = useLanguage();
   return (
     <button
+      type="button"
       className={`a11y-trigger ${open ? 'a11y-trigger--active' : ''}`}
       onClick={onClick}
       aria-label={t('settingsTitle')}
-      aria-expanded={open}
+      aria-expanded={open ? "true" : "false"}
       aria-haspopup="dialog"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" aria-hidden="true" strokeLinecap="round" strokeLinejoin="round">
