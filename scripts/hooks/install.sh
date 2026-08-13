@@ -10,7 +10,7 @@ repo_root=$(git rev-parse --show-toplevel)
 src="$repo_root/scripts/hooks"
 dst="$repo_root/.git/hooks"
 
-for hook in pre-commit; do
+for hook in pre-commit commit-msg; do
   cp "$src/$hook" "$dst/$hook"
   chmod +x "$dst/$hook"
   echo "installed: .git/hooks/$hook"

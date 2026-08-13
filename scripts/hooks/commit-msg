@@ -1,0 +1,95 @@
+#!/bin/bash
+# Validate commit message format.
+# - Subject MUST follow `type(scope): description`      (fatal)
+# - Any multi-line body MUST contain at least one       (fatal)
+#   standalone ALL-CAPS section heading line.
+# Single-line commits (e.g. the CHANGELOG auto-sync) skip the body check.
+
+msg_file="$1"
+msg=$(cat "$msg_file")
+
+# FATAL: reject git's leftover merge-conflict comment block.
+# When a merge is committed with `--no-edit` or `-m` (cleanup=whitespace),
+# git does NOT strip its auto-generated `# Conflicts:` block, so it lands in
+# the stored message. A markdown viewer then renders the leading `#` lines as
+# H1 headings (the "weird bold"). Merge commits must pass an explicit clean -m.
+if grep -qE '^#[[:space:]]*Conflicts:[[:space:]]*$' "$msg_file"; then
+  echo "ERROR: Commit message contains git's leftover '# Conflicts:' block."
+  echo "  Cause: 'git commit --no-edit' (or -m carrying the block) after"
+  echo "  resolving a merge conflict retains git's comment lines verbatim;"
+  echo "  a markdown viewer renders the leading '#' as headings."
+  echo ""
+  echo "  Fix: re-commit with an explicit clean message, e.g."
+  echo "      git commit -m 'chore(scope): merge <branch> - <summary>'"
+  echo "  Never use --no-edit to conclude a conflicted merge."
+  exit 1
+fi
+
+# Extract first line (subject)
+subject=$(echo "$msg" | head -n 1)
+
+# Check subject format: type(scope): description
+if ! echo "$subject" | grep -qE '^(feat|fix|refactor|test|docs|chore|perf)\([a-z0-9_-]+\): [a-z0-9 ]'; then
+  echo "ERROR: Commit subject must follow format: type(scope): description"
+  echo "  type: feat|fix|refactor|test|docs|chore|perf"
+  echo "  scope: lowercase with hyphens/underscores"
+  echo "  description: lowercase, no period at end"
+  echo ""
+  echo "Current subject: $subject"
+  exit 1
+fi
+
+# Approved body section-heading categories (writing-style standard + PERF/CHORE).
+# Every standalone ALL-CAPS heading line must be one of these. TESTS is accepted
+# as a variant of TEST. Put detail in bullets under a category, not in a custom
+# heading (WIRING, SUPERVISOR, WHAT CHANGED, ...).
+ALLOWED="UI BACKEND INFRA DOCS FIX SECURITY DEPS TEST FEAT REFACTOR PERF CHORE"
+
+# Check if body exists (multi-line commits)
+line_count=$(wc -l < "$msg_file")
+if [ "$line_count" -gt 1 ]; then
+  # Body is everything from line 3 on (line 2 is the blank separator).
+  # Strip comment lines (git's default `# ...` scissors/help) before checking.
+  body=$(tail -n +3 "$msg_file" | grep -v '^#')
+  if [ -n "$(echo "$body" | tr -d '[:space:]')" ]; then
+    # A section heading is a standalone line in ALL CAPS: uppercase letters,
+    # digits, spaces, and the separators _ / & - , with an optional trailing colon.
+    headings=$(echo "$body" | grep -E '^[A-Z][A-Z0-9 _/&-]*:?[[:space:]]*$' || true)
+    if [ -z "$(echo "$headings" | tr -d '[:space:]')" ]; then
+      echo "ERROR: Commit body must include at least one ALL-CAPS section heading."
+      echo "  A heading is a standalone line from the approved categories, e.g.:"
+      echo ""
+      echo "      type(scope): short subject"
+      echo ""
+      echo "      BACKEND"
+      echo "      - what changed"
+      echo "      TEST"
+      echo "      - what was verified"
+      echo ""
+      echo "  Approved categories: $ALLOWED"
+      echo "  (Single-line commits have no body and are exempt.)"
+      exit 1
+    fi
+    # Every heading must be one of the approved categories (standardized vocab).
+    bad=""
+    while IFS= read -r h; do
+      [ -z "$(echo "$h" | tr -d '[:space:]')" ] && continue
+      norm=$(echo "$h" | sed -E 's/:[[:space:]]*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+      [ "$norm" = "TESTS" ] && norm="TEST"
+      case " $ALLOWED " in
+        *" $norm "*) : ;;
+        *) bad="$bad $norm" ;;
+      esac
+    done <<< "$headings"
+    if [ -n "$bad" ]; then
+      echo "ERROR: Commit body has non-standard section heading(s):$bad"
+      echo "  Use only the approved categories, one per standalone ALL-CAPS line:"
+      echo "    $ALLOWED"
+      echo "  (TESTS is accepted as TEST. Put specifics in bullets under a category,"
+      echo "   not in a custom heading like WIRING or SUPERVISOR.)"
+      exit 1
+    fi
+  fi
+fi
+
+exit 0
