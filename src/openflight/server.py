@@ -2710,7 +2710,7 @@ def main():
     parser = argparse.ArgumentParser(description="OpenFlight UI Server")
     parser.add_argument("--port", "-p", help="Serial port for radar")
     parser.add_argument("--mock", "-m", action="store_true", help="Run in mock mode without radar")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1; use 0.0.0.0 for LAN access)")
     parser.add_argument(
         "--web-port", type=int, default=8080, help="Web server port (default: 8080)"
     )

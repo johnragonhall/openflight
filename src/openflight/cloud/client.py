@@ -8,9 +8,9 @@ The contract lives entirely in this module; nothing here imports FlightWeb
 code. See docs/openflight-cloud-uploader-spec.md.
 """
 
+import http.client
 import json
-import urllib.error
-import urllib.request
+import urllib.parse
 from collections import namedtuple
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
@@ -99,24 +99,22 @@ def urllib_request(
 ) -> HttpResponse:
     """Default transport. Returns HttpResponse for any HTTP status (including
     4xx/5xx); raises CloudNetworkError only when the server was unreachable."""
-    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Only https:// URLs are allowed; got: {url!r}")
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return HttpResponse(
-                status=resp.status,
-                headers=dict(resp.headers.items()),
-                body=resp.read(),
-            )
-    except urllib.error.HTTPError as exc:
-        # HTTP error responses are valid contract responses, not failures.
+        conn = http.client.HTTPSConnection(parsed.netloc, timeout=timeout)
+        conn.request(method, path, body=data, headers=headers or {})
+        resp = conn.getresponse()
         return HttpResponse(
-            status=exc.code,
-            headers=dict(exc.headers.items()) if exc.headers else {},
-            body=exc.read(),
+            status=resp.status,
+            headers=dict(resp.getheaders()),
+            body=resp.read(),
         )
-    except urllib.error.URLError as exc:
-        raise CloudNetworkError(str(exc.reason)) from exc
-    except (TimeoutError, OSError) as exc:
+    except (http.client.HTTPException, OSError, TimeoutError) as exc:
         raise CloudNetworkError(str(exc)) from exc
 
 

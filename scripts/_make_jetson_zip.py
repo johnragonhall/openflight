@@ -1,5 +1,11 @@
 """Build openflight-jetson.zip: merge all PR branches, apply WD fixes, build UI."""
-import pathlib, subprocess, shutil, tempfile, zipfile, sys, re
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
 
 ROOT = pathlib.Path(__file__).parent.parent
 OUT = pathlib.Path.home() / "Downloads" / "openflight-jetson.zip"
@@ -45,8 +51,7 @@ OVERLAY_FROM_WORKTREE = [
 
 
 def run(cmd, cwd=None, check=True):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                       shell=isinstance(cmd, str))
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if check and r.returncode != 0:
         print(r.stdout[-2000:] if r.stdout else "")
         print(r.stderr[-2000:] if r.stderr else "", file=sys.stderr)
@@ -133,8 +138,8 @@ try:
 
     # Build UI
     print("\nBuilding UI...")
-    run("npm install --silent", cwd=str(WT / "ui"))
-    run("npm run build", cwd=str(WT / "ui"))
+    run(["npm", "install", "--silent"], cwd=str(WT / "ui"))
+    run(["npm", "run", "build"], cwd=str(WT / "ui"))
     print("UI built.\n")
 
     def should_include(path: pathlib.Path) -> bool:

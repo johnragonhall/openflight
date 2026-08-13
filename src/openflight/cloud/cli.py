@@ -17,18 +17,32 @@ from .config import CONFIG_PATH, CloudConfig, load_config
 DEFAULT_LOG_DIR = SessionLogger.DEFAULT_LOG_DIR
 
 
+def _user_path(value: str) -> Path:
+    """Expand and canonicalise a path given on the command line.
+
+    resolve() collapses ".." and follows symlinks, so load_config and
+    save_config receive an absolute real path. save_config writes the device
+    bearer token at 0600, so it should land in the directory the operator
+    named. Snyk reports a path-traversal flow here (cloud/cli.py, rule PT);
+    it is a false positive for this entry point - openflight-cloud is typed
+    at the operator's own shell, nothing passes a remote value to main(), and
+    whoever can set --config can already read those files directly.
+    """
+    return Path(value).expanduser().resolve()
+
+
 def _build_parser() -> argparse.ArgumentParser:
     # Shared options usable either before or after the subcommand.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--config",
-        type=Path,
+        type=_user_path,
         default=CONFIG_PATH,
         help=f"Path to cloud config (default: {CONFIG_PATH}).",
     )
     common.add_argument(
         "--log-dir",
-        type=Path,
+        type=_user_path,
         default=DEFAULT_LOG_DIR,
         help=f"Session log directory (default: {DEFAULT_LOG_DIR}).",
     )
