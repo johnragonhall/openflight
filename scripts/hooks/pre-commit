@@ -1,0 +1,137 @@
+#!/bin/sh
+# Pre-commit gates (all FATAL). Bypass once: git commit --no-verify
+#
+#   0. commit fence    - block sweeping another live session's claimed paths
+#   1. humanizer gate  - deterministic: em/en dashes, curly quotes, emoji, prose --
+#   2. comment judge   - LLM: the 9 comment rules + fuzzy humanizer prose
+#      (fails OPEN if the claude CLI is unavailable; HUMANIZER_JUDGE=0 to skip)
+#   3. diff-size cap   - 300 lines per file
+#   4. ruff            - staged .py only
+#   5. eslint          - staged ui/src sources only
+#
+# Ported from the AI Management repo, whose hook design this follows; gates 3-5
+# are the openlaunch-specific ones. Gates 4 and 5 are scoped to STAGED files: a
+# concurrent session sharing this checkout routinely has unrelated files in
+# flight, and a whole-tree check would block THIS commit over THAT file.
+repo=$(git rev-parse --show-toplevel)
+
+# --- commit fence (runs first, fails fast) ------------------------------------
+# A concurrent session sharing this checkout can run `git add -A` / `git commit
+# -a` and sweep another session's staged files into its commit. Sessions reserve
+# the paths they are about to commit (scripts/hooks/claim_paths.sh); this refuses
+# any commit whose staged set includes a path a *different, still-live* session
+# has claimed. Stale claims (past the TTL) are ignored so a crashed session can
+# never wedge commits, and any internal error fails OPEN so the fence itself
+# never blocks the human owner's work. Bypass once with: git commit --no-verify
+fence_dir=$(git rev-parse --git-path claude-fence 2>/dev/null)
+if [ -n "$fence_dir" ] && [ -d "$fence_dir" ]; then
+  me=${CLAUDE_CODE_SESSION_ID:-${CLAUDE_PID:-human}}
+  me=$(printf '%s' "$me" | tr -c 'A-Za-z0-9._-' '_')
+  ttl=1800   # seconds; a claim older than this is treated as abandoned
+  now=$(date +%s 2>/dev/null || echo 0)
+  staged=$(git diff --cached --name-only --diff-filter=ACMRD 2>/dev/null)
+  if [ -n "$staged" ]; then
+    for cf in "$fence_dir"/*.claim; do
+      [ -e "$cf" ] || continue
+      owner=$(basename "$cf" .claim)
+      [ "$owner" = "$me" ] && continue                       # my own claim never blocks me
+      mtime=$(stat -c %Y "$cf" 2>/dev/null || stat -f %m "$cf" 2>/dev/null || echo "")
+      if [ "$now" -gt 0 ] && [ -n "$mtime" ]; then
+        [ "$((now - mtime))" -gt "$ttl" ] && continue        # stale -> ignore
+      fi
+      # Foreign claim: does any staged path exactly match a (non-blank) line in
+      # it? Patterns come from a temp file (never stdin) so they can't collide
+      # with the staged list fed on stdin; blank lines are stripped so an empty
+      # pattern can never match every path.
+      tmpc=$(mktemp 2>/dev/null) || continue
+      grep -v '^[[:space:]]*$' "$cf" > "$tmpc" 2>/dev/null
+      hit=$(grep -Fxf "$tmpc" <<STAGED 2>/dev/null | head -1
+$staged
+STAGED
+)
+      rm -f "$tmpc"
+      if [ -n "$hit" ]; then
+        printf '\033[31mpre-commit BLOCKED (commit fence):\033[0m\n' >&2
+        printf '  "%s" is claimed by another Claude session (%s).\n' "$hit" "$owner" >&2
+        printf '  Committing it now would sweep that session'\''s staged work into your commit.\n' >&2
+        printf '  Fix: stage only your own paths (git restore --staged "%s") and commit\n' "$hit" >&2
+        printf '       with explicit pathspecs:  git commit -- <your-paths>\n' >&2
+        printf '  Bypass once (only if that work is really yours):  git commit --no-verify\n' >&2
+        exit 1
+      fi
+    done
+  fi
+fi
+# --- end commit fence ---------------------------------------------------------
+
+# Resolve a Python interpreter that actually runs (the modern-python shim rejects
+# bare `python` inside a Claude session, so fall back to `uv run python`).
+PY=""
+if python -c "import sys" >/dev/null 2>&1; then
+  PY="python"
+elif python3 -c "import sys" >/dev/null 2>&1; then
+  PY="python3"
+elif command -v uv >/dev/null 2>&1; then
+  PY="uv run python"
+fi
+
+if [ -n "$PY" ]; then
+  $PY "$repo/scripts/hooks/humanizer_gate.py" || exit 1
+  $PY "$repo/scripts/hooks/comment_judge.py" || exit 1
+else
+  echo "pre-commit: no python interpreter -- skipping humanizer gates" >&2
+fi
+
+# diff-size cap. A single file arriving as one enormous diff is usually a move
+# or a generated blob riding along with real edits; splitting keeps review
+# possible. Approve an intentional one with: git commit --no-verify
+MAX_LINES=300
+size_failed=0
+for file in $(git diff --cached --name-only --diff-filter=ACM); do
+  lines=$(git diff --cached -- "$file" | wc -l)
+  if [ "$lines" -gt "$MAX_LINES" ]; then
+    printf '\033[31mpre-commit FAIL: %s has %s diff lines (max %s)\033[0m\n' "$file" "$lines" "$MAX_LINES" >&2
+    size_failed=1
+  fi
+done
+if [ "$size_failed" -ne 0 ]; then
+  printf 'Split your changes into smaller commits or get explicit approval.\n' >&2
+  exit 1
+fi
+
+# ruff gate (staged .py only). Scoped to staged files for the same reason the
+# other gates are: a concurrent session sharing this checkout keeps unrelated
+# files in flight, and a whole-tree run would block this commit over those.
+staged_py=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
+if [ -n "$staged_py" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    printf '\033[1mpre-commit: ruff (staged files)\033[0m\n'
+    if ! ( cd "$repo" && printf '%s\n' "$staged_py" | tr '\n' '\0' | xargs -0 uv run ruff check ); then
+      printf '\033[31mpre-commit BLOCKED: staged Python has ruff findings.\033[0m\n' >&2
+      printf 'Fix with:  uv run ruff check --fix <files>\n' >&2
+      printf 'Bypass once with:  git commit --no-verify\n' >&2
+      exit 1
+    fi
+    printf '\033[32mpre-commit: ruff clean\033[0m\n'
+  else
+    echo "pre-commit: uv not found -- skipping ruff gate"
+  fi
+fi
+
+# eslint gate (staged ui/ sources only).
+staged_ui=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^ui/src/.*\.(ts|tsx|js|jsx)$')
+if [ -n "$staged_ui" ]; then
+  if [ -d "$repo/ui/node_modules" ]; then
+    printf '\033[1mpre-commit: eslint (staged files)\033[0m\n'
+    rel=$(printf '%s\n' "$staged_ui" | sed 's|^ui/||')
+    if ! ( cd "$repo/ui" && printf '%s\n' "$rel" | tr '\n' '\0' | xargs -0 npx eslint ); then
+      printf '\033[31mpre-commit BLOCKED: staged UI files have eslint findings.\033[0m\n' >&2
+      printf 'Bypass once with:  git commit --no-verify\n' >&2
+      exit 1
+    fi
+    printf '\033[32mpre-commit: eslint clean\033[0m\n'
+  else
+    echo "pre-commit: ui/node_modules missing -- skipping eslint gate"
+  fi
+fi
+exit 0
