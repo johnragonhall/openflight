@@ -967,11 +967,18 @@ def api_shutdown():
     return {"status": "shutting_down"}, 200
 
 
+# Session logs interleave shot records with rolling_buffer_capture entries that
+# carry 4096 I and 4096 Q samples each, so most lines run tens of KB. _write_entry
+# emits "type" as the second key via json.dumps, so these literals match the
+# on-disk form and let the history scans skip a line without parsing it.
+_SESSION_START_MARKER = '"type": "session_start"'
+_SHOT_MARKER = '"type": "shot_detected"'
+
+
 @app.route("/api/history/<session_id>/shots")
 def api_history_shots(session_id):
     """Return individual shots from a historical session JSONL file."""
-    import re as _re
-    if not _re.match(r'^session_[\w-]+$', session_id):
+    if not re.match(r'^session_[\w-]+$', session_id):
         return {"error": "Invalid session id"}, 400
     sessions_dir = Path.home() / "openflight_sessions"
     log_file = sessions_dir / f"{session_id}.jsonl"
@@ -981,6 +988,10 @@ def api_history_shots(session_id):
     try:
         with open(log_file, encoding="utf-8") as f:
             for line in f:
+                # buzz: L1 - substring test before json.loads, 26.3ms -> 3.7ms per
+                # 2.5MB session (median of 20, protocol in measurement.md)
+                if _SHOT_MARKER not in line:
+                    continue
                 try:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
@@ -1029,6 +1040,10 @@ def api_history():
         try:
             with open(log_file, encoding="utf-8") as f:
                 for line in f:
+                    # buzz: L1 - substring test before json.loads, 26.3ms -> 3.7ms per
+                    # 2.5MB session, x20 sessions scanned (median of 20)
+                    if _SESSION_START_MARKER not in line and _SHOT_MARKER not in line:
+                        continue
                     try:
                         entry = json.loads(line)
                     except json.JSONDecodeError:

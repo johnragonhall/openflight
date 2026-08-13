@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from functools import lru_cache
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 from .geometry import (
     GEOM_FLIGHT_T_MAX_S,
@@ -301,30 +302,34 @@ def cfar_detect(
     Returns:
         List of detections sorted by magnitude (descending)
     """
+    # buzz: L4 - per-bin Python loop -> strided whole-array median, 26.4ms -> 1.25ms
+    # on a 2048-bin spectrum (median of 20, protocol in measurement.md); detections
+    # are bit-identical. Called per frame by the offline capture analysis.
     n = len(spectrum)
     margin = guard_cells + training_cells
-    detections = []
+    if n <= 2 * margin:
+        return []
 
-    for i in range(margin, n - margin):
-        left_train = spectrum[i - margin : i - guard_cells]
-        right_train = spectrum[i + guard_cells + 1 : i + margin + 1]
-        training = np.concatenate([left_train, right_train])
-        # Use median (OS-CFAR) for robustness against interfering targets
-        noise_estimate = np.median(training)
+    # One row per cell under test, holding that cell's full guard+training
+    # neighbourhood; `train_cols` picks out the training cells on both sides
+    # and drops the guard cells and the cell itself.
+    windows = sliding_window_view(spectrum, 2 * margin + 1)
+    train_cols = np.r_[0:training_cells, margin + guard_cells + 1 : 2 * margin + 1]
+    # Median (OS-CFAR) for robustness against interfering targets
+    noise = np.median(windows[:, train_cols], axis=1)
 
-        if noise_estimate <= 0:
-            continue
+    cut = spectrum[margin : n - margin]
+    hits = np.flatnonzero((noise > 0) & (cut > threshold_factor * noise))
+    snr_db = 10.0 * np.log10(cut[hits] / noise[hits])
 
-        if spectrum[i] > threshold_factor * noise_estimate:
-            snr_db = 10.0 * np.log10(spectrum[i] / noise_estimate)
-            detections.append(
-                CFARDetection(
-                    bin_index=i,
-                    magnitude=float(spectrum[i]),
-                    snr_db=float(snr_db),
-                )
-            )
-
+    detections = [
+        CFARDetection(
+            bin_index=int(i) + margin,
+            magnitude=float(cut[i]),
+            snr_db=float(snr),
+        )
+        for i, snr in zip(hits, snr_db)
+    ]
     detections.sort(key=lambda d: d.magnitude, reverse=True)
     return detections
 

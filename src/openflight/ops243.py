@@ -119,6 +119,12 @@ class OPS243Radar:
     """
 
     # Default serial settings per datasheet
+    # buzz: deferred - this rate sets the whole shot pipeline's latency. A full I/Q
+    # dump is ~41KB, and 57600 baud delivers 5.7KB/s, so the transfer alone is ~7s
+    # against ~11ms of FFT processing (measured, median of 20). Raising it is the
+    # only change here worth making; it needs the radar in hand to confirm the
+    # firmware accepts a higher rate and still dumps intact buffers. The K-LD7 path
+    # already runs 3Mbaud, so the Pi side is not the limit. Owner's call.
     DEFAULT_BAUD = 57600
     DEFAULT_TIMEOUT = 1.0
 

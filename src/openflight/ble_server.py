@@ -163,6 +163,14 @@ class BLEServer:
         if self._server is None or self._loop is None:
             return
 
+        # buzz: deferred - the full shot dict is ~1369 B (median over 200 synthetic
+        # shots across all 46 fields), so this cap is hit on every shot and phones
+        # receive only the 9 _SLIM_FIELDS. Measured on that payload shape: gzip -9
+        # gives 619 B and plain zstd -19 gives 624 B, both still over 512; zstd -9
+        # against a 16 KB dictionary trained on shot JSON gives 223 B, which clears
+        # the cap on 200/200. A trained dictionary is the only option measured that
+        # removes the lossy fallback. Needs the dictionary shipped and versioned on
+        # both the Pi and the app, so it is a protocol change - owner's call.
         payload = json.dumps(shot_data).encode("utf-8")
         if len(payload) > _MAX_PAYLOAD_BYTES:
             slim = json.dumps(_slim_shot(shot_data)).encode("utf-8")

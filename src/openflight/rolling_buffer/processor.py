@@ -376,6 +376,11 @@ class RollingBufferProcessor:
         Returns:
             SpeedTimeline with extracted speed readings
         """
+        # buzz: L6 rejected - one 4096-point FFT per window, ~125 windows at
+        # step=32, measures 10.9ms end to end (median of 20; FFT 37%, peak search
+        # 25%). Batching the windows into a single 2D FFT is possible but pointless
+        # here: the capture reaching this function costs ~7s on the serial dump, so
+        # Amdahl caps any win at ~1.002x of the shot pipeline.
         i_data = np.array(capture.i_samples)
         q_data = np.array(capture.q_samples)
 

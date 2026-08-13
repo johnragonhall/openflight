@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { LangCode, TKey } from '../i18n/translations';
-import { t as translate } from '../i18n/translations';
+import type { LangCode, TKey, TMap } from '../i18n/translations';
+import { en, loadCatalog, t as translate } from '../i18n/translations';
 import { LanguageContext } from './LanguageContext';
 
 const LANG_KEY = 'openflight.language';
@@ -21,11 +21,25 @@ function readLanguage(): LangCode {
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<LangCode>(readLanguage);
+  // English ships in the main bundle, so it renders on the first paint; any other
+  // catalog arrives as its own chunk and swaps in when it resolves. Until then
+  // t() falls back to English rather than blocking the tree on a spinner.
+  const [catalog, setCatalog] = useState<TMap>(en);
 
   const setLanguage = useCallback((code: LangCode) => {
     setLanguageState(code);
     window.localStorage.setItem(LANG_KEY, code);
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    loadCatalog(language).then((loaded) => {
+      if (live) setCatalog(loaded);
+    });
+    return () => {
+      live = false;
+    };
+  }, [language]);
 
   // Keep <html lang> in sync so VoiceOver / TalkBack pronounce text in the
   // selected language (they read our literal strings; they do not translate).
@@ -33,7 +47,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = BCP47[language];
   }, [language]);
 
-  const t = useCallback((key: TKey) => translate(language, key), [language]);
+  const t = useCallback((key: TKey) => translate(catalog, key), [catalog]);
 
   const value = useMemo(() => ({ language, setLanguage, t }), [language, setLanguage, t]);
 
